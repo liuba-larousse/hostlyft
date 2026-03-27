@@ -3,22 +3,22 @@ import { Bot, Plus } from "lucide-react";
 export default function AgentsPage() {
   return (
     <div className="p-8 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-center justify-between mb-10">
         <div>
-          <h1 className="text-2xl font-semibold">Cloud Agents</h1>
-          <p className="text-slate-500 mt-1 text-sm">AI agents, automations, and cloud workers.</p>
+          <h1 className="text-3xl font-bold text-gray-900">Cloud Agents</h1>
+          <p className="text-gray-500 mt-2 text-base">AI agents, automations, and cloud workers.</p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-indigo-500 text-white rounded-lg text-sm font-medium hover:bg-indigo-600 transition-colors cursor-pointer">
-          <Plus size={15} />
+        <button className="flex items-center gap-2 px-5 py-2.5 bg-yellow-400 text-gray-900 rounded-xl text-base font-semibold hover:bg-yellow-500 transition-colors cursor-pointer">
+          <Plus size={16} />
           Add Agent
         </button>
       </div>
       <div className="flex flex-col items-center justify-center py-20 text-center">
-        <div className="p-4 bg-violet-50 rounded-2xl mb-4">
-          <Bot size={32} className="text-violet-400" strokeWidth={1.5} />
+        <div className="p-5 bg-violet-50 rounded-2xl mb-5">
+          <Bot size={36} className="text-violet-500" strokeWidth={1.5} />
         </div>
-        <h3 className="font-medium">No agents yet</h3>
-        <p className="text-slate-500 text-sm mt-1 max-w-xs">Add your Cloud Agents here — link them by name, type, status, and URL.</p>
+        <h3 className="font-bold text-lg text-gray-900">No agents yet</h3>
+        <p className="text-gray-500 text-base mt-2 max-w-xs">Add your Cloud Agents here — link them by name, type, status, and URL.</p>
       </div>
     </div>
   );

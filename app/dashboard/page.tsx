@@ -14,27 +14,27 @@ export default async function DashboardPage() {
   const firstName = session?.user?.name?.split(" ")[0] ?? "there";
 
   return (
-    <div className="p-8 max-w-5xl mx-auto">
-      <div className="mb-8">
-        <h1 className="text-2xl font-semibold">Welcome back, {firstName}</h1>
-        <p className="text-slate-500 mt-1 text-sm">Here&apos;s a snapshot of the Hostlyft workspace.</p>
+    <div className="p-10 max-w-5xl mx-auto">
+      <div className="mb-10">
+        <h1 className="text-3xl font-bold text-gray-900">Welcome back, {firstName}</h1>
+        <p className="text-gray-500 mt-2 text-base">Here&apos;s a snapshot of the Hostlyft workspace.</p>
       </div>
-      <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide mb-4">Quick access</h2>
+      <h2 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-5">Quick access</h2>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {quickLinks.map(({ href, icon: Icon, label, description, color }) => (
           <Link
             key={href}
             href={href}
-            className="flex items-center gap-4 p-5 bg-white border border-slate-200 rounded-xl hover:border-indigo-400 hover:shadow-sm transition-all group"
+            className="flex items-center gap-5 p-6 bg-white border border-gray-200 rounded-2xl hover:border-yellow-400 hover:shadow-sm transition-all group"
           >
-            <div className={`p-2.5 rounded-lg ${color}`}>
-              <Icon size={20} strokeWidth={1.8} />
+            <div className={`p-3 rounded-xl ${color}`}>
+              <Icon size={22} strokeWidth={1.8} />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="font-medium text-sm">{label}</p>
-              <p className="text-xs text-slate-500 mt-0.5">{description}</p>
+              <p className="font-semibold text-base text-gray-900">{label}</p>
+              <p className="text-sm text-gray-500 mt-0.5">{description}</p>
             </div>
-            <ArrowRight size={16} className="text-slate-400 group-hover:text-indigo-500 transition-colors shrink-0" />
+            <ArrowRight size={18} className="text-gray-400 group-hover:text-yellow-500 transition-colors shrink-0" />
           </Link>
         ))}
       </div>

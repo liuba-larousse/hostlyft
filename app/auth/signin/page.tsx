@@ -17,24 +17,24 @@ export default async function SignInPage({ searchParams }: Props) {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#0f1117]">
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-indigo-500 mb-4">
-            <span className="text-white font-bold text-2xl">H</span>
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-yellow-400 mb-5">
+            <span className="text-gray-900 font-bold text-3xl">H</span>
           </div>
-          <h1 className="text-2xl font-semibold text-white">Hostlyft Team</h1>
-          <p className="text-slate-400 mt-1 text-sm">Internal dashboard — team access only</p>
+          <h1 className="text-3xl font-bold text-gray-900">Hostlyft Team</h1>
+          <p className="text-gray-500 mt-2 text-base">Internal dashboard — team access only</p>
         </div>
 
         {error && (
-          <div className="mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm text-center">
+          <div className="mb-4 px-4 py-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-base text-center">
             {errorMessages[error] ?? errorMessages.Default}
           </div>
         )}
 
-        <div className="bg-[#1e2433] rounded-2xl p-8 border border-white/5">
-          <p className="text-slate-400 text-sm text-center mb-6">
+        <div className="bg-white rounded-2xl p-8 border border-gray-200 shadow-sm">
+          <p className="text-gray-500 text-base text-center mb-6">
             Sign in with your Google account to access the team dashboard.
           </p>
           <form
@@ -45,7 +45,7 @@ export default async function SignInPage({ searchParams }: Props) {
           >
             <button
               type="submit"
-              className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-xl bg-white text-gray-800 font-medium text-sm hover:bg-gray-100 transition-colors cursor-pointer"
+              className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-xl bg-gray-900 text-white font-semibold text-base hover:bg-gray-800 transition-colors cursor-pointer"
             >
               <GoogleIcon />
               Continue with Google
@@ -53,7 +53,7 @@ export default async function SignInPage({ searchParams }: Props) {
           </form>
         </div>
 
-        <p className="text-center text-xs text-slate-500 mt-6">
+        <p className="text-center text-sm text-gray-400 mt-6">
           Access restricted to authorized team members.
         </p>
       </div>
