@@ -13,7 +13,7 @@ const artifacts = [
   },
   {
     id: "revpar-analytics",
-    title: "RevPAR Analytics",
+    title: "Revenue Forecast",
     description: "React component for interactive RevPAR analysis — portfolio vs. market breakdown with goal tracking.",
     icon: BarChart2,
     color: "bg-violet-50 text-violet-600",
