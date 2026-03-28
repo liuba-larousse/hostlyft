@@ -1,16 +1,7 @@
-import { Package, Plus, ExternalLink, BarChart2 } from "lucide-react";
+import { Package, Plus, BarChart2 } from "lucide-react";
 import Link from "next/link";
 
 const artifacts = [
-  {
-    id: "revpar-kpi-calculator",
-    title: "Revenue Forecast",
-    description: "Upload a metrics report to calculate RevPAR targets, market multipliers, and revenue variance by month.",
-    icon: BarChart2,
-    color: "bg-blue-50 text-blue-600",
-    type: "HTML Tool",
-    action: { label: "Open", href: "/artifacts/revpar-kpi-calculator.html", external: true },
-  },
   {
     id: "revpar-analytics",
     title: "Revenue Forecast",
@@ -55,25 +46,13 @@ export default function ArtifactsPage() {
               </div>
             </div>
             <div className="flex justify-end">
-              {action.external ? (
-                <a
-                  href={action.href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1.5 px-4 py-2 bg-gray-900 text-white text-sm font-semibold rounded-lg hover:bg-gray-700 transition-colors"
-                >
-                  <ExternalLink size={14} />
-                  {action.label}
-                </a>
-              ) : (
-                <Link
-                  href={action.href}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-gray-900 text-white text-sm font-semibold rounded-lg hover:bg-gray-700 transition-colors"
-                >
-                  <Package size={14} />
-                  {action.label}
-                </Link>
-              )}
+              <Link
+                href={action.href}
+                className="flex items-center gap-1.5 px-4 py-2 bg-gray-900 text-white text-sm font-semibold rounded-lg hover:bg-gray-700 transition-colors"
+              >
+                <Package size={14} />
+                {action.label}
+              </Link>
             </div>
           </div>
         ))}
