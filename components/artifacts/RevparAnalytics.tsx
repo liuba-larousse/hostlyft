@@ -349,7 +349,7 @@ const RevparAnalytics: React.FC = () => {
         onDrop={handleDrop}
         onClick={() => fileInputRef.current?.click()}
       >
-        <h1 className="text-xl font-semibold text-gray-800 mb-2">📊 RevPAR KPI Calculator</h1>
+        <h1 className="text-xl font-semibold text-gray-800 mb-2">📊 Revenue Forecast</h1>
         <p className="text-gray-500 text-sm mb-4">Drop your metrics report (.xlsx, .csv)</p>
         <button className="px-6 py-2.5 bg-blue-500 text-white rounded-lg font-medium hover:bg-blue-600 transition-colors">
           Browse Files
@@ -371,7 +371,7 @@ const RevparAnalytics: React.FC = () => {
     <div className="max-w-7xl mx-auto p-6">
       {/* Header */}
       <div className="flex items-center justify-between mb-5">
-        <h1 className="text-xl font-semibold">📊 RevPAR KPI Calculator</h1>
+        <h1 className="text-xl font-semibold">📊 Revenue Forecast</h1>
         <div className="flex items-center gap-3">
           <span className="text-gray-500 text-sm bg-gray-100 px-3 py-1.5 rounded-md">{fileName}</span>
           <button

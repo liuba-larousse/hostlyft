@@ -4,7 +4,7 @@ import Link from "next/link";
 const artifacts = [
   {
     id: "revpar-kpi-calculator",
-    title: "RevPAR KPI Calculator",
+    title: "Revenue Forecast",
     description: "Upload a metrics report to calculate RevPAR targets, market multipliers, and revenue variance by month.",
     icon: BarChart2,
     color: "bg-blue-50 text-blue-600",
