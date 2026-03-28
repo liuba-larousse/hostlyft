@@ -1,4 +1,26 @@
-import { Package, Plus } from "lucide-react";
+import { Package, Plus, ExternalLink, BarChart2 } from "lucide-react";
+import Link from "next/link";
+
+const artifacts = [
+  {
+    id: "revpar-kpi-calculator",
+    title: "RevPAR KPI Calculator",
+    description: "Upload a metrics report to calculate RevPAR targets, market multipliers, and revenue variance by month.",
+    icon: BarChart2,
+    color: "bg-blue-50 text-blue-600",
+    type: "HTML Tool",
+    action: { label: "Open", href: "/artifacts/revpar-kpi-calculator.html", external: true },
+  },
+  {
+    id: "revpar-analytics",
+    title: "RevPAR Analytics",
+    description: "React component for interactive RevPAR analysis — portfolio vs. market breakdown with goal tracking.",
+    icon: BarChart2,
+    color: "bg-violet-50 text-violet-600",
+    type: "React Component",
+    action: { label: "View", href: "/dashboard/artifacts/revpar-analytics", external: false },
+  },
+];
 
 export default function ArtifactsPage() {
   return (
@@ -13,12 +35,48 @@ export default function ArtifactsPage() {
           Upload
         </button>
       </div>
-      <div className="flex flex-col items-center justify-center py-20 text-center">
-        <div className="p-5 bg-blue-50 rounded-2xl mb-5">
-          <Package size={36} className="text-blue-500" strokeWidth={1.5} />
-        </div>
-        <h3 className="font-bold text-lg text-gray-900">No artifacts yet</h3>
-        <p className="text-gray-500 text-base mt-2 max-w-xs">Outputs from agents, uploaded files, and deliverables will appear here.</p>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        {artifacts.map(({ id, title, description, icon: Icon, color, type, action }) => (
+          <div
+            key={id}
+            className="flex flex-col gap-4 p-6 bg-white border border-gray-200 rounded-2xl hover:border-gray-300 hover:shadow-sm transition-all"
+          >
+            <div className="flex items-start gap-4">
+              <div className={`p-3 rounded-xl ${color} shrink-0`}>
+                <Icon size={22} strokeWidth={1.8} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 mb-0.5">
+                  <p className="font-semibold text-base text-gray-900">{title}</p>
+                  <span className="text-xs font-medium text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{type}</span>
+                </div>
+                <p className="text-sm text-gray-500">{description}</p>
+              </div>
+            </div>
+            <div className="flex justify-end">
+              {action.external ? (
+                <a
+                  href={action.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 px-4 py-2 bg-gray-900 text-white text-sm font-semibold rounded-lg hover:bg-gray-700 transition-colors"
+                >
+                  <ExternalLink size={14} />
+                  {action.label}
+                </a>
+              ) : (
+                <Link
+                  href={action.href}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-gray-900 text-white text-sm font-semibold rounded-lg hover:bg-gray-700 transition-colors"
+                >
+                  <Package size={14} />
+                  {action.label}
+                </Link>
+              )}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
