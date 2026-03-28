@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useRef } from 'react';
+import type { JSX } from 'react';
 import * as XLSX from 'xlsx';
 
 // Types
