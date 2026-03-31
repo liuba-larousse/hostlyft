@@ -107,6 +107,10 @@ export default function ClientsView({
   hubspotConnected: boolean;
 }) {
   const [contacts] = useState<Contact[]>(initialContacts);
+  // Local status overrides (so promoting takes effect immediately without waiting for HubSpot cache)
+  const [statusOverrides, setStatusOverrides] = useState<Record<string, Contact['status']>>({});
+  const [promoting, setPromoting] = useState<string | null>(null); // contact id being promoted
+  const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const [togglHours, setTogglHours] = useState<Record<string, number>>({});
   const [togglSynced, setTogglSynced] = useState(false);
   const [togglStatus, setTogglStatus] = useState('Connecting to Toggl...');
@@ -157,6 +161,49 @@ export default function ClientsView({
 
   useEffect(() => { syncToggl(); }, [syncToggl]);
 
+  // ── Toast ────────────────────────────────────────────────────────────────────
+
+  function showToast(msg: string, ok: boolean) {
+    setToast({ msg, ok });
+    setTimeout(() => setToast(null), 4000);
+  }
+
+  // ── Promote to Customer ──────────────────────────────────────────────────────
+
+  async function promoteToCustomer(c: Contact) {
+    setPromoting(c.id);
+    try {
+      // 1. Update HubSpot lifecyclestage
+      const hsRes = await fetch(`/api/hubspot/contacts/${c.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lifecyclestage: 'customer' }),
+      });
+      if (!hsRes.ok) throw new Error('HubSpot update failed');
+
+      // 2. Create Toggl project
+      const projectName = [c.firstName, c.lastName].filter(Boolean).join(' ') || c.name;
+      const tgRes = await fetch('/api/toggl', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: projectName }),
+      });
+      const tgData = await tgRes.json();
+      if (tgData.error) throw new Error(tgData.error);
+
+      // 3. Update local status immediately
+      setStatusOverrides(prev => ({ ...prev, [c.id]: 'customer' }));
+
+      const existed = tgData.existed ? ' (Toggl project already existed)' : '';
+      showToast(`${c.name} promoted to Customer — Toggl project created${existed}`, true);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      showToast(`Error: ${msg}`, false);
+    } finally {
+      setPromoting(null);
+    }
+  }
+
   // ── Helpers ─────────────────────────────────────────────────────────────────
 
   function getHrs(id: string) {
@@ -172,11 +219,16 @@ export default function ClientsView({
 
   // ── Filtered rows ───────────────────────────────────────────────────────────
 
+  function effectiveStatus(c: Contact): Contact['status'] {
+    return statusOverrides[c.id] ?? c.status;
+  }
+
   const filtered = contacts
     .filter(c => {
+      const status = effectiveStatus(c);
       const matchF =
         filter === 'all' ||
-        c.status === filter ||
+        status === filter ||
         (filter === 'subscription' && isSub(c.id));
       const s = search.toLowerCase();
       const matchS = !s ||
@@ -185,7 +237,7 @@ export default function ClientsView({
         c.email.toLowerCase().includes(s);
       return matchF && matchS;
     })
-    .sort((a, b) => STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status));
+    .sort((a, b) => STATUS_ORDER.indexOf(effectiveStatus(a)) - STATUS_ORDER.indexOf(effectiveStatus(b)));
 
   // ── Modal ───────────────────────────────────────────────────────────────────
 
@@ -238,6 +290,16 @@ export default function ClientsView({
 
   return (
     <div className="p-6" key={tick}>
+
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed bottom-6 right-6 z-50 flex items-center gap-2.5 px-4 py-3 rounded-xl shadow-lg text-sm font-medium transition-all ${
+          toast.ok ? 'bg-green-50 border border-green-200 text-green-800' : 'bg-red-50 border border-red-200 text-red-700'
+        }`}>
+          <span>{toast.ok ? '✓' : '✕'}</span>
+          {toast.msg}
+        </div>
+      )}
 
       {/* Header */}
       <div className="flex items-center justify-between mb-5">
@@ -330,25 +392,27 @@ export default function ClientsView({
               const rows: React.ReactNode[] = [];
               let lastStatus = '';
               filtered.forEach(c => {
-                if (c.status !== lastStatus) {
+                const status = effectiveStatus(c);
+                if (status !== lastStatus) {
                   rows.push(
-                    <tr key={'sep-' + c.status}>
+                    <tr key={'sep-' + status}>
                       <td colSpan={7} className="bg-gray-50 px-2.5 py-1 text-gray-400 font-medium uppercase"
                         style={{ fontSize: 10, letterSpacing: '0.05em' }}>
-                        {STATUS_LABELS[c.status] || c.status}
+                        {STATUS_LABELS[status] || status}
                       </td>
                     </tr>
                   );
-                  lastStatus = c.status;
+                  lastStatus = status;
                 }
 
                 const hrs = getHrs(c.id);
                 const synced = (togglHours[c.id] ?? 0) > 0;
                 const bg = avatarBg(c.id);
                 const fg = avatarFg(bg);
-                const st = STATUS_STYLE[c.status];
+                const st = STATUS_STYLE[status];
                 const plat = getPlatform(c.id);
                 const ps = PLAT_STYLE[plat];
+                const isPromoting = promoting === c.id;
 
                 rows.push(
                   <tr key={c.id} className="hover:bg-gray-50 transition-colors">
@@ -371,16 +435,27 @@ export default function ClientsView({
 
                     {/* Status */}
                     <td className="py-2 px-2.5 border-b border-gray-50">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
-                        style={{ background: st.bg, color: st.color }}>
-                        {st.label}
-                      </span>
-                      {isSub(c.id) && (
-                        <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded-lg font-medium"
-                          style={{ fontSize: 10, background: '#FAEEDA', color: '#633806' }}>
-                          ↻ monthly
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+                          style={{ background: st.bg, color: st.color }}>
+                          {isPromoting ? '…' : st.label}
                         </span>
-                      )}
+                        {isSub(c.id) && (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded-lg font-medium"
+                            style={{ fontSize: 10, background: '#FAEEDA', color: '#633806' }}>
+                            ↻ monthly
+                          </span>
+                        )}
+                        {status === 'lead' && !isPromoting && (
+                          <button
+                            onClick={() => promoteToCustomer(c)}
+                            className="inline-flex items-center px-1.5 py-0.5 rounded-full text-xs border border-yellow-300 text-yellow-700 bg-yellow-50 hover:bg-yellow-100 cursor-pointer transition-colors whitespace-nowrap"
+                            style={{ fontSize: 10 }}
+                            title="Promote to Customer — updates HubSpot & creates Toggl project">
+                            → Customer
+                          </button>
+                        )}
+                      </div>
                     </td>
 
                     {/* Platform */}

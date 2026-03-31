@@ -117,3 +117,42 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
+
+export async function POST(req: NextRequest) {
+  if (!TOKEN) return NextResponse.json({ error: 'TOGGL_API_TOKEN not configured' }, { status: 500 });
+
+  const { name } = await req.json() as { name: string };
+  if (!name) return NextResponse.json({ error: 'name required' }, { status: 400 });
+
+  try {
+    const meRes = await fetch(`${BASE}/api/v9/me`, {
+      headers: { Authorization: auth(), 'Content-Type': 'application/json' },
+    });
+    if (!meRes.ok) throw new Error('Toggl auth failed');
+    const me = await meRes.json();
+    const wsId: number = me.default_workspace_id;
+
+    // Check if project already exists
+    const projRes = await fetch(
+      `${BASE}/api/v9/workspaces/${wsId}/projects?active=both&per_page=200`,
+      { headers: { Authorization: auth() } }
+    );
+    const existing: { id: number; name: string }[] = projRes.ok ? await projRes.json() : [];
+    const duplicate = existing.find(p => p.name.toLowerCase() === name.toLowerCase());
+    if (duplicate) {
+      return NextResponse.json({ project: duplicate, existed: true });
+    }
+
+    const res = await fetch(`${BASE}/api/v9/workspaces/${wsId}/projects`, {
+      method: 'POST',
+      headers: { Authorization: auth(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, active: true }),
+    });
+    if (!res.ok) throw new Error('Failed to create Toggl project');
+    const project = await res.json();
+    return NextResponse.json({ project, existed: false });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Unknown error';
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
+}
