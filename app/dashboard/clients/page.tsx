@@ -1,25 +1,65 @@
-import { Briefcase, Plus } from "lucide-react";
+import ClientsView, { type Contact } from '@/components/dashboard/ClientsView';
 
-export default function ClientsPage() {
+async function fetchHubSpotContacts(): Promise<Contact[]> {
+  const token = process.env.HUBSPOT_ACCESS_TOKEN;
+  if (!token) return [];
+
+  const contacts: Contact[] = [];
+  let after: string | undefined;
+
+  do {
+    const params = new URLSearchParams({
+      properties: 'firstname,lastname,email,company,createdate,lifecyclestage',
+      limit: '100',
+      ...(after ? { after } : {}),
+    });
+
+    const res = await fetch(
+      `https://api.hubapi.com/crm/v3/objects/contacts?${params}`,
+      {
+        headers: { Authorization: `Bearer ${token}` },
+        next: { revalidate: 300 },
+      }
+    );
+    if (!res.ok) break;
+
+    const data = await res.json();
+
+    for (const c of data.results ?? []) {
+      const p = c.properties as Record<string, string>;
+      const firstName = p.firstname ?? '';
+      const lastName = p.lastname ?? '';
+      const name = [firstName, lastName].filter(Boolean).join(' ') || 'Unknown';
+      const stage = p.lifecyclestage ?? '';
+
+      let status: Contact['status'] = 'lead';
+      if (stage === 'customer') status = 'customer';
+      else if (!stage || stage === 'other' || stage === 'evangelist') status = 'inactive';
+
+      contacts.push({
+        id: c.id as string,
+        name,
+        firstName,
+        lastName,
+        company: p.company || '—',
+        email: p.email || '',
+        status,
+        added: p.createdate ? p.createdate.split('T')[0] : '',
+      });
+    }
+
+    after = data.paging?.next?.after;
+  } while (after);
+
+  return contacts;
+}
+
+export default async function ClientsPage() {
+  const contacts = await fetchHubSpotContacts();
   return (
-    <div className="p-8 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between mb-10">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Clients</h1>
-          <p className="text-gray-500 mt-2 text-base">Client accounts, projects, and contact information.</p>
-        </div>
-        <button className="flex items-center gap-2 px-5 py-2.5 bg-yellow-400 text-gray-900 rounded-xl text-base font-semibold hover:bg-yellow-500 transition-colors cursor-pointer">
-          <Plus size={16} />
-          Add Client
-        </button>
-      </div>
-      <div className="flex flex-col items-center justify-center py-20 text-center">
-        <div className="p-5 bg-amber-50 rounded-2xl mb-5">
-          <Briefcase size={36} className="text-amber-500" strokeWidth={1.5} />
-        </div>
-        <h3 className="font-bold text-lg text-gray-900">No clients yet</h3>
-        <p className="text-gray-500 text-base mt-2 max-w-xs">Add client accounts here to track projects, contacts, and status.</p>
-      </div>
-    </div>
+    <ClientsView
+      initialContacts={contacts}
+      hubspotConnected={!!process.env.HUBSPOT_ACCESS_TOKEN}
+    />
   );
 }

@@ -1,0 +1,549 @@
+'use client';
+
+import { useState, useEffect, useCallback } from 'react';
+
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+export interface Contact {
+  id: string;
+  name: string;
+  firstName: string;
+  lastName: string;
+  company: string;
+  email: string;
+  status: 'customer' | 'lead' | 'inactive';
+  added: string;
+}
+
+interface TogglProject { id: number; name: string; }
+
+type Filter = 'all' | 'customer' | 'lead' | 'inactive' | 'subscription';
+type Platform = 'none' | 'HubSpot' | 'Upwork' | 'Fiverr';
+
+// ─── Constants ───────────────────────────────────────────────────────────────
+
+const PLATFORMS: Platform[] = ['none', 'HubSpot', 'Upwork', 'Fiverr'];
+
+const PLAT_STYLE: Record<Platform, { bg: string; color: string }> = {
+  none:    { bg: '#F1EFE8', color: '#5F5E5A' },
+  HubSpot: { bg: '#FAECE7', color: '#712B13' },
+  Upwork:  { bg: '#EAF3DE', color: '#27500A' },
+  Fiverr:  { bg: '#EEEDFE', color: '#3C3489' },
+};
+
+const STATUS_STYLE: Record<string, { bg: string; color: string; label: string }> = {
+  customer: { bg: '#EAF3DE', color: '#27500A', label: 'Customer' },
+  lead:     { bg: '#E6F1FB', color: '#0C447C', label: 'Lead' },
+  inactive: { bg: '#F1EFE8', color: '#444441', label: 'Inactive' },
+};
+
+const STATUS_ORDER = ['customer', 'lead', 'inactive'];
+const STATUS_LABELS: Record<string, string> = {
+  customer: 'Customers',
+  lead: 'Leads',
+  inactive: 'Past / inactive',
+};
+
+const WEEK_KEYS = ['w3', 'w2', 'w1', 'w0'] as const; // oldest → newest
+const AVATAR_COLORS = ['#B5D4F4','#9FE1CB','#CECBF6','#F5C4B3','#C0DD97','#FAC775','#F4C0D1'];
+const SYM: Record<string, string> = { USD: '$', EUR: '€', GBP: '£' };
+
+// ─── Utils ───────────────────────────────────────────────────────────────────
+
+function ls(k: string, v?: string): string | null {
+  if (typeof window === 'undefined') return null;
+  if (v === undefined) return localStorage.getItem(k);
+  localStorage.setItem(k, v);
+  return null;
+}
+
+function lsj<T>(k: string, v?: T): T {
+  if (typeof window === 'undefined') return {} as T;
+  if (v === undefined) {
+    try { return JSON.parse(localStorage.getItem(k) || '{}') as T; } catch { return {} as T; }
+  }
+  localStorage.setItem(k, JSON.stringify(v));
+  return v;
+}
+
+function avatarBg(id: string) { return AVATAR_COLORS[parseInt(id.slice(-2), 10) % AVATAR_COLORS.length]; }
+function avatarFg(hex: string) {
+  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+  return (r * 0.299 + g * 0.587 + b * 0.114) > 150 ? '#1a1a1a' : '#f5f5f5';
+}
+function initials(n: string) { return n.split(' ').slice(0,2).map(w => w[0] || '').join('').toUpperCase(); }
+
+function matchContact(c: Contact, projectName: string): boolean {
+  const pn = projectName.toLowerCase();
+  const fn = c.firstName.toLowerCase();
+  const ln = c.lastName.toLowerCase();
+  const co = c.company.toLowerCase().split(' ')[0];
+  return (
+    (fn.length > 2 && pn.includes(fn)) ||
+    (ln.length > 2 && pn.includes(ln)) ||
+    (co.length > 3 && co !== '—' && pn.includes(co))
+  );
+}
+
+function weekLabels(): string[] {
+  return [3, 2, 1, 0].map(i => {
+    const now = new Date();
+    now.setDate(now.getDate() - i * 7);
+    const start = new Date(now);
+    start.setDate(now.getDate() - now.getDay() + 1);
+    const end = new Date(start); end.setDate(start.getDate() + 6);
+    const fmt = (d: Date) => d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+    return `${fmt(start)} – ${fmt(end)}`;
+  });
+}
+
+// ─── Component ───────────────────────────────────────────────────────────────
+
+export default function ClientsView({
+  initialContacts,
+  hubspotConnected,
+}: {
+  initialContacts: Contact[];
+  hubspotConnected: boolean;
+}) {
+  const [contacts] = useState<Contact[]>(initialContacts);
+  const [togglHours, setTogglHours] = useState<Record<string, number>>({});
+  const [togglSynced, setTogglSynced] = useState(false);
+  const [togglStatus, setTogglStatus] = useState('Connecting to Toggl...');
+  const [filter, setFilter] = useState<Filter>('all');
+  const [search, setSearch] = useState('');
+  const [tick, setTick] = useState(0); // forces re-read of localStorage
+
+  // Modal
+  const [modalId, setModalId] = useState<string | null>(null);
+  const [weekInputs, setWeekInputs] = useState<Record<string, number>>({});
+  const [rate, setRate] = useState(0);
+  const [currency, setCurrency] = useState('USD');
+  const [weeklyLoading, setWeeklyLoading] = useState(false);
+
+  const labels = weekLabels();
+  const modalContact = modalId ? contacts.find(c => c.id === modalId) ?? null : null;
+
+  // ── Toggl sync ──────────────────────────────────────────────────────────────
+
+  const syncToggl = useCallback(async () => {
+    setTogglStatus('Syncing with Toggl...');
+    try {
+      const res = await fetch('/api/toggl?action=sync');
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      const projects: TogglProject[] = data.projects || [];
+      const hours: Record<string, number> = {};
+
+      (data.weekGroups as { projectId: number; seconds: number }[]).forEach(g => {
+        const proj = projects.find(p => p.id === g.projectId);
+        if (!proj) return;
+        contacts.forEach(c => {
+          if (matchContact(c, proj.name)) {
+            hours[c.id] = (hours[c.id] || 0) + g.seconds / 3600;
+          }
+        });
+      });
+
+      setTogglHours(hours);
+      setTogglSynced(true);
+      setTogglStatus(`Toggl synced — ${data.email} — ${new Date().toLocaleTimeString()}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'error';
+      setTogglStatus(`Could not connect to Toggl — ${msg}`);
+    }
+  }, [contacts]);
+
+  useEffect(() => { syncToggl(); }, [syncToggl]);
+
+  // ── Helpers ─────────────────────────────────────────────────────────────────
+
+  function getHrs(id: string) {
+    const synced = togglHours[id] ?? 0;
+    return synced > 0 ? synced : (parseFloat(ls('hrs_' + id) || '0') || 0);
+  }
+
+  function getPlatform(id: string): Platform {
+    return (ls('plat_' + id) as Platform) || 'none';
+  }
+
+  function isSub(id: string) { return !!(lsj<{ v?: boolean }>('sub_' + id)?.v); }
+
+  // ── Filtered rows ───────────────────────────────────────────────────────────
+
+  const filtered = contacts
+    .filter(c => {
+      const matchF =
+        filter === 'all' ||
+        c.status === filter ||
+        (filter === 'subscription' && isSub(c.id));
+      const s = search.toLowerCase();
+      const matchS = !s ||
+        c.name.toLowerCase().includes(s) ||
+        c.company.toLowerCase().includes(s) ||
+        c.email.toLowerCase().includes(s);
+      return matchF && matchS;
+    })
+    .sort((a, b) => STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status));
+
+  // ── Modal ───────────────────────────────────────────────────────────────────
+
+  async function openModal(id: string) {
+    const c = contacts.find(x => x.id === id);
+    if (!c) return;
+    setModalId(id);
+    setRate(parseFloat(ls('rate_' + id) || '0') || 0);
+    setCurrency(ls('cur_' + id) || 'USD');
+    const stored = lsj<Record<string, number>>('wk_' + id);
+    setWeekInputs(stored);
+
+    if (togglSynced) {
+      setWeeklyLoading(true);
+      try {
+        const res = await fetch(
+          `/api/toggl?action=weekly&firstName=${encodeURIComponent(c.firstName)}&company=${encodeURIComponent(c.company)}`
+        );
+        const data = await res.json();
+        if (data.hoursByWeek) {
+          setWeekInputs(prev => {
+            const merged = { ...prev };
+            Object.entries(data.hoursByWeek as Record<string, number>).forEach(([k, v]) => {
+              if (v > 0) merged[k] = v;
+            });
+            return merged;
+          });
+        }
+      } catch { /* ignore */ }
+      setWeeklyLoading(false);
+    }
+  }
+
+  function saveModal() {
+    if (!modalId) return;
+    lsj('wk_' + modalId, weekInputs);
+    ls('rate_' + modalId, String(rate));
+    ls('cur_' + modalId, currency);
+    ls('hrs_' + modalId, String(weekInputs['w0'] || 0));
+    setTick(t => t + 1);
+  }
+
+  function closeModal() { setModalId(null); setWeekInputs({}); }
+
+  // ── Computed ─────────────────────────────────────────────────────────────────
+  const totalWeekHrs = WEEK_KEYS.reduce((s, k) => s + (weekInputs[k] || 0), 0);
+  const maxHrs = Math.max(...WEEK_KEYS.map(k => weekInputs[k] || 0), 1);
+
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  return (
+    <div className="p-6" key={tick}>
+
+      {/* Header */}
+      <div className="flex items-center justify-between mb-5">
+        <h1 className="text-xl font-medium text-gray-900">Clients &amp; leads</h1>
+        <div className="flex items-center gap-4 text-xs font-medium">
+          <a href="https://track.toggl.com" target="_blank" rel="noopener"
+            className="flex items-center gap-1.5" style={{ color: '#9B2EAD' }}>
+            <span className="w-2 h-2 rounded-full" style={{ background: '#E57CD8' }} />
+            Toggl
+          </a>
+          <a href="https://app-eu1.hubspot.com/contacts/146532818/contacts/list/all/all/"
+            target="_blank" rel="noopener" className="flex items-center gap-1.5 text-blue-600">
+            <span className="w-2 h-2 rounded-full bg-blue-400" />
+            HubSpot
+          </a>
+        </div>
+      </div>
+
+      {/* Toggl banner */}
+      <div className="flex items-center gap-2.5 bg-gray-50 border border-gray-100 rounded-lg px-3.5 py-2.5 mb-4 text-xs flex-wrap">
+        <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: '#E57CD8' }} />
+        <span className="flex-1 text-gray-500">{togglStatus}</span>
+        <button onClick={syncToggl}
+          className="px-3 py-1 rounded-full border text-xs font-medium cursor-pointer"
+          style={{ borderColor: '#E57CD8', color: '#9B2EAD' }}>
+          ↻ Sync now
+        </button>
+      </div>
+
+      {/* HubSpot setup notice */}
+      {!hubspotConnected && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg px-3.5 py-2.5 mb-4 text-xs text-amber-700">
+          HubSpot not connected — add{' '}
+          <code className="font-mono bg-amber-100 px-1 rounded">HUBSPOT_ACCESS_TOKEN</code>{' '}
+          to <code className="font-mono bg-amber-100 px-1 rounded">.env.local</code>.
+          Create a Private App in HubSpot with <code className="font-mono bg-amber-100 px-1 rounded">crm.objects.contacts.read</code> scope.
+        </div>
+      )}
+
+      {/* Metrics */}
+      <div className="grid gap-2.5 mb-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))' }}>
+        {[
+          { label: 'Total contacts', value: contacts.length },
+          { label: 'Customers', value: contacts.filter(c => c.status === 'customer').length },
+          { label: 'Leads', value: contacts.filter(c => c.status === 'lead').length },
+          { label: 'Toggl hrs (week)', value: contacts.reduce((s, c) => s + getHrs(c.id), 0).toFixed(1) },
+        ].map(m => (
+          <div key={m.label} className="bg-gray-50 rounded-lg px-3.5 py-3">
+            <div className="text-xs text-gray-400 mb-1">{m.label}</div>
+            <div className="text-xl font-medium text-gray-900">{m.value}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Filters */}
+      <div className="flex gap-2 mb-4 flex-wrap items-center">
+        {(['all', 'customer', 'lead', 'subscription'] as Filter[]).map(f => (
+          <button key={f} onClick={() => setFilter(f)}
+            className={`px-3 py-1 text-xs rounded-full border cursor-pointer transition-colors ${
+              filter === f
+                ? 'bg-gray-100 text-gray-900 border-gray-300 font-medium'
+                : 'text-gray-400 border-gray-200 hover:text-gray-700'
+            }`}>
+            {f === 'all' ? 'All' : f === 'subscription' ? 'Subscriptions' : f.charAt(0).toUpperCase() + f.slice(1) + 's'}
+          </button>
+        ))}
+        <input
+          className="px-3 py-1 text-xs rounded-full border border-gray-200 bg-transparent text-gray-900 outline-none w-48"
+          placeholder="Search name or company..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
+      </div>
+
+      {/* Table */}
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse">
+          <thead>
+            <tr>
+              {['Name', 'Company', 'Status', 'Platform', 'Toggl hrs (week)', 'Breakdown', 'Added'].map(h => (
+                <th key={h} className="text-left text-gray-400 font-medium uppercase py-2 px-2.5 border-b border-gray-100 whitespace-nowrap"
+                  style={{ fontSize: 10, letterSpacing: '0.05em' }}>
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {(() => {
+              const rows: React.ReactNode[] = [];
+              let lastStatus = '';
+              filtered.forEach(c => {
+                if (c.status !== lastStatus) {
+                  rows.push(
+                    <tr key={'sep-' + c.status}>
+                      <td colSpan={7} className="bg-gray-50 px-2.5 py-1 text-gray-400 font-medium uppercase"
+                        style={{ fontSize: 10, letterSpacing: '0.05em' }}>
+                        {STATUS_LABELS[c.status] || c.status}
+                      </td>
+                    </tr>
+                  );
+                  lastStatus = c.status;
+                }
+
+                const hrs = getHrs(c.id);
+                const synced = (togglHours[c.id] ?? 0) > 0;
+                const bg = avatarBg(c.id);
+                const fg = avatarFg(bg);
+                const st = STATUS_STYLE[c.status];
+                const plat = getPlatform(c.id);
+                const ps = PLAT_STYLE[plat];
+
+                rows.push(
+                  <tr key={c.id} className="hover:bg-gray-50 transition-colors">
+                    {/* Name */}
+                    <td className="py-2 px-2.5 border-b border-gray-50">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-full flex items-center justify-center font-medium flex-shrink-0"
+                          style={{ background: bg, color: fg, fontSize: 10 }}>
+                          {initials(c.name)}
+                        </div>
+                        <div>
+                          <div className="text-xs font-medium text-gray-900">{c.name}</div>
+                          <div className="text-gray-400" style={{ fontSize: 10 }}>{c.email}</div>
+                        </div>
+                      </div>
+                    </td>
+
+                    {/* Company */}
+                    <td className="py-2 px-2.5 border-b border-gray-50 text-xs text-gray-500">{c.company}</td>
+
+                    {/* Status */}
+                    <td className="py-2 px-2.5 border-b border-gray-50">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+                        style={{ background: st.bg, color: st.color }}>
+                        {st.label}
+                      </span>
+                      {isSub(c.id) && (
+                        <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded-lg font-medium"
+                          style={{ fontSize: 10, background: '#FAEEDA', color: '#633806' }}>
+                          ↻ monthly
+                        </span>
+                      )}
+                    </td>
+
+                    {/* Platform */}
+                    <td className="py-2 px-2.5 border-b border-gray-50">
+                      <select
+                        className="rounded-full px-2 py-0.5 border-0 cursor-pointer font-medium"
+                        style={{ background: ps.bg, color: ps.color, fontSize: 11 }}
+                        value={plat}
+                        onChange={e => { ls('plat_' + c.id, e.target.value); setTick(t => t + 1); }}>
+                        {PLATFORMS.map(p => (
+                          <option key={p} value={p}>{p === 'none' ? '— platform' : p}</option>
+                        ))}
+                      </select>
+                    </td>
+
+                    {/* Hours */}
+                    <td className="py-2 px-2.5 border-b border-gray-50">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+                        style={{
+                          background: synced ? '#F9E8FD' : '#F1EFE8',
+                          color: synced ? '#9B2EAD' : '#5F5E5A',
+                        }}>
+                        {synced && <span style={{ fontSize: 6 }}>●</span>}
+                        {hrs.toFixed(1)} hrs{synced ? ' (Toggl)' : ''}
+                      </span>
+                      {!synced && (
+                        <input
+                          type="number" min="0" step="0.5"
+                          defaultValue={hrs || ''}
+                          placeholder="0"
+                          className="w-11 ml-1.5 text-center text-xs px-1 py-0.5 border border-gray-200 rounded bg-transparent text-gray-900 outline-none"
+                          onChange={e => { ls('hrs_' + c.id, e.target.value); setTick(t => t + 1); }}
+                        />
+                      )}
+                    </td>
+
+                    {/* Weekly */}
+                    <td className="py-2 px-2.5 border-b border-gray-50">
+                      <button onClick={() => openModal(c.id)}
+                        className="px-2.5 py-1 text-xs border border-gray-200 rounded-full text-gray-400 hover:text-gray-700 hover:bg-gray-50 cursor-pointer transition-colors">
+                        Weekly ↗
+                      </button>
+                    </td>
+
+                    {/* Added */}
+                    <td className="py-2 px-2.5 border-b border-gray-50 text-gray-400 whitespace-nowrap"
+                      style={{ fontSize: 10 }}>
+                      {c.added}
+                    </td>
+                  </tr>
+                );
+              });
+              if (filtered.length === 0) rows.push(
+                <tr key="empty">
+                  <td colSpan={7} className="py-12 text-center text-sm text-gray-400">
+                    No contacts found
+                  </td>
+                </tr>
+              );
+              return rows;
+            })()}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Modal */}
+      {modalContact && (
+        <div
+          className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+          onClick={e => { if (e.target === e.currentTarget) closeModal(); }}>
+          <div className="bg-white rounded-xl border border-gray-100 shadow-xl p-5 w-full max-w-md max-h-[85vh] overflow-y-auto">
+
+            {/* Modal header */}
+            <div className="flex justify-between items-start mb-4">
+              <div>
+                <div className="text-sm font-medium text-gray-900">{modalContact.name}</div>
+                <div className="text-xs text-gray-400 mt-0.5">
+                  {modalContact.company !== '—' ? modalContact.company : modalContact.email}
+                </div>
+              </div>
+              <button onClick={closeModal} className="text-gray-300 hover:text-gray-500 text-base leading-none cursor-pointer">✕</button>
+            </div>
+
+            {/* Rate */}
+            <div className="grid grid-cols-2 gap-2 mb-3">
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Hourly rate</label>
+                <input type="number" min="0" value={rate || ''}
+                  onChange={e => setRate(parseFloat(e.target.value) || 0)}
+                  placeholder="e.g. 25"
+                  className="w-full text-xs px-2 py-1.5 border border-gray-200 rounded-md bg-transparent text-gray-900 outline-none" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Currency</label>
+                <select value={currency} onChange={e => setCurrency(e.target.value)}
+                  className="w-full text-xs px-2 py-1.5 border border-gray-200 rounded-md bg-transparent text-gray-900 outline-none">
+                  <option>USD</option><option>EUR</option><option>GBP</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Week inputs */}
+            <div className="text-xs text-gray-400 font-medium mb-2">
+              Weekly hours{weeklyLoading ? ' — loading from Toggl…' : ' — edit or pulled from Toggl'}
+            </div>
+            <div className="grid grid-cols-2 gap-2 mb-3">
+              {WEEK_KEYS.map((key, i) => (
+                <div key={key}>
+                  <label className="block text-xs text-gray-400 mb-1">{labels[i]}</label>
+                  <input
+                    type="number" min="0" step="0.5"
+                    value={weekInputs[key] || ''}
+                    placeholder="0 hrs"
+                    onChange={e => setWeekInputs(prev => ({ ...prev, [key]: parseFloat(e.target.value) || 0 }))}
+                    className="w-full text-xs px-2 py-1.5 border border-gray-200 rounded-md bg-transparent text-gray-900 outline-none"
+                  />
+                </div>
+              ))}
+            </div>
+
+            <button onClick={saveModal}
+              className="w-full py-2 text-xs font-medium rounded-lg border border-gray-200 bg-gray-50 hover:bg-gray-100 text-gray-700 cursor-pointer mb-4 transition-colors">
+              Save
+            </button>
+
+            {/* Bars */}
+            <div className="border-t border-gray-100 pt-3">
+              <div className="text-xs text-gray-400 font-medium mb-2">Hours summary</div>
+              {WEEK_KEYS.map((key, i) => {
+                const val = weekInputs[key] || 0;
+                return (
+                  <div key={key} className="grid items-center gap-2 mb-1.5"
+                    style={{ gridTemplateColumns: '90px 1fr 44px' }}>
+                    <span className="text-xs text-gray-400 truncate">{labels[i].split('–')[0].trim()}</span>
+                    <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                      <div className="h-1.5 rounded-full transition-all"
+                        style={{ width: `${Math.round(val / maxHrs * 100)}%`, background: '#E57CD8' }} />
+                    </div>
+                    <span className="text-xs font-medium text-right text-gray-700">{val.toFixed(1)}</span>
+                  </div>
+                );
+              })}
+              <div className="flex justify-between text-xs border-t border-gray-100 pt-2 mt-1">
+                <span className="text-gray-900">Total</span>
+                <span className="font-medium text-gray-900">{totalWeekHrs.toFixed(1)} hrs</span>
+              </div>
+              <div className="flex justify-between text-xs mt-1">
+                <span className="text-gray-400">Est. invoice</span>
+                <span className="font-medium" style={{ color: '#27500A' }}>
+                  {rate ? `${SYM[currency] || '$'}${Math.round(totalWeekHrs * rate).toLocaleString()}` : '—'}
+                </span>
+              </div>
+            </div>
+
+            <a href="https://track.toggl.com/reports/summary" target="_blank" rel="noopener"
+              className="inline-flex items-center gap-1.5 text-xs font-medium mt-3"
+              style={{ color: '#9B2EAD' }}>
+              <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#E57CD8' }} />
+              View in Toggl reports
+            </a>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
