@@ -125,8 +125,15 @@ export default function ClientsView({
   const [currency, setCurrency] = useState('USD');
   const [weeklyLoading, setWeeklyLoading] = useState(false);
 
+  // Add Customer modal
+  const [addOpen, setAddOpen] = useState(false);
+  const [addForm, setAddForm] = useState({ firstName: '', lastName: '', email: '', company: '' });
+  const [addLoading, setAddLoading] = useState(false);
+  const [localContacts, setLocalContacts] = useState<Contact[]>([]);
+
   const labels = weekLabels();
-  const modalContact = modalId ? contacts.find(c => c.id === modalId) ?? null : null;
+  const allContacts = [...contacts, ...localContacts];
+  const modalContact = modalId ? allContacts.find(c => c.id === modalId) ?? null : null;
 
   // ── Toggl sync ──────────────────────────────────────────────────────────────
 
@@ -223,7 +230,7 @@ export default function ClientsView({
     return statusOverrides[c.id] ?? c.status;
   }
 
-  const filtered = contacts
+  const filtered = allContacts
     .filter(c => {
       const status = effectiveStatus(c);
       const matchF =
@@ -242,7 +249,7 @@ export default function ClientsView({
   // ── Modal ───────────────────────────────────────────────────────────────────
 
   async function openModal(id: string) {
-    const c = contacts.find(x => x.id === id);
+    const c = allContacts.find(x => x.id === id);
     if (!c) return;
     setModalId(id);
     setRate(parseFloat(ls('rate_' + id) || '0') || 0);
@@ -282,6 +289,59 @@ export default function ClientsView({
 
   function closeModal() { setModalId(null); setWeekInputs({}); }
 
+  // ── Add Customer ─────────────────────────────────────────────────────────────
+
+  async function addCustomer() {
+    const { firstName, lastName, email, company } = addForm;
+    if (!firstName && !lastName) return;
+    setAddLoading(true);
+    try {
+      // 1. Create HubSpot contact as customer
+      const hsRes = await fetch('/api/hubspot/contacts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ firstName, lastName, email, company }),
+      });
+      const hsData = await hsRes.json();
+      if (!hsRes.ok) throw new Error(hsData.message || hsData.error || 'HubSpot error');
+
+      const newId: string = hsData.contact?.id || String(Date.now());
+      const name = [firstName, lastName].filter(Boolean).join(' ');
+
+      // 2. Create Toggl project
+      const tgRes = await fetch('/api/toggl', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      const tgData = await tgRes.json();
+      if (tgData.error) throw new Error(tgData.error);
+
+      // 3. Add to local state
+      const newContact: Contact = {
+        id: newId,
+        name,
+        firstName,
+        lastName,
+        company: company || '—',
+        email,
+        status: 'customer',
+        added: new Date().toISOString().split('T')[0],
+      };
+      setLocalContacts(prev => [newContact, ...prev]);
+      setAddOpen(false);
+      setAddForm({ firstName: '', lastName: '', email: '', company: '' });
+
+      const existed = tgData.existed ? ' (Toggl project already existed)' : '';
+      showToast(`${name} added as Customer — Toggl project created${existed}`, true);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      showToast(`Error: ${msg}`, false);
+    } finally {
+      setAddLoading(false);
+    }
+  }
+
   // ── Computed ─────────────────────────────────────────────────────────────────
   const totalWeekHrs = WEEK_KEYS.reduce((s, k) => s + (weekInputs[k] || 0), 0);
   const maxHrs = Math.max(...WEEK_KEYS.map(k => weekInputs[k] || 0), 1);
@@ -315,6 +375,11 @@ export default function ClientsView({
             <span className="w-2 h-2 rounded-full bg-blue-400" />
             HubSpot
           </a>
+          <button
+            onClick={() => setAddOpen(true)}
+            className="px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-900 text-white hover:bg-gray-700 cursor-pointer transition-colors">
+            + New Customer
+          </button>
         </div>
       </div>
 
@@ -342,10 +407,10 @@ export default function ClientsView({
       {/* Metrics */}
       <div className="grid gap-2.5 mb-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))' }}>
         {[
-          { label: 'Total contacts', value: contacts.length },
-          { label: 'Customers', value: contacts.filter(c => c.status === 'customer').length },
-          { label: 'Leads', value: contacts.filter(c => c.status === 'lead').length },
-          { label: 'Toggl hrs (week)', value: contacts.reduce((s, c) => s + getHrs(c.id), 0).toFixed(1) },
+          { label: 'Total contacts', value: allContacts.length },
+          { label: 'Customers', value: allContacts.filter(c => effectiveStatus(c) === 'customer').length },
+          { label: 'Leads', value: allContacts.filter(c => effectiveStatus(c) === 'lead').length },
+          { label: 'Toggl hrs (week)', value: allContacts.reduce((s, c) => s + getHrs(c.id), 0).toFixed(1) },
         ].map(m => (
           <div key={m.label} className="bg-gray-50 rounded-lg px-3.5 py-3">
             <div className="text-xs text-gray-400 mb-1">{m.label}</div>
@@ -520,6 +585,71 @@ export default function ClientsView({
           </tbody>
         </table>
       </div>
+
+      {/* Add Customer Modal */}
+      {addOpen && (
+        <div
+          className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+          onClick={e => { if (e.target === e.currentTarget) setAddOpen(false); }}>
+          <div className="bg-white rounded-xl border border-gray-100 shadow-xl p-5 w-full max-w-sm">
+            <div className="flex justify-between items-center mb-4">
+              <div className="text-sm font-medium text-gray-900">New Customer</div>
+              <button onClick={() => setAddOpen(false)} className="text-gray-300 hover:text-gray-500 text-base leading-none cursor-pointer">✕</button>
+            </div>
+            <div className="grid grid-cols-2 gap-2 mb-2">
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">First name *</label>
+                <input
+                  type="text"
+                  value={addForm.firstName}
+                  onChange={e => setAddForm(f => ({ ...f, firstName: e.target.value }))}
+                  placeholder="Jane"
+                  className="w-full text-xs px-2 py-1.5 border border-gray-200 rounded-md bg-transparent text-gray-900 outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Last name</label>
+                <input
+                  type="text"
+                  value={addForm.lastName}
+                  onChange={e => setAddForm(f => ({ ...f, lastName: e.target.value }))}
+                  placeholder="Smith"
+                  className="w-full text-xs px-2 py-1.5 border border-gray-200 rounded-md bg-transparent text-gray-900 outline-none"
+                />
+              </div>
+            </div>
+            <div className="mb-2">
+              <label className="block text-xs text-gray-400 mb-1">Email</label>
+              <input
+                type="email"
+                value={addForm.email}
+                onChange={e => setAddForm(f => ({ ...f, email: e.target.value }))}
+                placeholder="jane@example.com"
+                className="w-full text-xs px-2 py-1.5 border border-gray-200 rounded-md bg-transparent text-gray-900 outline-none"
+              />
+            </div>
+            <div className="mb-4">
+              <label className="block text-xs text-gray-400 mb-1">Company</label>
+              <input
+                type="text"
+                value={addForm.company}
+                onChange={e => setAddForm(f => ({ ...f, company: e.target.value }))}
+                placeholder="Acme Inc."
+                className="w-full text-xs px-2 py-1.5 border border-gray-200 rounded-md bg-transparent text-gray-900 outline-none"
+              />
+            </div>
+            <div className="text-xs text-gray-400 mb-3">
+              Creates contact in HubSpot as <strong>Customer</strong> and creates a matching Toggl project.
+            </div>
+            <button
+              onClick={addCustomer}
+              disabled={addLoading || (!addForm.firstName && !addForm.lastName)}
+              className="w-full py-2 text-xs font-medium rounded-lg bg-gray-900 text-white hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors">
+              {addLoading ? 'Creating…' : 'Create Customer'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Modal */}
       {modalContact && (
