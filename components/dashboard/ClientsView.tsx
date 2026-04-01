@@ -260,8 +260,15 @@ export default function ClientsView({
       setTogglHours(hours);
       setTogglClientIds(clientIds);
       setTogglBreakdown(breakdown);
+      const totalHrs = Object.values(hours).reduce((s, h) => s + h, 0);
+      const matchedClients = Object.keys(clientIds).length;
+      const projectsWithClient = (data.projects as TogglProject[]).filter((p: TogglProject) => p.clientId).length;
       setTogglSynced(true);
-      setTogglStatus(`Toggl synced — ${data.email} — ${DATE_RANGE_LABELS[range]} — ${new Date().toLocaleTimeString()}`);
+      setTogglStatus(
+        totalHrs > 0
+          ? `Toggl synced — ${data.email} — ${DATE_RANGE_LABELS[range]} — ${totalHrs.toFixed(1)} hrs across ${matchedClients} clients — ${new Date().toLocaleTimeString()}`
+          : `Toggl synced — ${DATE_RANGE_LABELS[range]} — 0 hrs found (${projectsWithClient} projects have a client assigned, ${(data.weekGroups as {projectId:number;seconds:number}[]).length} projects have entries) — try a wider range`
+      );
 
       // Persist to localStorage so data survives page refresh
       lsj<TogglCache>('toggl_cache', {
