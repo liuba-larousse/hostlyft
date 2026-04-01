@@ -19,6 +19,14 @@ export interface Contact {
     closeDate: string;
     paid: boolean;
   };
+  lastInvoice?: {
+    amount: string;
+    currency: string;
+    invoiceDate: string;
+    dueDate: string;
+    status: string; // PAID | OUTSTANDING | OVERDUE | VOIDED | DRAFT
+    invoiceNumber: string;
+  };
 }
 
 interface TogglProject { id: number; name: string; }
@@ -41,6 +49,14 @@ const STATUS_STYLE: Record<string, { bg: string; color: string; label: string }>
   customer: { bg: '#EAF3DE', color: '#27500A', label: 'Customer' },
   lead:     { bg: '#E6F1FB', color: '#0C447C', label: 'Lead' },
   inactive: { bg: '#F1EFE8', color: '#444441', label: 'Inactive' },
+};
+
+const INVOICE_STATUS: Record<string, { bg: string; color: string; label: string }> = {
+  PAID:        { bg: '#EAF3DE', color: '#27500A', label: 'Paid' },
+  OUTSTANDING: { bg: '#FAEEDA', color: '#633806', label: 'Due' },
+  OVERDUE:     { bg: '#FEE2E2', color: '#991B1B', label: 'Overdue' },
+  VOIDED:      { bg: '#F1EFE8', color: '#5F5E5A', label: 'Voided' },
+  DRAFT:       { bg: '#F1EFE8', color: '#5F5E5A', label: 'Draft' },
 };
 
 const STATUS_ORDER = ['customer', 'lead', 'inactive'];
@@ -607,22 +623,36 @@ export default function ClientsView({
 
                     {/* Last Invoice */}
                     <td className="py-2 px-2.5 border-b border-gray-50">
-                      {c.lastDeal?.closeDate ? (
+                      {c.lastInvoice?.invoiceDate ? (() => {
+                        const inv = c.lastInvoice!;
+                        const st = INVOICE_STATUS[inv.status] ?? { bg: '#F1EFE8', color: '#5F5E5A', label: inv.status };
+                        return (
+                          <div>
+                            <div className="flex items-center gap-1.5 mb-0.5">
+                              <span className="text-xs font-medium text-gray-900">
+                                {inv.amount ? `${SYM[inv.currency] || inv.currency || '$'}${parseFloat(inv.amount).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—'}
+                              </span>
+                              <span className="inline-flex items-center px-1.5 rounded-full font-medium"
+                                style={{ fontSize: 10, background: st.bg, color: st.color }}>
+                                {st.label}
+                              </span>
+                            </div>
+                            <div className="text-gray-400" style={{ fontSize: 10 }}>
+                              {inv.invoiceNumber ? `#${inv.invoiceNumber} · ` : ''}{inv.invoiceDate}
+                            </div>
+                          </div>
+                        );
+                      })() : c.lastDeal?.closeDate ? (
                         <div>
                           <div className="flex items-center gap-1.5 mb-0.5">
                             <span className="text-xs font-medium text-gray-900">
-                              {c.lastDeal.amount
-                                ? `${SYM[c.lastDeal.currency] || c.lastDeal.currency || '$'}${parseFloat(c.lastDeal.amount).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
-                                : '—'}
+                              {c.lastDeal.amount ? `${SYM[c.lastDeal.currency] || c.lastDeal.currency || '$'}${parseFloat(c.lastDeal.amount).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—'}
                             </span>
                             <span className="inline-flex items-center px-1.5 rounded-full font-medium"
-                              style={{
-                                fontSize: 10,
-                                background: c.lastDeal.paid ? '#EAF3DE' : '#FAEEDA',
-                                color: c.lastDeal.paid ? '#27500A' : '#633806',
-                              }}>
+                              style={{ fontSize: 10, background: c.lastDeal.paid ? '#EAF3DE' : '#FAEEDA', color: c.lastDeal.paid ? '#27500A' : '#633806' }}>
                               {c.lastDeal.paid ? 'Paid' : 'Due'}
                             </span>
+                            <span className="text-gray-300" style={{ fontSize: 9 }}>deal</span>
                           </div>
                           <div className="text-gray-400" style={{ fontSize: 10 }}>{c.lastDeal.closeDate}</div>
                         </div>
@@ -797,10 +827,34 @@ export default function ClientsView({
               <button onClick={closeModal} className="text-gray-300 hover:text-gray-500 text-base leading-none cursor-pointer">✕</button>
             </div>
 
-            {/* Last HubSpot Deal */}
-            {modalContact.lastDeal?.closeDate && (
+            {/* Last Invoice (preferred) or Last Deal (fallback) */}
+            {modalContact.lastInvoice?.invoiceDate ? (() => {
+              const inv = modalContact.lastInvoice!;
+              const st = INVOICE_STATUS[inv.status] ?? { bg: '#F1EFE8', color: '#5F5E5A', label: inv.status };
+              return (
+                <div className="bg-gray-50 rounded-lg px-3 py-2.5 mb-4 border border-gray-100">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="text-xs text-gray-400 font-medium">Last Invoice</div>
+                    {inv.invoiceNumber && <div className="text-xs text-gray-400">#{inv.invoiceNumber}</div>}
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-sm font-semibold text-gray-900">
+                        {inv.amount ? `${SYM[inv.currency] || inv.currency || '$'}${parseFloat(inv.amount).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : 'No amount set'}
+                      </div>
+                      <div className="text-xs text-gray-400 mt-0.5">
+                        Issued {inv.invoiceDate}{inv.dueDate ? ` · Due ${inv.dueDate}` : ''}
+                      </div>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full text-xs font-medium" style={{ background: st.bg, color: st.color }}>
+                      {st.label}
+                    </span>
+                  </div>
+                </div>
+              );
+            })() : modalContact.lastDeal?.closeDate ? (
               <div className="bg-gray-50 rounded-lg px-3 py-2.5 mb-4 border border-gray-100">
-                <div className="text-xs text-gray-400 font-medium mb-1.5">Last HubSpot Deal</div>
+                <div className="text-xs text-gray-400 font-medium mb-1.5">Last Deal</div>
                 <div className="flex items-center justify-between">
                   <div>
                     <div className="text-sm font-semibold text-gray-900">
@@ -811,15 +865,12 @@ export default function ClientsView({
                     <div className="text-xs text-gray-400 mt-0.5">{modalContact.lastDeal.closeDate}</div>
                   </div>
                   <span className="px-2 py-0.5 rounded-full text-xs font-medium"
-                    style={{
-                      background: modalContact.lastDeal.paid ? '#EAF3DE' : '#FAEEDA',
-                      color: modalContact.lastDeal.paid ? '#27500A' : '#633806',
-                    }}>
+                    style={{ background: modalContact.lastDeal.paid ? '#EAF3DE' : '#FAEEDA', color: modalContact.lastDeal.paid ? '#27500A' : '#633806' }}>
                     {modalContact.lastDeal.paid ? '✓ Paid' : '⚠ Unpaid'}
                   </span>
                 </div>
               </div>
-            )}
+            ) : null}
 
             {/* Currency */}
             <div className="flex items-center justify-between mb-3">
