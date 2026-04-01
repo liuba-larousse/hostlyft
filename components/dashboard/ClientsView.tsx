@@ -13,6 +13,12 @@ export interface Contact {
   email: string;
   status: 'customer' | 'lead' | 'inactive';
   added: string;
+  lastDeal?: {
+    amount: string;
+    currency: string;
+    closeDate: string;
+    paid: boolean;
+  };
 }
 
 interface TogglProject { id: number; name: string; }
@@ -55,6 +61,14 @@ const DATE_RANGE_LABELS: Record<DateRange, string> = {
   this_month:   'This month',
   last_month:   'Last month',
   last_4_weeks: 'Last 4 weeks',
+};
+
+type PayMode = 'none' | 'subscription' | 'hourly' | 'percentage' | 'fixed';
+interface PaySlot { mode: PayMode; label: string; amount: number; rate: number; pct: number; pval: number; }
+const DEFAULT_SLOT: PaySlot = { mode: 'none', label: '', amount: 0, rate: 0, pct: 0, pval: 0 };
+const PAY_MODE_LABELS: Record<PayMode, string> = {
+  none: '— select type', subscription: 'Subscription', hourly: 'Hourly',
+  percentage: '% of Value', fixed: 'Fixed Fee',
 };
 
 // ─── Utils ───────────────────────────────────────────────────────────────────
@@ -132,7 +146,8 @@ export default function ClientsView({
   // Modal
   const [modalId, setModalId] = useState<string | null>(null);
   const [weekInputs, setWeekInputs] = useState<Record<string, number>>({});
-  const [rate, setRate] = useState(0);
+  const [payA, setPayA] = useState<PaySlot>(DEFAULT_SLOT);
+  const [payB, setPayB] = useState<PaySlot>(DEFAULT_SLOT);
   const [currency, setCurrency] = useState('USD');
   const [weeklyLoading, setWeeklyLoading] = useState(false);
 
@@ -253,7 +268,11 @@ export default function ClientsView({
     return (ls('plat_' + id) as Platform) || 'none';
   }
 
-  function isSub(id: string) { return !!(lsj<{ v?: boolean }>('sub_' + id)?.v); }
+  function isSub(id: string) {
+    const a = lsj<Partial<PaySlot>>('payA_' + id);
+    const b = lsj<Partial<PaySlot>>('payB_' + id);
+    return a.mode === 'subscription' || b.mode === 'subscription' || !!(lsj<{ v?: boolean }>('sub_' + id)?.v);
+  }
 
   // ── Filtered rows ───────────────────────────────────────────────────────────
 
@@ -283,10 +302,16 @@ export default function ClientsView({
     const c = allContacts.find(x => x.id === id);
     if (!c) return;
     setModalId(id);
-    setRate(parseFloat(ls('rate_' + id) || '0') || 0);
     setCurrency(ls('cur_' + id) || 'USD');
     const stored = lsj<Record<string, number>>('wk_' + id);
     setWeekInputs(stored);
+    // Load payment slots; migrate legacy rate if payA has no mode yet
+    const storedA = lsj<Partial<PaySlot>>('payA_' + id);
+    const legacyRate = parseFloat(ls('rate_' + id) || '0') || 0;
+    const slotA: PaySlot = { ...DEFAULT_SLOT, ...storedA };
+    if (slotA.mode === 'none' && legacyRate > 0) { slotA.mode = 'hourly'; slotA.rate = legacyRate; }
+    setPayA(slotA);
+    setPayB({ ...DEFAULT_SLOT, ...lsj<Partial<PaySlot>>('payB_' + id) });
 
     if (togglSynced) {
       setWeeklyLoading(true);
@@ -314,7 +339,8 @@ export default function ClientsView({
   function saveModal() {
     if (!modalId) return;
     lsj('wk_' + modalId, weekInputs);
-    ls('rate_' + modalId, String(rate));
+    lsj('payA_' + modalId, payA);
+    lsj('payB_' + modalId, payB);
     ls('cur_' + modalId, currency);
     ls('hrs_' + modalId, String(weekInputs['w0'] || 0));
     setTick(t => t + 1);
@@ -376,8 +402,20 @@ export default function ClientsView({
   }
 
   // ── Computed ─────────────────────────────────────────────────────────────────
+  function slotAmount(slot: PaySlot, hrs: number): number {
+    switch (slot.mode) {
+      case 'subscription': return slot.amount;
+      case 'hourly':       return slot.rate * hrs;
+      case 'percentage':   return (slot.pct / 100) * slot.pval;
+      case 'fixed':        return slot.amount;
+      default:             return 0;
+    }
+  }
+
   const totalWeekHrs = WEEK_KEYS.reduce((s, k) => s + (weekInputs[k] || 0), 0);
   const maxHrs = Math.max(...WEEK_KEYS.map(k => weekInputs[k] || 0), 1);
+  const totalInvoice = slotAmount(payA, totalWeekHrs) + slotAmount(payB, totalWeekHrs);
+  const sym = SYM[currency] || '$';
 
   // ─────────────────────────────────────────────────────────────────────────────
 
@@ -490,7 +528,7 @@ export default function ClientsView({
         <table className="w-full border-collapse">
           <thead>
             <tr>
-              {['Name', 'Company', 'Status', 'Payment Processor', 'Toggl hrs', 'Toggl client', 'Breakdown', 'Added'].map(h => (
+              {['Name', 'Company', 'Status', 'Last Invoice', 'Payment Processor', 'Toggl hrs', 'Toggl client', 'Breakdown', 'Added'].map(h => (
                 <th key={h} className="text-left text-gray-400 font-medium uppercase py-2 px-2.5 border-b border-gray-100 whitespace-nowrap"
                   style={{ fontSize: 10, letterSpacing: '0.05em' }}>
                   {h}
@@ -507,7 +545,7 @@ export default function ClientsView({
                 if (status !== lastStatus) {
                   rows.push(
                     <tr key={'sep-' + status}>
-                      <td colSpan={8} className="bg-gray-50 px-2.5 py-1 text-gray-400 font-medium uppercase"
+                      <td colSpan={9} className="bg-gray-50 px-2.5 py-1 text-gray-400 font-medium uppercase"
                         style={{ fontSize: 10, letterSpacing: '0.05em' }}>
                         {STATUS_LABELS[status] || status}
                       </td>
@@ -567,6 +605,32 @@ export default function ClientsView({
                           </button>
                         )}
                       </div>
+                    </td>
+
+                    {/* Last Invoice */}
+                    <td className="py-2 px-2.5 border-b border-gray-50">
+                      {c.lastDeal?.closeDate ? (
+                        <div>
+                          <div className="flex items-center gap-1.5 mb-0.5">
+                            <span className="text-xs font-medium text-gray-900">
+                              {c.lastDeal.amount
+                                ? `${SYM[c.lastDeal.currency] || c.lastDeal.currency || '$'}${parseFloat(c.lastDeal.amount).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+                                : '—'}
+                            </span>
+                            <span className="inline-flex items-center px-1.5 rounded-full font-medium"
+                              style={{
+                                fontSize: 10,
+                                background: c.lastDeal.paid ? '#EAF3DE' : '#FAEEDA',
+                                color: c.lastDeal.paid ? '#27500A' : '#633806',
+                              }}>
+                              {c.lastDeal.paid ? 'Paid' : 'Due'}
+                            </span>
+                          </div>
+                          <div className="text-gray-400" style={{ fontSize: 10 }}>{c.lastDeal.closeDate}</div>
+                        </div>
+                      ) : (
+                        <span className="text-gray-300 text-xs">—</span>
+                      )}
                     </td>
 
                     {/* Platform */}
@@ -641,7 +705,7 @@ export default function ClientsView({
               });
               if (filtered.length === 0) rows.push(
                 <tr key="empty">
-                  <td colSpan={8} className="py-12 text-center text-sm text-gray-400">
+                  <td colSpan={9} className="py-12 text-center text-sm text-gray-400">
                     No contacts found
                   </td>
                 </tr>
@@ -735,23 +799,121 @@ export default function ClientsView({
               <button onClick={closeModal} className="text-gray-300 hover:text-gray-500 text-base leading-none cursor-pointer">✕</button>
             </div>
 
-            {/* Rate */}
-            <div className="grid grid-cols-2 gap-2 mb-3">
-              <div>
-                <label className="block text-xs text-gray-400 mb-1">Hourly rate</label>
-                <input type="number" min="0" value={rate || ''}
-                  onChange={e => setRate(parseFloat(e.target.value) || 0)}
-                  placeholder="e.g. 25"
-                  className="w-full text-xs px-2 py-1.5 border border-gray-200 rounded-md bg-transparent text-gray-900 outline-none" />
+            {/* Last HubSpot Deal */}
+            {modalContact.lastDeal?.closeDate && (
+              <div className="bg-gray-50 rounded-lg px-3 py-2.5 mb-4 border border-gray-100">
+                <div className="text-xs text-gray-400 font-medium mb-1.5">Last HubSpot Deal</div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-sm font-semibold text-gray-900">
+                      {modalContact.lastDeal.amount
+                        ? `${SYM[modalContact.lastDeal.currency] || modalContact.lastDeal.currency || '$'}${parseFloat(modalContact.lastDeal.amount).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+                        : 'No amount set'}
+                    </div>
+                    <div className="text-xs text-gray-400 mt-0.5">{modalContact.lastDeal.closeDate}</div>
+                  </div>
+                  <span className="px-2 py-0.5 rounded-full text-xs font-medium"
+                    style={{
+                      background: modalContact.lastDeal.paid ? '#EAF3DE' : '#FAEEDA',
+                      color: modalContact.lastDeal.paid ? '#27500A' : '#633806',
+                    }}>
+                    {modalContact.lastDeal.paid ? '✓ Paid' : '⚠ Unpaid'}
+                  </span>
+                </div>
               </div>
-              <div>
-                <label className="block text-xs text-gray-400 mb-1">Currency</label>
-                <select value={currency} onChange={e => setCurrency(e.target.value)}
-                  className="w-full text-xs px-2 py-1.5 border border-gray-200 rounded-md bg-transparent text-gray-900 outline-none">
-                  <option>USD</option><option>EUR</option><option>GBP</option>
-                </select>
-              </div>
+            )}
+
+            {/* Currency */}
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-xs font-medium text-gray-700">Payment setup</div>
+              <select value={currency} onChange={e => setCurrency(e.target.value)}
+                className="text-xs px-2 py-1 border border-gray-200 rounded-md bg-transparent text-gray-900 outline-none">
+                <option>USD</option><option>EUR</option><option>GBP</option>
+              </select>
             </div>
+
+            {/* Payment Slot A */}
+            {([['A', payA, setPayA], ['B', payB, setPayB]] as const).map(([letter, slot, setSlot]) => (
+              <div key={letter} className="border border-gray-100 rounded-lg p-3 mb-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xs font-medium text-gray-500 w-20">Payment {letter}</span>
+                  <input
+                    type="text"
+                    value={slot.label}
+                    onChange={e => setSlot(s => ({ ...s, label: e.target.value }))}
+                    placeholder={letter === 'A' ? 'e.g. Retainer' : 'e.g. Dev work'}
+                    className="flex-1 text-xs px-2 py-1 border border-gray-200 rounded-md bg-transparent text-gray-900 outline-none"
+                  />
+                  <select
+                    value={slot.mode}
+                    onChange={e => setSlot(s => ({ ...s, mode: e.target.value as PayMode }))}
+                    className="text-xs px-2 py-1 border border-gray-200 rounded-md bg-transparent text-gray-900 outline-none">
+                    {(Object.keys(PAY_MODE_LABELS) as PayMode[]).map(m => (
+                      <option key={m} value={m}>{PAY_MODE_LABELS[m]}</option>
+                    ))}
+                  </select>
+                </div>
+                {slot.mode === 'subscription' && (
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-gray-400 w-20">Amount</label>
+                    <div className="flex-1 flex items-center gap-1">
+                      <span className="text-xs text-gray-400">{sym}</span>
+                      <input type="number" min="0" value={slot.amount || ''}
+                        onChange={e => setSlot(s => ({ ...s, amount: parseFloat(e.target.value) || 0 }))}
+                        placeholder="0" className="flex-1 text-xs px-2 py-1 border border-gray-200 rounded-md bg-transparent text-gray-900 outline-none" />
+                      <span className="text-xs text-gray-400">/ mo</span>
+                    </div>
+                  </div>
+                )}
+                {slot.mode === 'hourly' && (
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-gray-400 w-20">Rate / hr</label>
+                    <div className="flex-1 flex items-center gap-1.5">
+                      <span className="text-xs text-gray-400">{sym}</span>
+                      <input type="number" min="0" value={slot.rate || ''}
+                        onChange={e => setSlot(s => ({ ...s, rate: parseFloat(e.target.value) || 0 }))}
+                        placeholder="0" className="w-20 text-xs px-2 py-1 border border-gray-200 rounded-md bg-transparent text-gray-900 outline-none" />
+                      <span className="text-xs text-gray-400">× {totalWeekHrs.toFixed(1)} hrs =</span>
+                      <span className="text-xs font-medium text-gray-700">{sym}{Math.round(slot.rate * totalWeekHrs).toLocaleString()}</span>
+                    </div>
+                  </div>
+                )}
+                {slot.mode === 'percentage' && (
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs text-gray-400 w-20">% charge</label>
+                      <div className="flex items-center gap-1">
+                        <input type="number" min="0" max="100" value={slot.pct || ''}
+                          onChange={e => setSlot(s => ({ ...s, pct: parseFloat(e.target.value) || 0 }))}
+                          placeholder="0" className="w-16 text-xs px-2 py-1 border border-gray-200 rounded-md bg-transparent text-gray-900 outline-none" />
+                        <span className="text-xs text-gray-400">%</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs text-gray-400 w-20">Project value</label>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs text-gray-400">{sym}</span>
+                        <input type="number" min="0" value={slot.pval || ''}
+                          onChange={e => setSlot(s => ({ ...s, pval: parseFloat(e.target.value) || 0 }))}
+                          placeholder="0" className="w-24 text-xs px-2 py-1 border border-gray-200 rounded-md bg-transparent text-gray-900 outline-none" />
+                        <span className="text-xs text-gray-400">= {sym}{Math.round((slot.pct / 100) * slot.pval).toLocaleString()}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {slot.mode === 'fixed' && (
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-gray-400 w-20">Fixed fee</label>
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs text-gray-400">{sym}</span>
+                      <input type="number" min="0" value={slot.amount || ''}
+                        onChange={e => setSlot(s => ({ ...s, amount: parseFloat(e.target.value) || 0 }))}
+                        placeholder="0" className="flex-1 text-xs px-2 py-1 border border-gray-200 rounded-md bg-transparent text-gray-900 outline-none" />
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
 
             {/* Week inputs */}
             <div className="text-xs text-gray-400 font-medium mb-2">
@@ -798,12 +960,14 @@ export default function ClientsView({
                 <span className="text-gray-900">Total</span>
                 <span className="font-medium text-gray-900">{totalWeekHrs.toFixed(1)} hrs</span>
               </div>
-              <div className="flex justify-between text-xs mt-1">
-                <span className="text-gray-400">Est. invoice</span>
-                <span className="font-medium" style={{ color: '#27500A' }}>
-                  {rate ? `${SYM[currency] || '$'}${Math.round(totalWeekHrs * rate).toLocaleString()}` : '—'}
-                </span>
-              </div>
+              {totalInvoice > 0 && (
+                <div className="flex justify-between text-xs mt-1">
+                  <span className="text-gray-400">Est. invoice</span>
+                  <span className="font-medium" style={{ color: '#27500A' }}>
+                    {sym}{Math.round(totalInvoice).toLocaleString()}
+                  </span>
+                </div>
+              )}
             </div>
 
             <a href="https://track.toggl.com/reports/summary" target="_blank" rel="noopener"
