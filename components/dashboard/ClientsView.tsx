@@ -215,47 +215,47 @@ export default function ClientsView({
       const weekGroups: { projectId: number; seconds: number }[] = data.weekGroups || [];
       const breakdown: Record<string, TogglProjectHours[]> = {};
 
-      // Pass 1: for contacts with a matched Toggl client, try clientGroups first
+      // Build a lookup: projectId → hours
+      const projHoursMap: Record<number, number> = {};
+      weekGroups.forEach(g => { if (g.seconds > 0) projHoursMap[g.projectId] = g.seconds / 3600; });
+
+      // PRIMARY: for contacts with a matched Toggl client, sum ALL projects
+      // that have client_id === togglClientId (regardless of project name)
       allContacts.forEach(c => {
         const cid = clientIds[c.id];
         if (!cid) return;
-        const g = clientGroups.find(g => g.clientId === cid);
-        if (g && g.seconds > 0) hours[c.id] = g.seconds / 3600;
-        // Per-project breakdown for client-linked projects
         const clientProjects = projects.filter(p => p.clientId === cid);
-        const projectLines: TogglProjectHours[] = [];
+        let total = 0;
+        const lines: TogglProjectHours[] = [];
         clientProjects.forEach(p => {
-          const pg = weekGroups.find(wg => wg.projectId === p.id);
-          if (pg && pg.seconds > 0) projectLines.push({ name: p.name, hours: pg.seconds / 3600 });
+          const h = projHoursMap[p.id] ?? 0;
+          if (h > 0) { total += h; lines.push({ name: p.name, hours: h }); }
         });
-        if (projectLines.length) breakdown[c.id] = projectLines.sort((a, b) => b.hours - a.hours);
+        if (total > 0) {
+          hours[c.id] = total;
+          breakdown[c.id] = lines.sort((a, b) => b.hours - a.hours);
+        } else {
+          // clientGroups fallback (if projects aren't yet linked via client_id in Toggl)
+          const cg = clientGroups.find(g => g.clientId === cid);
+          if (cg && cg.seconds > 0) hours[c.id] = cg.seconds / 3600;
+        }
       });
 
-      // Pass 2: for ALL contacts, also scan projects by name match.
-      // For matched clients with 0 hours from clientGroups (projects not yet linked in Toggl),
-      // this fills in the hours. For unmatched contacts it's the primary source.
+      // FALLBACK: for contacts without a Toggl client match, try project name matching
       weekGroups.forEach(g => {
         const proj = projects.find(p => p.id === g.projectId);
         if (!proj || !g.seconds) return;
         allContacts.forEach(c => {
+          if (clientIds[c.id]) return; // already handled above
           if (!matchContact(c, proj.name)) return;
-          const hrs = g.seconds / 3600;
-          // Only add if not already covered by clientGroups
-          if (!hours[c.id]) hours[c.id] = 0;
-          // Avoid double-counting: skip if this project is already in breakdown
-          const alreadyInBreakdown = breakdown[c.id]?.some(x => x.name === proj.name);
-          if (!alreadyInBreakdown) {
-            hours[c.id] += hrs;
-            breakdown[c.id] = breakdown[c.id] || [];
-            breakdown[c.id].push({ name: proj.name, hours: hrs });
-          }
+          const h = g.seconds / 3600;
+          hours[c.id] = (hours[c.id] || 0) + h;
+          breakdown[c.id] = breakdown[c.id] || [];
+          breakdown[c.id].push({ name: proj.name, hours: h });
         });
       });
 
-      // Sort breakdowns by hours descending
-      Object.keys(breakdown).forEach(id => {
-        breakdown[id].sort((a, b) => b.hours - a.hours);
-      });
+      Object.keys(breakdown).forEach(id => breakdown[id].sort((a, b) => b.hours - a.hours));
 
       setTogglHours(hours);
       setTogglClientIds(clientIds);
