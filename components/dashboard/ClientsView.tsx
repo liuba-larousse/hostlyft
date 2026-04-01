@@ -112,6 +112,7 @@ export default function ClientsView({
   const [promoting, setPromoting] = useState<string | null>(null); // contact id being promoted
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const [togglHours, setTogglHours] = useState<Record<string, number>>({});
+  const [togglClientIds, setTogglClientIds] = useState<Record<string, number>>({}); // contactId → toggl client id
   const [togglSynced, setTogglSynced] = useState(false);
   const [togglStatus, setTogglStatus] = useState('Connecting to Toggl...');
   const [filter, setFilter] = useState<Filter>('all');
@@ -145,7 +146,9 @@ export default function ClientsView({
       if (data.error) throw new Error(data.error);
 
       const projects: TogglProject[] = data.projects || [];
+      const togglClients: TogglProject[] = data.clients || [];
       const hours: Record<string, number> = {};
+      const clientIds: Record<string, number> = {};
 
       (data.weekGroups as { projectId: number; seconds: number }[]).forEach(g => {
         const proj = projects.find(p => p.id === g.projectId);
@@ -157,7 +160,14 @@ export default function ClientsView({
         });
       });
 
+      // Match contacts to Toggl clients by name
+      allContacts.forEach(c => {
+        const match = togglClients.find(tc => matchContact(c, tc.name));
+        if (match) clientIds[c.id] = match.id;
+      });
+
       setTogglHours(hours);
+      setTogglClientIds(clientIds);
       setTogglSynced(true);
       setTogglStatus(`Toggl synced — ${data.email} — ${new Date().toLocaleTimeString()}`);
     } catch (err: unknown) {
@@ -444,7 +454,7 @@ export default function ClientsView({
         <table className="w-full border-collapse">
           <thead>
             <tr>
-              {['Name', 'Company', 'Status', 'Platform', 'Toggl hrs (week)', 'Breakdown', 'Added'].map(h => (
+              {['Name', 'Company', 'Status', 'Platform', 'Toggl hrs (week)', 'Toggl client', 'Breakdown', 'Added'].map(h => (
                 <th key={h} className="text-left text-gray-400 font-medium uppercase py-2 px-2.5 border-b border-gray-100 whitespace-nowrap"
                   style={{ fontSize: 10, letterSpacing: '0.05em' }}>
                   {h}
@@ -461,7 +471,7 @@ export default function ClientsView({
                 if (status !== lastStatus) {
                   rows.push(
                     <tr key={'sep-' + status}>
-                      <td colSpan={7} className="bg-gray-50 px-2.5 py-1 text-gray-400 font-medium uppercase"
+                      <td colSpan={8} className="bg-gray-50 px-2.5 py-1 text-gray-400 font-medium uppercase"
                         style={{ fontSize: 10, letterSpacing: '0.05em' }}>
                         {STATUS_LABELS[status] || status}
                       </td>
@@ -557,6 +567,26 @@ export default function ClientsView({
                       )}
                     </td>
 
+                    {/* Toggl client */}
+                    <td className="py-2 px-2.5 border-b border-gray-50">
+                      {togglClientIds[c.id] ? (
+                        <a
+                          href={`https://track.toggl.com/clients/${togglClientIds[c.id]}`}
+                          target="_blank"
+                          rel="noopener"
+                          title="Connected to Toggl client"
+                          className="inline-flex items-center justify-center w-6 h-6 rounded-full"
+                          style={{ background: '#F9E8FD', color: '#9B2EAD' }}>
+                          ✓
+                        </a>
+                      ) : (
+                        <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-gray-300 text-xs"
+                          title="No matching Toggl client">
+                          —
+                        </span>
+                      )}
+                    </td>
+
                     {/* Weekly */}
                     <td className="py-2 px-2.5 border-b border-gray-50">
                       <button onClick={() => openModal(c.id)}
@@ -575,7 +605,7 @@ export default function ClientsView({
               });
               if (filtered.length === 0) rows.push(
                 <tr key="empty">
-                  <td colSpan={7} className="py-12 text-center text-sm text-gray-400">
+                  <td colSpan={8} className="py-12 text-center text-sm text-gray-400">
                     No contacts found
                   </td>
                 </tr>

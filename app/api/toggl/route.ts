@@ -49,11 +49,12 @@ export async function GET(req: NextRequest) {
     const me = await meRes.json();
     const wsId: number = me.default_workspace_id;
 
-    const projRes = await fetch(
-      `${BASE}/api/v9/workspaces/${wsId}/projects?active=both&per_page=200`,
-      { headers: { Authorization: auth() } }
-    );
+    const [projRes, clientsRes] = await Promise.all([
+      fetch(`${BASE}/api/v9/workspaces/${wsId}/projects?active=both&per_page=200`, { headers: { Authorization: auth() } }),
+      fetch(`${BASE}/api/v9/workspaces/${wsId}/clients?active=both`, { headers: { Authorization: auth() } }),
+    ]);
     const projects: { id: number; name: string }[] = projRes.ok ? await projRes.json() : [];
+    const clients: { id: number; name: string }[] = clientsRes.ok ? await clientsRes.json() : [];
 
     if (action === 'sync') {
       const weeks = getWeeks();
@@ -71,6 +72,7 @@ export async function GET(req: NextRequest) {
         email: me.email,
         workspaceId: wsId,
         projects: projects.map(p => ({ id: p.id, name: p.name })),
+        clients: clients.map(c => ({ id: c.id, name: c.name })),
         weekGroups: (sum.groups || []).map((g: { id: number; seconds: number }) => ({
           projectId: g.id,
           seconds: g.seconds || 0,
