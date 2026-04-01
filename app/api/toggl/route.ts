@@ -132,6 +132,26 @@ export async function POST(req: NextRequest) {
     const me = await meRes.json();
     const wsId: number = me.default_workspace_id;
 
+    // Check if client already exists
+    const clientsRes = await fetch(
+      `${BASE}/api/v9/workspaces/${wsId}/clients?active=both`,
+      { headers: { Authorization: auth() } }
+    );
+    const existingClients: { id: number; name: string }[] = clientsRes.ok ? await clientsRes.json() : [];
+    let client = existingClients.find(c => c.name.toLowerCase() === name.toLowerCase());
+    let clientExisted = !!client;
+
+    if (!client) {
+      const clientRes = await fetch(`${BASE}/api/v9/workspaces/${wsId}/clients`, {
+        method: 'POST',
+        headers: { Authorization: auth(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      if (clientRes.ok) {
+        client = await clientRes.json() as { id: number; name: string };
+      }
+    }
+
     // Check if project already exists
     const projRes = await fetch(
       `${BASE}/api/v9/workspaces/${wsId}/projects?active=both&per_page=200`,
@@ -140,17 +160,17 @@ export async function POST(req: NextRequest) {
     const existing: { id: number; name: string }[] = projRes.ok ? await projRes.json() : [];
     const duplicate = existing.find(p => p.name.toLowerCase() === name.toLowerCase());
     if (duplicate) {
-      return NextResponse.json({ project: duplicate, existed: true });
+      return NextResponse.json({ project: duplicate, client, existed: true, clientExisted });
     }
 
     const res = await fetch(`${BASE}/api/v9/workspaces/${wsId}/projects`, {
       method: 'POST',
       headers: { Authorization: auth(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, active: true }),
+      body: JSON.stringify({ name, active: true, ...(client ? { client_id: client.id } : {}) }),
     });
     if (!res.ok) throw new Error('Failed to create Toggl project');
     const project = await res.json();
-    return NextResponse.json({ project, existed: false });
+    return NextResponse.json({ project, client, existed: false, clientExisted });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'Unknown error';
     return NextResponse.json({ error: msg }, { status: 500 });
