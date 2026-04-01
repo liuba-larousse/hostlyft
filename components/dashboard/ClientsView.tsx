@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -137,7 +137,7 @@ export default function ClientsView({
   const [togglHours, setTogglHours] = useState<Record<string, number>>({});
   const [togglClientIds, setTogglClientIds] = useState<Record<string, number>>({}); // contactId → toggl client id
   const [togglSynced, setTogglSynced] = useState(false);
-  const [togglStatus, setTogglStatus] = useState('Connecting to Toggl...');
+  const [togglStatus, setTogglStatus] = useState('Click "Sync now" to load Toggl hours');
   const [dateRange, setDateRange] = useState<DateRange>('this_week');
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
@@ -211,8 +211,6 @@ export default function ClientsView({
       setTogglStatus(`Could not connect to Toggl — ${msg}`);
     }
   }, [allContacts, dateRange]);
-
-  useEffect(() => { syncToggl(); }, [syncToggl]);
 
   // ── Toast ────────────────────────────────────────────────────────────────────
 
