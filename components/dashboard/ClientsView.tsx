@@ -54,8 +54,11 @@ const STATUS_STYLE: Record<string, { bg: string; color: string; label: string }>
 const INVOICE_STATUS: Record<string, { bg: string; color: string; label: string }> = {
   PAID:        { bg: '#EAF3DE', color: '#27500A', label: 'Paid' },
   OUTSTANDING: { bg: '#FAEEDA', color: '#633806', label: 'Due' },
+  OPEN:        { bg: '#FAEEDA', color: '#633806', label: 'Open' },
   OVERDUE:     { bg: '#FEE2E2', color: '#991B1B', label: 'Overdue' },
+  SCHEDULED:   { bg: '#E6F1FB', color: '#0C447C', label: 'Scheduled' },
   VOIDED:      { bg: '#F1EFE8', color: '#5F5E5A', label: 'Voided' },
+  VOID:        { bg: '#F1EFE8', color: '#5F5E5A', label: 'Voided' },
   DRAFT:       { bg: '#F1EFE8', color: '#5F5E5A', label: 'Draft' },
 };
 
@@ -625,7 +628,7 @@ export default function ClientsView({
                     <td className="py-2 px-2.5 border-b border-gray-50">
                       {c.lastInvoice?.invoiceDate ? (() => {
                         const inv = c.lastInvoice!;
-                        const st = INVOICE_STATUS[inv.status] ?? { bg: '#F1EFE8', color: '#5F5E5A', label: inv.status };
+                        const st = INVOICE_STATUS[inv.status?.toUpperCase()] ?? { bg: '#F1EFE8', color: '#5F5E5A', label: inv.status || '?' };
                         return (
                           <div>
                             <div className="flex items-center gap-1.5 mb-0.5">
@@ -830,7 +833,7 @@ export default function ClientsView({
             {/* Last Invoice (preferred) or Last Deal (fallback) */}
             {modalContact.lastInvoice?.invoiceDate ? (() => {
               const inv = modalContact.lastInvoice!;
-              const st = INVOICE_STATUS[inv.status] ?? { bg: '#F1EFE8', color: '#5F5E5A', label: inv.status };
+              const st = INVOICE_STATUS[inv.status?.toUpperCase()] ?? { bg: '#F1EFE8', color: '#5F5E5A', label: inv.status || '?' };
               return (
                 <div className="bg-gray-50 rounded-lg px-3 py-2.5 mb-4 border border-gray-100">
                   <div className="flex items-center justify-between mb-1.5">

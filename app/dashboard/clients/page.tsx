@@ -14,8 +14,10 @@ interface InvoiceProps {
   hs_currency_code?: string;
   hs_invoice_date?: string;
   hs_due_date?: string;
-  hs_payment_status?: string;
+  hs_payment_status?: string;   // some plans use this
+  hs_invoice_status?: string;   // Commerce Hub uses this
   hs_invoice_id?: string;
+  hs_scheduled_date?: string;   // recurring / scheduled invoices
 }
 
 async function batchAssociations(
@@ -95,7 +97,7 @@ async function fetchLastInvoices(
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        properties: ['hs_amount_billed', 'hs_currency_code', 'hs_invoice_date', 'hs_due_date', 'hs_payment_status', 'hs_invoice_id'],
+        properties: ['hs_amount_billed', 'hs_currency_code', 'hs_invoice_date', 'hs_due_date', 'hs_payment_status', 'hs_invoice_status', 'hs_invoice_id', 'hs_scheduled_date'],
         inputs: allIds.map(id => ({ id })),
       }),
       next: { revalidate: 300 },
@@ -116,8 +118,11 @@ async function fetchLastInvoices(
         amount: inv.hs_amount_billed || '',
         currency: inv.hs_currency_code || 'USD',
         invoiceDate: inv.hs_invoice_date ? inv.hs_invoice_date.split('T')[0] : '',
-        dueDate: inv.hs_due_date ? inv.hs_due_date.split('T')[0] : '',
-        status: inv.hs_payment_status || '',
+        dueDate: inv.hs_due_date
+          ? inv.hs_due_date.split('T')[0]
+          : (inv.hs_scheduled_date ? inv.hs_scheduled_date.split('T')[0] : ''),
+        // prefer hs_invoice_status (Commerce Hub), fall back to hs_payment_status
+        status: inv.hs_invoice_status || inv.hs_payment_status || (inv.hs_scheduled_date ? 'SCHEDULED' : ''),
         invoiceNumber: inv.hs_invoice_id || '',
       };
     }
