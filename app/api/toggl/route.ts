@@ -96,19 +96,12 @@ export async function GET(req: NextRequest) {
 
     if (action === 'sync') {
       const { start, end } = getDateRange(range);
+      const reportBase = `${BASE}/reports/api/v2/summary?workspace_id=${wsId}&user_agent=hostlyft&since=${start}&until=${end}`;
 
-      // Fetch summary grouped by both clients and projects in parallel
+      // Fetch summary grouped by both clients and projects in parallel (v2 API)
       const [clientSumRes, projSumRes] = await Promise.all([
-        fetch(`${BASE}/reports/api/v3/workspace/${wsId}/summary/time_entries`, {
-          method: 'POST',
-          headers: { Authorization: auth(), 'Content-Type': 'application/json' },
-          body: JSON.stringify({ start_date: start, end_date: end, group_by: 'clients' }),
-        }),
-        fetch(`${BASE}/reports/api/v3/workspace/${wsId}/summary/time_entries`, {
-          method: 'POST',
-          headers: { Authorization: auth(), 'Content-Type': 'application/json' },
-          body: JSON.stringify({ start_date: start, end_date: end, group_by: 'projects' }),
-        }),
+        fetch(`${reportBase}&grouping=clients`, { headers: { Authorization: auth() } }),
+        fetch(`${reportBase}&grouping=projects`, { headers: { Authorization: auth() } }),
       ]);
 
       const clientSum = clientSumRes.ok ? await clientSumRes.json() : {};
@@ -120,33 +113,35 @@ export async function GET(req: NextRequest) {
         range,
         projects: projects.map(p => ({ id: p.id, name: p.name, clientId: p.client_id ?? null })),
         clients: clients.map(c => ({ id: c.id, name: c.name })),
-        // Hours grouped by Toggl client id — used for matched contacts
-        clientGroups: (clientSum.groups || []).map((g: { id: number; seconds: number }) => ({
+        // Hours grouped by Toggl client id — v2 uses `data` array, time in milliseconds
+        clientGroups: (clientSum.data || []).map((g: { id: number; time: number }) => ({
           clientId: g.id,
-          seconds: g.seconds || 0,
+          seconds: Math.round((g.time || 0) / 1000),
         })),
-        // Hours grouped by project — fallback for unmatched contacts
-        weekGroups: (projSum.groups || []).map((g: { id: number; seconds: number }) => ({
+        // Hours grouped by project — v2 uses `data` array, time in milliseconds
+        weekGroups: (projSum.data || []).map((g: { id: number; time: number }) => ({
           projectId: g.id,
-          seconds: g.seconds || 0,
+          seconds: Math.round((g.time || 0) / 1000),
         })),
       });
     }
 
     if (action === 'debug') {
       const { start, end } = getDateRange(range);
-      const projSumRes = await fetch(`${BASE}/reports/api/v3/workspace/${wsId}/summary/time_entries`, {
-        method: 'POST',
-        headers: { Authorization: auth(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ start_date: start, end_date: end, group_by: 'projects' }),
-      });
+      const reportBase = `${BASE}/reports/api/v2/summary?workspace_id=${wsId}&user_agent=hostlyft&since=${start}&until=${end}`;
+      const [projSumRes, clientSumRes] = await Promise.all([
+        fetch(`${reportBase}&grouping=projects`, { headers: { Authorization: auth() } }),
+        fetch(`${reportBase}&grouping=clients`, { headers: { Authorization: auth() } }),
+      ]);
       const projSum = projSumRes.ok ? await projSumRes.json() : {};
+      const clientSum = clientSumRes.ok ? await clientSumRes.json() : {};
       return NextResponse.json({
         range, start, end,
         projectsWithClientId: projects.filter(p => p.client_id).map(p => ({ id: p.id, name: p.name, clientId: p.client_id })),
         projectsWithoutClientId: projects.filter(p => !p.client_id).map(p => ({ id: p.id, name: p.name })),
         clients: clients.map(c => ({ id: c.id, name: c.name })),
-        weekGroups: (projSum.groups || []).map((g: { id: number; seconds: number }) => ({ projectId: g.id, seconds: g.seconds, hours: (g.seconds || 0) / 3600 })),
+        rawProjectSumFirst3: (projSum.data || []).slice(0, 3),
+        rawClientSumFirst3: (clientSum.data || []).slice(0, 3),
       });
     }
 
@@ -158,32 +153,25 @@ export async function GET(req: NextRequest) {
 
       const results = await Promise.all(
         weeks.map(async (w) => {
-          const body = clientId
-            ? { start_date: w.start, end_date: w.end, client_ids: [parseInt(clientId)], group_by: 'clients' }
-            : { start_date: w.start, end_date: w.end, group_by: 'projects' };
-
-          const res = await fetch(
-            `${BASE}/reports/api/v3/workspace/${wsId}/summary/time_entries`,
-            {
-              method: 'POST',
-              headers: { Authorization: auth(), 'Content-Type': 'application/json' },
-              body: JSON.stringify(body),
-            }
-          );
+          const grouping = clientId ? 'clients' : 'projects';
+          const url = `${BASE}/reports/api/v2/summary?workspace_id=${wsId}&user_agent=hostlyft&since=${w.start}&until=${w.end}&grouping=${grouping}`;
+          const res = await fetch(url, { headers: { Authorization: auth() } });
           if (!res.ok) return { key: w.key, hours: 0 };
           const data = await res.json();
           let hours = 0;
 
           if (clientId) {
-            // Sum all seconds for this client
-            (data.groups || []).forEach((g: { seconds: number }) => {
-              hours += (g.seconds || 0) / 3600;
+            // Find the specific client entry and sum its time
+            (data.data || []).forEach((g: { id: number; time: number }) => {
+              if (g.id === parseInt(clientId)) {
+                hours += (g.time || 0) / 3600000;
+              }
             });
           } else {
-            (data.groups || []).forEach((g: { id: number; seconds: number }) => {
+            (data.data || []).forEach((g: { id: number; time: number }) => {
               const proj = projects.find(p => p.id === g.id);
               if (proj && matchesContact(proj.name, firstName, company)) {
-                hours += (g.seconds || 0) / 3600;
+                hours += (g.time || 0) / 3600000;
               }
             });
           }
