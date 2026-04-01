@@ -7,6 +7,44 @@ function auth() {
   return 'Basic ' + Buffer.from(`${TOKEN}:api_token`).toString('base64');
 }
 
+function isoDate(d: Date) { return d.toISOString().split('T')[0]; }
+
+function getDateRange(range: string): { start: string; end: string } {
+  const now = new Date();
+  switch (range) {
+    case 'last_week': {
+      const end = new Date(now);
+      end.setDate(now.getDate() - now.getDay()); // last Sunday
+      const start = new Date(end);
+      start.setDate(end.getDate() - 6); // last Monday
+      return { start: isoDate(start), end: isoDate(end) };
+    }
+    case 'this_month': {
+      const start = new Date(now.getFullYear(), now.getMonth(), 1);
+      const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      return { start: isoDate(start), end: isoDate(end) };
+    }
+    case 'last_month': {
+      const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const end = new Date(now.getFullYear(), now.getMonth(), 0);
+      return { start: isoDate(start), end: isoDate(end) };
+    }
+    case 'last_4_weeks': {
+      const end = new Date(now);
+      const start = new Date(now);
+      start.setDate(now.getDate() - 27);
+      return { start: isoDate(start), end: isoDate(end) };
+    }
+    default: { // this_week
+      const start = new Date(now);
+      start.setDate(now.getDate() - now.getDay() + 1); // Monday
+      const end = new Date(start);
+      end.setDate(start.getDate() + 6);
+      return { start: isoDate(start), end: isoDate(new Date(end.getTime() + 86400000)) };
+    }
+  }
+}
+
 function getWeeks() {
   const weeks: { key: string; start: string; end: string }[] = [];
   for (let i = 3; i >= 0; i--) {
@@ -39,9 +77,9 @@ export async function GET(req: NextRequest) {
   if (!TOKEN) return NextResponse.json({ error: 'TOGGL_API_TOKEN not configured' }, { status: 500 });
 
   const action = req.nextUrl.searchParams.get('action') || 'sync';
+  const range = req.nextUrl.searchParams.get('range') || 'this_week';
 
   try {
-    // Always fetch workspace + projects
     const meRes = await fetch(`${BASE}/api/v9/me`, {
       headers: { Authorization: auth(), 'Content-Type': 'application/json' },
     });
@@ -57,23 +95,38 @@ export async function GET(req: NextRequest) {
     const clients: { id: number; name: string }[] = clientsRes.ok ? await clientsRes.json() : [];
 
     if (action === 'sync') {
-      const weeks = getWeeks();
-      const current = weeks[weeks.length - 1]; // w0 = this week
-      const sumRes = await fetch(
-        `${BASE}/reports/api/v3/workspace/${wsId}/summary/time_entries`,
-        {
+      const { start, end } = getDateRange(range);
+
+      // Fetch summary grouped by both clients and projects in parallel
+      const [clientSumRes, projSumRes] = await Promise.all([
+        fetch(`${BASE}/reports/api/v3/workspace/${wsId}/summary/time_entries`, {
           method: 'POST',
           headers: { Authorization: auth(), 'Content-Type': 'application/json' },
-          body: JSON.stringify({ start_date: current.start, end_date: current.end, group_by: 'projects' }),
-        }
-      );
-      const sum = sumRes.ok ? await sumRes.json() : {};
+          body: JSON.stringify({ start_date: start, end_date: end, group_by: 'clients' }),
+        }),
+        fetch(`${BASE}/reports/api/v3/workspace/${wsId}/summary/time_entries`, {
+          method: 'POST',
+          headers: { Authorization: auth(), 'Content-Type': 'application/json' },
+          body: JSON.stringify({ start_date: start, end_date: end, group_by: 'projects' }),
+        }),
+      ]);
+
+      const clientSum = clientSumRes.ok ? await clientSumRes.json() : {};
+      const projSum = projSumRes.ok ? await projSumRes.json() : {};
+
       return NextResponse.json({
         email: me.email,
         workspaceId: wsId,
+        range,
         projects: projects.map(p => ({ id: p.id, name: p.name })),
         clients: clients.map(c => ({ id: c.id, name: c.name })),
-        weekGroups: (sum.groups || []).map((g: { id: number; seconds: number }) => ({
+        // Hours grouped by Toggl client id — used for matched contacts
+        clientGroups: (clientSum.groups || []).map((g: { id: number; seconds: number }) => ({
+          clientId: g.id,
+          seconds: g.seconds || 0,
+        })),
+        // Hours grouped by project — fallback for unmatched contacts
+        weekGroups: (projSum.groups || []).map((g: { id: number; seconds: number }) => ({
           projectId: g.id,
           seconds: g.seconds || 0,
         })),
@@ -83,27 +136,41 @@ export async function GET(req: NextRequest) {
     if (action === 'weekly') {
       const firstName = req.nextUrl.searchParams.get('firstName') || '';
       const company = req.nextUrl.searchParams.get('company') || '';
+      const clientId = req.nextUrl.searchParams.get('clientId');
       const weeks = getWeeks();
 
       const results = await Promise.all(
         weeks.map(async (w) => {
+          const body = clientId
+            ? { start_date: w.start, end_date: w.end, client_ids: [parseInt(clientId)], group_by: 'clients' }
+            : { start_date: w.start, end_date: w.end, group_by: 'projects' };
+
           const res = await fetch(
             `${BASE}/reports/api/v3/workspace/${wsId}/summary/time_entries`,
             {
               method: 'POST',
               headers: { Authorization: auth(), 'Content-Type': 'application/json' },
-              body: JSON.stringify({ start_date: w.start, end_date: w.end, group_by: 'projects' }),
+              body: JSON.stringify(body),
             }
           );
           if (!res.ok) return { key: w.key, hours: 0 };
           const data = await res.json();
           let hours = 0;
-          (data.groups || []).forEach((g: { id: number; seconds: number }) => {
-            const proj = projects.find(p => p.id === g.id);
-            if (proj && matchesContact(proj.name, firstName, company)) {
+
+          if (clientId) {
+            // Sum all seconds for this client
+            (data.groups || []).forEach((g: { seconds: number }) => {
               hours += (g.seconds || 0) / 3600;
-            }
-          });
+            });
+          } else {
+            (data.groups || []).forEach((g: { id: number; seconds: number }) => {
+              const proj = projects.find(p => p.id === g.id);
+              if (proj && matchesContact(proj.name, firstName, company)) {
+                hours += (g.seconds || 0) / 3600;
+              }
+            });
+          }
+
           return { key: w.key, hours };
         })
       );
@@ -141,7 +208,7 @@ export async function POST(req: NextRequest) {
     );
     const existingClients: { id: number; name: string }[] = clientsRes.ok ? await clientsRes.json() : [];
     let client = existingClients.find(c => c.name.toLowerCase() === name.toLowerCase());
-    let clientExisted = !!client;
+    const clientExisted = !!client;
 
     if (!client) {
       const clientRes = await fetch(`${BASE}/api/v9/workspaces/${wsId}/clients`, {

@@ -48,6 +48,15 @@ const WEEK_KEYS = ['w3', 'w2', 'w1', 'w0'] as const; // oldest → newest
 const AVATAR_COLORS = ['#B5D4F4','#9FE1CB','#CECBF6','#F5C4B3','#C0DD97','#FAC775','#F4C0D1'];
 const SYM: Record<string, string> = { USD: '$', EUR: '€', GBP: '£' };
 
+type DateRange = 'this_week' | 'last_week' | 'this_month' | 'last_month' | 'last_4_weeks';
+const DATE_RANGE_LABELS: Record<DateRange, string> = {
+  this_week:    'This week',
+  last_week:    'Last week',
+  this_month:   'This month',
+  last_month:   'Last month',
+  last_4_weeks: 'Last 4 weeks',
+};
+
 // ─── Utils ───────────────────────────────────────────────────────────────────
 
 function ls(k: string, v?: string): string | null {
@@ -115,6 +124,7 @@ export default function ClientsView({
   const [togglClientIds, setTogglClientIds] = useState<Record<string, number>>({}); // contactId → toggl client id
   const [togglSynced, setTogglSynced] = useState(false);
   const [togglStatus, setTogglStatus] = useState('Connecting to Toggl...');
+  const [dateRange, setDateRange] = useState<DateRange>('this_week');
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
   const [tick, setTick] = useState(0); // forces re-read of localStorage
@@ -138,27 +148,18 @@ export default function ClientsView({
 
   // ── Toggl sync ──────────────────────────────────────────────────────────────
 
-  const syncToggl = useCallback(async () => {
+  const syncToggl = useCallback(async (range: DateRange = dateRange) => {
     setTogglStatus('Syncing with Toggl...');
     try {
-      const res = await fetch('/api/toggl?action=sync');
+      const res = await fetch(`/api/toggl?action=sync&range=${range}`);
       const data = await res.json();
       if (data.error) throw new Error(data.error);
 
       const projects: TogglProject[] = data.projects || [];
       const togglClients: TogglProject[] = data.clients || [];
+      const clientGroups: { clientId: number; seconds: number }[] = data.clientGroups || [];
       const hours: Record<string, number> = {};
       const clientIds: Record<string, number> = {};
-
-      (data.weekGroups as { projectId: number; seconds: number }[]).forEach(g => {
-        const proj = projects.find(p => p.id === g.projectId);
-        if (!proj) return;
-        contacts.forEach(c => {
-          if (matchContact(c, proj.name)) {
-            hours[c.id] = (hours[c.id] || 0) + g.seconds / 3600;
-          }
-        });
-      });
 
       // Match contacts to Toggl clients by name
       allContacts.forEach(c => {
@@ -166,15 +167,35 @@ export default function ClientsView({
         if (match) clientIds[c.id] = match.id;
       });
 
+      // For contacts with a matched Toggl client, use client-grouped hours (more accurate)
+      allContacts.forEach(c => {
+        const cid = clientIds[c.id];
+        if (cid) {
+          const g = clientGroups.find(g => g.clientId === cid);
+          if (g) hours[c.id] = g.seconds / 3600;
+        }
+      });
+
+      // Fallback: project name matching for contacts without a Toggl client
+      (data.weekGroups as { projectId: number; seconds: number }[]).forEach(g => {
+        const proj = projects.find(p => p.id === g.projectId);
+        if (!proj) return;
+        allContacts.forEach(c => {
+          if (!clientIds[c.id] && matchContact(c, proj.name)) {
+            hours[c.id] = (hours[c.id] || 0) + g.seconds / 3600;
+          }
+        });
+      });
+
       setTogglHours(hours);
       setTogglClientIds(clientIds);
       setTogglSynced(true);
-      setTogglStatus(`Toggl synced — ${data.email} — ${new Date().toLocaleTimeString()}`);
+      setTogglStatus(`Toggl synced — ${data.email} — ${DATE_RANGE_LABELS[range]} — ${new Date().toLocaleTimeString()}`);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'error';
       setTogglStatus(`Could not connect to Toggl — ${msg}`);
     }
-  }, [contacts]);
+  }, [allContacts, dateRange]);
 
   useEffect(() => { syncToggl(); }, [syncToggl]);
 
@@ -270,9 +291,11 @@ export default function ClientsView({
     if (togglSynced) {
       setWeeklyLoading(true);
       try {
-        const res = await fetch(
-          `/api/toggl?action=weekly&firstName=${encodeURIComponent(c.firstName)}&company=${encodeURIComponent(c.company)}`
-        );
+        const cid = togglClientIds[id];
+        const params = cid
+          ? `clientId=${cid}`
+          : `firstName=${encodeURIComponent(c.firstName)}&company=${encodeURIComponent(c.company)}`;
+        const res = await fetch(`/api/toggl?action=weekly&${params}`);
         const data = await res.json();
         if (data.hoursByWeek) {
           setWeekInputs(prev => {
@@ -397,7 +420,20 @@ export default function ClientsView({
       <div className="flex items-center gap-2.5 bg-gray-50 border border-gray-100 rounded-lg px-3.5 py-2.5 mb-4 text-xs flex-wrap">
         <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: '#E57CD8' }} />
         <span className="flex-1 text-gray-500">{togglStatus}</span>
-        <button onClick={syncToggl}
+        <select
+          value={dateRange}
+          onChange={e => {
+            const r = e.target.value as DateRange;
+            setDateRange(r);
+            syncToggl(r);
+          }}
+          className="px-2 py-1 rounded-full border text-xs font-medium cursor-pointer outline-none bg-white"
+          style={{ borderColor: '#E57CD8', color: '#9B2EAD' }}>
+          {(Object.keys(DATE_RANGE_LABELS) as DateRange[]).map(r => (
+            <option key={r} value={r}>{DATE_RANGE_LABELS[r]}</option>
+          ))}
+        </select>
+        <button onClick={() => syncToggl(dateRange)}
           className="px-3 py-1 rounded-full border text-xs font-medium cursor-pointer"
           style={{ borderColor: '#E57CD8', color: '#9B2EAD' }}>
           ↻ Sync now
@@ -420,7 +456,7 @@ export default function ClientsView({
           { label: 'Total contacts', value: allContacts.length },
           { label: 'Customers', value: allContacts.filter(c => effectiveStatus(c) === 'customer').length },
           { label: 'Leads', value: allContacts.filter(c => effectiveStatus(c) === 'lead').length },
-          { label: 'Toggl hrs (week)', value: allContacts.reduce((s, c) => s + getHrs(c.id), 0).toFixed(1) },
+          { label: `Toggl hrs (${DATE_RANGE_LABELS[dateRange].toLowerCase()})`, value: allContacts.reduce((s, c) => s + getHrs(c.id), 0).toFixed(1) },
         ].map(m => (
           <div key={m.label} className="bg-gray-50 rounded-lg px-3.5 py-3">
             <div className="text-xs text-gray-400 mb-1">{m.label}</div>
@@ -454,7 +490,7 @@ export default function ClientsView({
         <table className="w-full border-collapse">
           <thead>
             <tr>
-              {['Name', 'Company', 'Status', 'Platform', 'Toggl hrs (week)', 'Toggl client', 'Breakdown', 'Added'].map(h => (
+              {['Name', 'Company', 'Status', 'Payment Processor', 'Toggl hrs', 'Toggl client', 'Breakdown', 'Added'].map(h => (
                 <th key={h} className="text-left text-gray-400 font-medium uppercase py-2 px-2.5 border-b border-gray-100 whitespace-nowrap"
                   style={{ fontSize: 10, letterSpacing: '0.05em' }}>
                   {h}
