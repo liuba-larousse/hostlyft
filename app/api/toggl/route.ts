@@ -91,7 +91,7 @@ export async function GET(req: NextRequest) {
       fetch(`${BASE}/api/v9/workspaces/${wsId}/projects?active=both&per_page=200`, { headers: { Authorization: auth() } }),
       fetch(`${BASE}/api/v9/workspaces/${wsId}/clients?active=both`, { headers: { Authorization: auth() } }),
     ]);
-    const projects: { id: number; name: string }[] = projRes.ok ? await projRes.json() : [];
+    const projects: { id: number; name: string; client_id?: number | null }[] = projRes.ok ? await projRes.json() : [];
     const clients: { id: number; name: string }[] = clientsRes.ok ? await clientsRes.json() : [];
 
     if (action === 'sync') {
@@ -118,7 +118,7 @@ export async function GET(req: NextRequest) {
         email: me.email,
         workspaceId: wsId,
         range,
-        projects: projects.map(p => ({ id: p.id, name: p.name })),
+        projects: projects.map(p => ({ id: p.id, name: p.name, clientId: p.client_id ?? null })),
         clients: clients.map(c => ({ id: c.id, name: c.name })),
         // Hours grouped by Toggl client id — used for matched contacts
         clientGroups: (clientSum.groups || []).map((g: { id: number; seconds: number }) => ({

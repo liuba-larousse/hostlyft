@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -29,7 +29,16 @@ export interface Contact {
   };
 }
 
-interface TogglProject { id: number; name: string; }
+interface TogglProject { id: number; name: string; clientId?: number | null; }
+interface TogglProjectHours { name: string; hours: number; }
+interface TogglCache {
+  hours: Record<string, number>;
+  clientIds: Record<string, number>;
+  breakdown: Record<string, TogglProjectHours[]>;
+  range: string;
+  email: string;
+  timestamp: string;
+}
 
 type Filter = 'all' | 'customer' | 'lead' | 'inactive' | 'subscription';
 type Platform = 'none' | 'HubSpot' | 'Upwork' | 'Fiverr';
@@ -155,6 +164,8 @@ export default function ClientsView({
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
   const [togglHours, setTogglHours] = useState<Record<string, number>>({});
   const [togglClientIds, setTogglClientIds] = useState<Record<string, number>>({}); // contactId → toggl client id
+  const [togglBreakdown, setTogglBreakdown] = useState<Record<string, TogglProjectHours[]>>({}); // contactId → projects
+  const [expandedToggl, setExpandedToggl] = useState<Record<string, boolean>>({});
   const [togglSynced, setTogglSynced] = useState(false);
   const [togglStatus, setTogglStatus] = useState('Click "Sync now" to load Toggl hours');
   const [dateRange, setDateRange] = useState<DateRange>('this_week');
@@ -201,35 +212,74 @@ export default function ClientsView({
         if (match) clientIds[c.id] = match.id;
       });
 
-      // For contacts with a matched Toggl client, use client-grouped hours (more accurate)
+      const weekGroups: { projectId: number; seconds: number }[] = data.weekGroups || [];
+      const breakdown: Record<string, TogglProjectHours[]> = {};
+
+      // For contacts with a matched Toggl client: accumulate hours from all client projects
       allContacts.forEach(c => {
         const cid = clientIds[c.id];
-        if (cid) {
-          const g = clientGroups.find(g => g.clientId === cid);
-          if (g) hours[c.id] = g.seconds / 3600;
-        }
+        if (!cid) return;
+        // Total hours for the client
+        const g = clientGroups.find(g => g.clientId === cid);
+        if (g) hours[c.id] = g.seconds / 3600;
+        // Per-project breakdown — find all projects belonging to this client
+        const clientProjects = projects.filter(p => p.clientId === cid);
+        const projectLines: TogglProjectHours[] = [];
+        clientProjects.forEach(p => {
+          const pg = weekGroups.find(wg => wg.projectId === p.id);
+          if (pg && pg.seconds > 0) projectLines.push({ name: p.name, hours: pg.seconds / 3600 });
+        });
+        if (projectLines.length) breakdown[c.id] = projectLines.sort((a, b) => b.hours - a.hours);
       });
 
       // Fallback: project name matching for contacts without a Toggl client
-      (data.weekGroups as { projectId: number; seconds: number }[]).forEach(g => {
+      weekGroups.forEach(g => {
         const proj = projects.find(p => p.id === g.projectId);
         if (!proj) return;
         allContacts.forEach(c => {
           if (!clientIds[c.id] && matchContact(c, proj.name)) {
             hours[c.id] = (hours[c.id] || 0) + g.seconds / 3600;
+            breakdown[c.id] = breakdown[c.id] || [];
+            const existing = breakdown[c.id].find(x => x.name === proj.name);
+            if (existing) existing.hours += g.seconds / 3600;
+            else breakdown[c.id].push({ name: proj.name, hours: g.seconds / 3600 });
           }
         });
       });
 
       setTogglHours(hours);
       setTogglClientIds(clientIds);
+      setTogglBreakdown(breakdown);
       setTogglSynced(true);
       setTogglStatus(`Toggl synced — ${data.email} — ${DATE_RANGE_LABELS[range]} — ${new Date().toLocaleTimeString()}`);
+
+      // Persist to localStorage so data survives page refresh
+      lsj<TogglCache>('toggl_cache', {
+        hours, clientIds, breakdown, range,
+        email: data.email,
+        timestamp: new Date().toISOString(),
+      });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'error';
       setTogglStatus(`Could not connect to Toggl — ${msg}`);
     }
   }, [allContacts, dateRange]);
+
+  // Restore cached Toggl state on mount (persists until next manual sync)
+  useEffect(() => {
+    const cache = lsj<Partial<TogglCache>>('toggl_cache');
+    if (cache.hours && Object.keys(cache.hours).length > 0) {
+      setTogglHours(cache.hours);
+      setTogglClientIds(cache.clientIds || {});
+      setTogglBreakdown(cache.breakdown || {});
+      setTogglSynced(true);
+      if (cache.range) setDateRange(cache.range as DateRange);
+      const label = DATE_RANGE_LABELS[cache.range as DateRange] || '';
+      const time = cache.timestamp ? new Date(cache.timestamp).toLocaleTimeString() : '';
+      setTogglStatus(`Toggl cached — ${cache.email || ''} — ${label} — synced ${time}`);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Toast ────────────────────────────────────────────────────────────────────
 
@@ -679,22 +729,44 @@ export default function ClientsView({
 
                     {/* Hours */}
                     <td className="py-2 px-2.5 border-b border-gray-50">
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
-                        style={{
-                          background: synced ? '#F9E8FD' : '#F1EFE8',
-                          color: synced ? '#9B2EAD' : '#5F5E5A',
-                        }}>
-                        {synced && <span style={{ fontSize: 6 }}>●</span>}
-                        {hrs.toFixed(1)} hrs{synced ? ' (Toggl)' : ''}
-                      </span>
-                      {!synced && (
-                        <input
-                          type="number" min="0" step="0.5"
-                          defaultValue={hrs || ''}
-                          placeholder="0"
-                          className="w-11 ml-1.5 text-center text-xs px-1 py-0.5 border border-gray-200 rounded bg-transparent text-gray-900 outline-none"
-                          onChange={e => { ls('hrs_' + c.id, e.target.value); setTick(t => t + 1); }}
-                        />
+                      <div className="flex items-center gap-1">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+                          style={{
+                            background: synced ? '#F9E8FD' : '#F1EFE8',
+                            color: synced ? '#9B2EAD' : '#5F5E5A',
+                          }}>
+                          {synced && <span style={{ fontSize: 6 }}>●</span>}
+                          {hrs.toFixed(1)} hrs
+                        </span>
+                        {togglBreakdown[c.id]?.length > 0 && (
+                          <button
+                            onClick={() => setExpandedToggl(e => ({ ...e, [c.id]: !e[c.id] }))}
+                            className="text-gray-300 hover:text-gray-500 cursor-pointer transition-colors"
+                            style={{ fontSize: 10 }}
+                            title="Show project breakdown">
+                            {expandedToggl[c.id] ? '▲' : '▼'}
+                          </button>
+                        )}
+                        {!synced && (
+                          <input
+                            type="number" min="0" step="0.5"
+                            defaultValue={hrs || ''}
+                            placeholder="0"
+                            className="w-11 text-center text-xs px-1 py-0.5 border border-gray-200 rounded bg-transparent text-gray-900 outline-none"
+                            onChange={e => { ls('hrs_' + c.id, e.target.value); setTick(t => t + 1); }}
+                          />
+                        )}
+                      </div>
+                      {expandedToggl[c.id] && togglBreakdown[c.id] && (
+                        <div className="mt-1.5 pl-1 border-l-2 border-purple-100 space-y-0.5">
+                          {togglBreakdown[c.id].map(p => (
+                            <div key={p.name} className="flex items-center justify-between gap-3"
+                              style={{ fontSize: 10 }}>
+                              <span className="text-gray-400 truncate max-w-28">{p.name}</span>
+                              <span className="font-medium text-gray-600 flex-shrink-0">{p.hours.toFixed(1)}h</span>
+                            </div>
+                          ))}
+                        </div>
                       )}
                     </td>
 
