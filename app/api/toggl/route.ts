@@ -133,6 +133,23 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    if (action === 'debug') {
+      const { start, end } = getDateRange(range);
+      const projSumRes = await fetch(`${BASE}/reports/api/v3/workspace/${wsId}/summary/time_entries`, {
+        method: 'POST',
+        headers: { Authorization: auth(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ start_date: start, end_date: end, group_by: 'projects' }),
+      });
+      const projSum = projSumRes.ok ? await projSumRes.json() : {};
+      return NextResponse.json({
+        range, start, end,
+        projectsWithClientId: projects.filter(p => p.client_id).map(p => ({ id: p.id, name: p.name, clientId: p.client_id })),
+        projectsWithoutClientId: projects.filter(p => !p.client_id).map(p => ({ id: p.id, name: p.name })),
+        clients: clients.map(c => ({ id: c.id, name: c.name })),
+        weekGroups: (projSum.groups || []).map((g: { id: number; seconds: number }) => ({ projectId: g.id, seconds: g.seconds, hours: (g.seconds || 0) / 3600 })),
+      });
+    }
+
     if (action === 'weekly') {
       const firstName = req.nextUrl.searchParams.get('firstName') || '';
       const company = req.nextUrl.searchParams.get('company') || '';
