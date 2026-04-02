@@ -1272,10 +1272,19 @@ export default function SeasonalityAnalytics() {
               const rows=[];
               DKEYS.forEach(uk=>{
                 units[uk].devGap.forEach((g,i)=>{
-                  if(units[uk].gapCls[i].key===key)
+                  if(units[uk].gapCls[i].key===key) {
+                    const mOcc = units[uk].marketOcc[i] || 0;
+                    const rOcc = units[uk].rentalOcc[i];
                     rows.push({uk,m:months[i],g,rd:units[uk].rDev[i],md:units[uk].mDev[i],
                       cls:units[uk].gapCls[i],curADR:units[uk].rentalADR[i],
-                      tADR:units[uk].targetADR[i],dADR:units[uk].deltaADR[i]});
+                      tADR:units[uk].targetADR[i],dADR:units[uk].deltaADR[i],
+                      revNeutral:units[uk].revNeutral[i],
+                      revOptimistic:units[uk].revOptimistic[i],
+                      days:units[uk].monthDays[i] || 30,
+                      mOccPct:Math.round(mOcc),
+                      rOccPct:rOcc!==null&&rOcc>0 ? Math.round(rOcc) : Math.round(mOcc),
+                    });
+                  }
                 });
               });
               if(!rows.length) return null;
@@ -1313,14 +1322,14 @@ export default function SeasonalityAnalytics() {
                               {r.dADR!==null?(r.dADR>=0?"+":"-")+"$"+Math.abs(r.dADR).toFixed(0):"—"}
                             </td>
                             <td style={{...TD,fontFamily:MONO,fontSize:11}}>
-                              <div style={{color:r.revNeutral>=0?pos:neg,fontWeight:600}}>
-                                {r.revNeutral!==null?(r.revNeutral>=0?"+":"-")+"$"+Math.abs(r.revNeutral):"—"}
+                              <div style={{color:typeof r.revNeutral==="number"?(r.revNeutral>=0?pos:neg):neu,fontWeight:600}}>
+                                {typeof r.revNeutral==="number"?(r.revNeutral>=0?"+":"-")+"$"+Math.abs(r.revNeutral):"—"}
                               </div>
                               <div style={{color:"#9ca3af",fontSize:10}}>{r.mOccPct}% mkt occ × {r.days}d</div>
                             </td>
                             <td style={{...TD,fontFamily:MONO,fontSize:11}}>
-                              <div style={{color:r.revOptimistic>=0?pos:neg,fontWeight:600}}>
-                                {r.revOptimistic!==null?(r.revOptimistic>=0?"+":"-")+"$"+Math.abs(r.revOptimistic):"—"}
+                              <div style={{color:typeof r.revOptimistic==="number"?(r.revOptimistic>=0?pos:neg):neu,fontWeight:600}}>
+                                {typeof r.revOptimistic==="number"?(r.revOptimistic>=0?"+":"-")+"$"+Math.abs(r.revOptimistic):"—"}
                               </div>
                               <div style={{color:"#9ca3af",fontSize:10}}>{r.rOccPct}% rental occ × {r.days}d</div>
                             </td>
