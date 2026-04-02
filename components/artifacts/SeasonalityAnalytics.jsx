@@ -614,9 +614,101 @@ export default function SeasonalityAnalytics() {
   const [errors,    setErrors]    = useState([]);
   const [tab,       setTab]       = useState("summary");
   const [unit,      setUnit]      = useState("U1");
-  const [showExp,   setShowExp]   = useState(false);
-  const [hoverCell, setHoverCell] = useState(null);
+  const [showExp,      setShowExp]      = useState(false);
+  const [hoverCell,    setHoverCell]    = useState(null);
+  const [savedEvals,   setSavedEvals]   = useState([]);
+  const [saveModal,    setSaveModal]    = useState(false);
+  const [saveName,     setSaveName]     = useState('');
+  const [shareCopied,  setShareCopied]  = useState(null);
   const fileRef = useRef();
+
+  // ── Share encode / decode (URL hash, no server needed) ──────────────────────
+  function encodeShare(data) {
+    try {
+      const json = JSON.stringify(data);
+      const bytes = new TextEncoder().encode(json);
+      const binStr = Array.from(bytes, b => String.fromCharCode(b)).join('');
+      return btoa(binStr).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+    } catch { return null; }
+  }
+  function decodeShare(b64) {
+    try {
+      const padded = b64.replace(/-/g,'+').replace(/_/g,'/');
+      const binStr = atob(padded);
+      const bytes = Uint8Array.from(binStr, c => c.charCodeAt(0));
+      return JSON.parse(new TextDecoder().decode(bytes));
+    } catch { return null; }
+  }
+
+  // ── Saved evals helpers ─────────────────────────────────────────────────────
+  function loadFromStorage() {
+    try { return JSON.parse(localStorage.getItem('seasonality_saves') || '[]'); }
+    catch { return []; }
+  }
+  function persistEvals(list) {
+    localStorage.setItem('seasonality_saves', JSON.stringify(list));
+    setSavedEvals(list);
+  }
+
+  // Load saved list + check URL hash for shared eval on mount
+  useEffect(() => {
+    setSavedEvals(loadFromStorage());
+    const hash = window.location.hash;
+    if (hash.startsWith('#share=')) {
+      const data = decodeShare(hash.slice(7));
+      if (data?.analytics) {
+        setAnalytics(data.analytics);
+        setFiles(data.fileNames?.map(n => ({ fileName: n })) || []);
+        if (data.analytics.unitKeys?.[0]) setUnit(data.analytics.unitKeys[0]);
+        setTab('summary');
+        // Clean hash from URL without reload
+        window.history.replaceState(null, '', window.location.pathname);
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function saveEvaluation() {
+    if (!analytics) return;
+    const name = saveName.trim() || `Evaluation ${new Date().toLocaleDateString()}`;
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const entry = {
+      id, name,
+      savedAt: new Date().toISOString(),
+      analytics,
+      fileNames: files.map(f => f.fileName),
+      unitKeys: analytics.unitKeys,
+      fileYear: analytics.fileYear,
+    };
+    persistEvals([entry, ...loadFromStorage()].slice(0, 20));
+    setSaveModal(false);
+    setSaveName('');
+  }
+
+  function loadEvaluation(entry) {
+    setAnalytics(entry.analytics);
+    setFiles(entry.fileNames?.map(n => ({ fileName: n })) || []);
+    if (entry.analytics.unitKeys?.[0]) setUnit(entry.analytics.unitKeys[0]);
+    setTab('summary');
+    setErrors([]);
+  }
+
+  function deleteEvaluation(id) {
+    persistEvals(loadFromStorage().filter(e => e.id !== id));
+  }
+
+  function copyShareUrl(entry) {
+    const b64 = encodeShare({ analytics: entry.analytics, fileNames: entry.fileNames });
+    if (!b64) return;
+    const url = window.location.origin + window.location.pathname + '#share=' + b64;
+    navigator.clipboard.writeText(url).then(() => {
+      setShareCopied(entry.id);
+      setTimeout(() => setShareCopied(null), 2500);
+    }).catch(() => {
+      // Fallback: prompt
+      window.prompt('Copy share link:', url);
+    });
+  }
 
   const processFile = useCallback(async file=>{
     return new Promise(res=>{
@@ -727,6 +819,56 @@ export default function SeasonalityAnalytics() {
               <div style={{fontSize:13,color:"#9ca3af"}}>Accepts .xlsx · .xls</div>
             </>}
         </div>
+
+        {/* ── Saved Evaluations ── */}
+        {savedEvals.length > 0 && (
+          <div style={{background:WHITE,border:"1px solid #e5e7eb",borderRadius:14,
+            boxShadow:"0 1px 3px rgba(0,0,0,.06)",overflow:"hidden"}}>
+            <div style={{padding:"14px 20px",borderBottom:"1px solid #f3f4f6",
+              display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+              <div style={{fontSize:13,fontWeight:700,color:"#111827"}}>Saved Evaluations</div>
+              <div style={{fontSize:11,color:"#9ca3af"}}>{savedEvals.length} saved</div>
+            </div>
+            <div style={{display:"flex",flexDirection:"column"}}>
+              {savedEvals.map((ev, idx) => (
+                <div key={ev.id} style={{padding:"12px 20px",display:"flex",alignItems:"center",
+                  gap:12,borderBottom:idx<savedEvals.length-1?"1px solid #f9fafb":undefined,
+                  background:idx%2===0?WHITE:"#fafafa"}}>
+                  <div style={{fontSize:18,flexShrink:0}}>📊</div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:13,fontWeight:600,color:"#111827",
+                      overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ev.name}</div>
+                    <div style={{fontSize:11,color:"#9ca3af",marginTop:2,display:"flex",gap:10,flexWrap:"wrap"}}>
+                      {ev.fileYear && <span>📅 {ev.fileYear}</span>}
+                      {ev.unitKeys?.length > 0 && <span>{ev.unitKeys.length} unit{ev.unitKeys.length>1?"s":""}</span>}
+                      {ev.savedAt && <span>Saved {new Date(ev.savedAt).toLocaleDateString()}</span>}
+                      {ev.fileNames?.length > 0 && <span style={{color:"#c4b5fd"}}>{ev.fileNames.join(', ')}</span>}
+                    </div>
+                  </div>
+                  <button onClick={() => loadEvaluation(ev)}
+                    style={{padding:"6px 14px",borderRadius:8,border:"1.5px solid #6366f1",
+                      background:"#eef2ff",color:"#6366f1",fontSize:12,fontWeight:600,
+                      cursor:"pointer",whiteSpace:"nowrap",flexShrink:0}}>
+                    Load ↗
+                  </button>
+                  <button onClick={() => copyShareUrl(ev)}
+                    style={{padding:"6px 14px",borderRadius:8,
+                      border:`1.5px solid ${shareCopied===ev.id?"#059669":"#e5e7eb"}`,
+                      background:shareCopied===ev.id?"#f0fdf4":"#f9fafb",
+                      color:shareCopied===ev.id?"#059669":"#6b7280",
+                      fontSize:12,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap",flexShrink:0}}>
+                    {shareCopied===ev.id?"✓ Copied!":"🔗 Share"}
+                  </button>
+                  <button onClick={() => deleteEvaluation(ev.id)}
+                    style={{padding:"6px 10px",borderRadius:8,border:"1px solid #fee2e2",
+                      background:"#fff5f5",color:"#dc2626",fontSize:12,cursor:"pointer",flexShrink:0}}>
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {errors.map((e,i)=>(
           <div key={i} style={{fontSize:12,color:"#dc2626",padding:"12px 16px",
@@ -908,6 +1050,47 @@ export default function SeasonalityAnalytics() {
           </div>
         </div>
       </div>
+
+      {/* ── Save Evaluation Modal ── */}
+      {saveModal && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",zIndex:200,
+          display:"flex",alignItems:"center",justifyContent:"center",padding:"24px"}}
+          onClick={e=>{ if(e.target===e.currentTarget) setSaveModal(false); }}>
+          <div style={{background:"#fff",borderRadius:16,padding:"28px",width:"100%",maxWidth:400,
+            boxShadow:"0 20px 60px rgba(0,0,0,.2)",fontFamily:F}}>
+            <div style={{fontSize:16,fontWeight:700,color:"#111827",marginBottom:4}}>
+              💾 Save Evaluation
+            </div>
+            <div style={{fontSize:12,color:"#9ca3af",marginBottom:18,lineHeight:1.6}}>
+              Give this evaluation a name to find it later. Saved evaluations are stored in your browser and can be shared via link.
+            </div>
+            <input
+              value={saveName}
+              onChange={e=>setSaveName(e.target.value)}
+              onKeyDown={e=>{ if(e.key==="Enter") saveEvaluation(); if(e.key==="Escape") setSaveModal(false); }}
+              placeholder={`e.g. ${analytics?.fileYear || ''} Portfolio Review`}
+              autoFocus
+              style={{width:"100%",padding:"10px 12px",borderRadius:8,border:"1.5px solid #d1d5db",
+                fontSize:13,outline:"none",boxSizing:"border-box",fontFamily:F,
+                transition:"border .15s"}}
+              onFocus={e=>{ e.target.style.borderColor="#6366f1"; }}
+              onBlur={e=>{ e.target.style.borderColor="#d1d5db"; }}
+            />
+            <div style={{display:"flex",gap:8,marginTop:16,justifyContent:"flex-end"}}>
+              <button onClick={()=>setSaveModal(false)}
+                style={{padding:"8px 18px",borderRadius:8,border:"1px solid #e5e7eb",
+                  background:"#f9fafb",color:"#6b7280",fontSize:12,cursor:"pointer",fontFamily:F}}>
+                Cancel
+              </button>
+              <button onClick={saveEvaluation}
+                style={{padding:"8px 18px",borderRadius:8,border:"none",background:"#6366f1",
+                  color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:F}}>
+                Save evaluation
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 
@@ -972,12 +1155,18 @@ export default function SeasonalityAnalytics() {
             );
           })()}
         </div>
-        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
           <button onClick={()=>setShowExp(v=>!v)}
             style={{padding:"7px 16px",borderRadius:8,border:"1.5px solid #6366f1",
               background:showExp?"#6366f1":WHITE,color:showExp?WHITE:"#6366f1",
               fontSize:12,cursor:"pointer",fontFamily:F,fontWeight:600}}>
-            {showExp?"✕ Close export":"⬇ Export tables"}
+            {showExp?"✕ Close export":"⬇ Export"}
+          </button>
+          <button onClick={()=>{ setSaveName(files.map(f=>f.fileName).filter(Boolean).join(', ') || ''); setSaveModal(true); }}
+            style={{padding:"7px 16px",borderRadius:8,border:"1.5px solid #059669",
+              background:"#f0fdf4",color:"#059669",
+              fontSize:12,cursor:"pointer",fontFamily:F,fontWeight:600}}>
+            💾 Save
           </button>
           <button onClick={()=>fileRef.current.click()}
             style={{padding:"7px 14px",borderRadius:8,border:BORDER,
