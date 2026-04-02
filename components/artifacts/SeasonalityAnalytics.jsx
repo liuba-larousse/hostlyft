@@ -528,7 +528,11 @@ function LineChart({ datasets, labels, height=160, yLabel="" }) {
       });
     });
   },[datasets,labels,height]);
-  return <canvas ref={ref} width={520} height={height} style={{width:"100%",height}} />;
+  return (
+    <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+      <canvas ref={ref} width={520} height={height} style={{display:"block",height,minWidth:520}} />
+    </div>
+  );
 }
 
 function BarChart({ datasets, labels, height=140 }) {
@@ -572,7 +576,11 @@ function BarChart({ datasets, labels, height=140 }) {
     ctx.fillStyle="#6b7280";ctx.font="9px system-ui";ctx.textAlign="center";
     labels.forEach((l,i)=>ctx.fillText(l,pad.l+slotW*(i+0.5),H-5));
   },[datasets,labels,height]);
-  return <canvas ref={ref} width={520} height={height} style={{width:"100%",height}} />;
+  return (
+    <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+      <canvas ref={ref} width={520} height={height} style={{display:"block",height,minWidth:520}} />
+    </div>
+  );
 }
 
 // ── Heat map cell ─────────────────────────────────────────────────────────────
