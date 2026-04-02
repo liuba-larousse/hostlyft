@@ -62,8 +62,8 @@ const STATUS_STYLE: Record<string, { bg: string; color: string; label: string }>
 
 const INVOICE_STATUS: Record<string, { bg: string; color: string; label: string }> = {
   PAID:        { bg: '#EAF3DE', color: '#27500A', label: 'Paid' },
-  OUTSTANDING: { bg: '#FAEEDA', color: '#633806', label: 'Due' },
-  OPEN:        { bg: '#FAEEDA', color: '#633806', label: 'Open' },
+  OUTSTANDING: { bg: '#FEE2E2', color: '#991B1B', label: 'Due' },
+  OPEN:        { bg: '#FEE2E2', color: '#991B1B', label: 'Open' },
   OVERDUE:     { bg: '#FEE2E2', color: '#991B1B', label: 'Overdue' },
   SCHEDULED:   { bg: '#E6F1FB', color: '#0C447C', label: 'Scheduled' },
   VOIDED:      { bg: '#F1EFE8', color: '#5F5E5A', label: 'Voided' },
@@ -344,8 +344,7 @@ export default function ClientsView({
   // ── Helpers ─────────────────────────────────────────────────────────────────
 
   function getHrs(id: string) {
-    const synced = togglHours[id] ?? 0;
-    return synced > 0 ? synced : (parseFloat(ls('hrs_' + id) || '0') || 0);
+    return togglHours[id] ?? 0;
   }
 
   function getPlatform(id: string): Platform {
@@ -657,14 +656,14 @@ export default function ClientsView({
                           {initials(c.name)}
                         </div>
                         <div>
-                          <div className="text-xs font-medium text-gray-900">{c.name}</div>
-                          <div className="text-gray-400" style={{ fontSize: 10 }}>{c.email}</div>
+                          <div className="text-sm font-medium text-gray-900">{c.name}</div>
+                          <div className="text-xs text-gray-400">{c.email}</div>
                         </div>
                       </div>
                     </td>
 
                     {/* Company */}
-                    <td className="py-2 px-2.5 border-b border-gray-50 text-xs text-gray-500">{c.company}</td>
+                    <td className="py-2 px-2.5 border-b border-gray-50 text-sm text-gray-500">{c.company}</td>
 
                     {/* Status */}
                     <td className="py-2 px-2.5 border-b border-gray-50">
@@ -698,36 +697,37 @@ export default function ClientsView({
                         const st = INVOICE_STATUS[inv.status?.toUpperCase()] ?? { bg: '#F1EFE8', color: '#5F5E5A', label: inv.status || '?' };
                         return (
                           <div>
-                            <div className="flex items-center gap-1.5 mb-0.5">
-                              <span className="text-xs font-medium text-gray-900">
+                            <div className="flex items-center gap-1.5 mb-1">
+                              <span className="text-sm font-semibold text-gray-900">
                                 {inv.amount ? `${SYM[inv.currency] || inv.currency || '$'}${parseFloat(inv.amount).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—'}
                               </span>
-                              <span className="inline-flex items-center px-1.5 rounded-full font-medium"
-                                style={{ fontSize: 10, background: st.bg, color: st.color }}>
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+                                style={{ background: st.bg, color: st.color }}>
                                 {st.label}
                               </span>
                             </div>
-                            <div className="text-gray-400" style={{ fontSize: 10 }}>
-                              {inv.invoiceNumber ? `#${inv.invoiceNumber} · ` : ''}{inv.invoiceDate}
+                            <div className="text-xs text-gray-400">
+                              {new Date(inv.invoiceDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
                             </div>
                           </div>
                         );
                       })() : c.lastDeal?.closeDate ? (
                         <div>
-                          <div className="flex items-center gap-1.5 mb-0.5">
-                            <span className="text-xs font-medium text-gray-900">
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <span className="text-sm font-semibold text-gray-900">
                               {c.lastDeal.amount ? `${SYM[c.lastDeal.currency] || c.lastDeal.currency || '$'}${parseFloat(c.lastDeal.amount).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—'}
                             </span>
-                            <span className="inline-flex items-center px-1.5 rounded-full font-medium"
-                              style={{ fontSize: 10, background: c.lastDeal.paid ? '#EAF3DE' : '#FAEEDA', color: c.lastDeal.paid ? '#27500A' : '#633806' }}>
-                              {c.lastDeal.paid ? 'Paid' : 'Due'}
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium"
+                              style={{ background: c.lastDeal.paid ? '#EAF3DE' : '#FEE2E2', color: c.lastDeal.paid ? '#27500A' : '#991B1B' }}>
+                              {c.lastDeal.paid ? 'Paid' : 'Open'}
                             </span>
-                            <span className="text-gray-300" style={{ fontSize: 9 }}>deal</span>
                           </div>
-                          <div className="text-gray-400" style={{ fontSize: 10 }}>{c.lastDeal.closeDate}</div>
+                          <div className="text-xs text-gray-400">
+                            {new Date(c.lastDeal.closeDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                          </div>
                         </div>
                       ) : (
-                        <span className="text-gray-300 text-xs">—</span>
+                        <span className="text-gray-300 text-sm">—</span>
                       )}
                     </td>
 
@@ -747,7 +747,7 @@ export default function ClientsView({
                     {/* Hours */}
                     <td className="py-2 px-2.5 border-b border-gray-50">
                       <div className="flex items-center gap-1">
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-sm font-medium"
                           style={{
                             background: synced ? '#F9E8FD' : '#F1EFE8',
                             color: synced ? '#9B2EAD' : '#5F5E5A',
@@ -763,15 +763,6 @@ export default function ClientsView({
                             title="Show project breakdown">
                             {expandedToggl[c.id] ? '▲' : '▼'}
                           </button>
-                        )}
-                        {!synced && (
-                          <input
-                            type="number" min="0" step="0.5"
-                            defaultValue={hrs || ''}
-                            placeholder="0"
-                            className="w-11 text-center text-xs px-1 py-0.5 border border-gray-200 rounded bg-transparent text-gray-900 outline-none"
-                            onChange={e => { ls('hrs_' + c.id, e.target.value); setTick(t => t + 1); }}
-                          />
                         )}
                       </div>
                       {expandedToggl[c.id] && togglBreakdown[c.id] && (

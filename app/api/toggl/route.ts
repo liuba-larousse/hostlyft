@@ -89,23 +89,38 @@ export async function GET(req: NextRequest) {
 
     const [projRes, clientsRes] = await Promise.all([
       fetch(`${BASE}/api/v9/workspaces/${wsId}/projects?active=both&per_page=200`, { headers: { Authorization: auth() } }),
-      fetch(`${BASE}/api/v9/workspaces/${wsId}/clients?active=both`, { headers: { Authorization: auth() } }),
+      fetch(`${BASE}/api/v9/workspaces/${wsId}/clients?status=both`, { headers: { Authorization: auth() } }),
     ]);
     const projects: { id: number; name: string; client_id?: number | null }[] = projRes.ok ? await projRes.json() : [];
     const clients: { id: number; name: string }[] = clientsRes.ok ? await clientsRes.json() : [];
 
+    // Fetch time entries for a date range and aggregate seconds by project_id
+    async function fetchSecondsByProject(start: string, end: string): Promise<Record<number, number>> {
+      const res = await fetch(
+        `${BASE}/api/v9/me/time_entries?start_date=${start}T00:00:00Z&end_date=${end}T23:59:59Z`,
+        { headers: { Authorization: auth() } }
+      );
+      if (!res.ok) return {};
+      const entries: { project_id: number | null; duration: number }[] = await res.json();
+      const map: Record<number, number> = {};
+      for (const e of entries) {
+        if (!e.project_id || e.duration < 0) continue; // skip running entries
+        map[e.project_id] = (map[e.project_id] || 0) + e.duration;
+      }
+      return map;
+    }
+
     if (action === 'sync') {
       const { start, end } = getDateRange(range);
-      const reportBase = `${BASE}/reports/api/v2/summary?workspace_id=${wsId}&user_agent=hostlyft&since=${start}&until=${end}`;
+      const secByProject = await fetchSecondsByProject(start, end);
 
-      // Fetch summary grouped by both clients and projects in parallel (v2 API)
-      const [clientSumRes, projSumRes] = await Promise.all([
-        fetch(`${reportBase}&grouping=clients`, { headers: { Authorization: auth() } }),
-        fetch(`${reportBase}&grouping=projects`, { headers: { Authorization: auth() } }),
-      ]);
-
-      const clientSum = clientSumRes.ok ? await clientSumRes.json() : {};
-      const projSum = projSumRes.ok ? await projSumRes.json() : {};
+      // Derive client totals from project totals using project→client mapping
+      const secByClient: Record<number, number> = {};
+      for (const p of projects) {
+        if (p.client_id && secByProject[p.id]) {
+          secByClient[p.client_id] = (secByClient[p.client_id] || 0) + secByProject[p.id];
+        }
+      }
 
       return NextResponse.json({
         email: me.email,
@@ -113,35 +128,42 @@ export async function GET(req: NextRequest) {
         range,
         projects: projects.map(p => ({ id: p.id, name: p.name, clientId: p.client_id ?? null })),
         clients: clients.map(c => ({ id: c.id, name: c.name })),
-        // Hours grouped by Toggl client id — v2 uses `data` array, time in milliseconds
-        clientGroups: (clientSum.data || []).map((g: { id: number; time: number }) => ({
-          clientId: g.id,
-          seconds: Math.round((g.time || 0) / 1000),
+        clientGroups: Object.entries(secByClient).map(([clientId, seconds]) => ({
+          clientId: Number(clientId),
+          seconds,
         })),
-        // Hours grouped by project — v2 uses `data` array, time in milliseconds
-        weekGroups: (projSum.data || []).map((g: { id: number; time: number }) => ({
-          projectId: g.id,
-          seconds: Math.round((g.time || 0) / 1000),
+        weekGroups: Object.entries(secByProject).map(([projectId, seconds]) => ({
+          projectId: Number(projectId),
+          seconds,
         })),
       });
     }
 
     if (action === 'debug') {
       const { start, end } = getDateRange(range);
-      const reportBase = `${BASE}/reports/api/v2/summary?workspace_id=${wsId}&user_agent=hostlyft&since=${start}&until=${end}`;
-      const [projSumRes, clientSumRes] = await Promise.all([
-        fetch(`${reportBase}&grouping=projects`, { headers: { Authorization: auth() } }),
-        fetch(`${reportBase}&grouping=clients`, { headers: { Authorization: auth() } }),
-      ]);
-      const projSum = projSumRes.ok ? await projSumRes.json() : {};
-      const clientSum = clientSumRes.ok ? await clientSumRes.json() : {};
+      const secByProject = await fetchSecondsByProject(start, end);
+
+      const secByClient: Record<number, number> = {};
+      for (const p of projects) {
+        if (p.client_id && secByProject[p.id]) {
+          secByClient[p.client_id] = (secByClient[p.client_id] || 0) + secByProject[p.id];
+        }
+      }
+
       return NextResponse.json({
         range, start, end,
-        projectsWithClientId: projects.filter(p => p.client_id).map(p => ({ id: p.id, name: p.name, clientId: p.client_id })),
-        projectsWithoutClientId: projects.filter(p => !p.client_id).map(p => ({ id: p.id, name: p.name })),
-        clients: clients.map(c => ({ id: c.id, name: c.name })),
-        rawProjectSumFirst3: (projSum.data || []).slice(0, 3),
-        rawClientSumFirst3: (clientSum.data || []).slice(0, 3),
+        projectsWithClientId: projects.filter(p => p.client_id).map(p => ({
+          id: p.id, name: p.name, clientId: p.client_id,
+          hours: (secByProject[p.id] || 0) / 3600,
+        })),
+        projectsWithoutClientId: projects.filter(p => !p.client_id).map(p => ({
+          id: p.id, name: p.name,
+          hours: (secByProject[p.id] || 0) / 3600,
+        })),
+        clients: clients.map(c => ({
+          id: c.id, name: c.name,
+          hours: (secByClient[c.id] || 0) / 3600,
+        })),
       });
     }
 
@@ -153,27 +175,21 @@ export async function GET(req: NextRequest) {
 
       const results = await Promise.all(
         weeks.map(async (w) => {
-          const grouping = clientId ? 'clients' : 'projects';
-          const url = `${BASE}/reports/api/v2/summary?workspace_id=${wsId}&user_agent=hostlyft&since=${w.start}&until=${w.end}&grouping=${grouping}`;
-          const res = await fetch(url, { headers: { Authorization: auth() } });
-          if (!res.ok) return { key: w.key, hours: 0 };
-          const data = await res.json();
+          const secByProject = await fetchSecondsByProject(w.start, w.end);
           let hours = 0;
 
           if (clientId) {
-            // Find the specific client entry and sum its time
-            (data.data || []).forEach((g: { id: number; time: number }) => {
-              if (g.id === parseInt(clientId)) {
-                hours += (g.time || 0) / 3600000;
-              }
-            });
+            const cid = parseInt(clientId);
+            projects
+              .filter(p => p.client_id === cid)
+              .forEach(p => { hours += (secByProject[p.id] || 0) / 3600; });
           } else {
-            (data.data || []).forEach((g: { id: number; time: number }) => {
-              const proj = projects.find(p => p.id === g.id);
+            for (const [projId, secs] of Object.entries(secByProject)) {
+              const proj = projects.find(p => p.id === Number(projId));
               if (proj && matchesContact(proj.name, firstName, company)) {
-                hours += (g.time || 0) / 3600000;
+                hours += secs / 3600;
               }
-            });
+            }
           }
 
           return { key: w.key, hours };
@@ -208,7 +224,7 @@ export async function POST(req: NextRequest) {
 
     // Check if client already exists
     const clientsRes = await fetch(
-      `${BASE}/api/v9/workspaces/${wsId}/clients?active=both`,
+      `${BASE}/api/v9/workspaces/${wsId}/clients?status=both`,
       { headers: { Authorization: auth() } }
     );
     const existingClients: { id: number; name: string }[] = clientsRes.ok ? await clientsRes.json() : [];

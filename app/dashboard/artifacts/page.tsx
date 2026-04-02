@@ -1,4 +1,4 @@
-import { Package, Plus, BarChart2 } from "lucide-react";
+import { Package, Plus, BarChart2, TrendingUp } from "lucide-react";
 import Link from "next/link";
 
 const artifacts = [
@@ -10,6 +10,15 @@ const artifacts = [
     color: "bg-violet-50 text-violet-600",
     type: "React Component",
     action: { label: "View", href: "/dashboard/artifacts/revpar-analytics", external: false },
+  },
+  {
+    id: "seasonality-analytics",
+    title: "Seasonality Analytics and Opportunities",
+    description: "Upload a KPI report to analyse seasonal RevPAR deviations, occupancy gaps, target ADR adjustments, and revenue opportunity by unit.",
+    icon: TrendingUp,
+    color: "bg-indigo-50 text-indigo-600",
+    type: "React Component",
+    action: { label: "View", href: "/dashboard/artifacts/seasonality-analytics", external: false },
   },
 ];
 
