@@ -30,10 +30,6 @@ const PRIORITY_STYLE: Record<Priority, { pill: string; dot: string }> = {
   high:   { pill: 'bg-red-50 text-red-600',      dot: 'bg-red-500' },
 };
 
-function genId() {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-}
-
 function initials(name: string) {
   return name.trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase();
 }
@@ -52,23 +48,13 @@ function isOverdue(dueDate: string) {
 
 function formatDue(dueDate: string) {
   if (!dueDate) return '';
-  const d = new Date(dueDate);
-  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  return new Date(dueDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 }
 
-const BLANK_TASK: Omit<Task, 'id' | 'createdAt'> = {
+const BLANK: Omit<Task, 'id' | 'createdAt'> = {
   title: '', description: '', status: 'todo',
   priority: 'medium', assignee: '', client: '', dueDate: '',
 };
-
-function loadTasks(): Task[] {
-  if (typeof window === 'undefined') return [];
-  try { return JSON.parse(localStorage.getItem('taskboard') || '[]'); }
-  catch { return []; }
-}
-function saveTasks(tasks: Task[]) {
-  localStorage.setItem('taskboard', JSON.stringify(tasks));
-}
 
 // ── Autocomplete input ────────────────────────────────────────────────────────
 function Autocomplete({ value, onChange, options, placeholder, className = '' }: {
@@ -104,6 +90,7 @@ function Autocomplete({ value, onChange, options, placeholder, className = '' }:
 // ── Main component ────────────────────────────────────────────────────────────
 export default function TaskBoard() {
   const [tasks, setTasks]           = useState<Task[]>([]);
+  const [loading, setLoading]       = useState(true);
   const [addingTo, setAddingTo]     = useState<Status | null>(null);
   const [newTitle, setNewTitle]     = useState('');
   const [newPriority, setNewPriority] = useState<Priority>('medium');
@@ -111,15 +98,22 @@ export default function TaskBoard() {
   const [dragOver, setDragOver]     = useState<Status | null>(null);
   const [modalTask, setModalTask]   = useState<Task | null>(null);
   const [draft, setDraft]           = useState<Task | null>(null);
+  const [saving, setSaving]         = useState(false);
   const [filterAssignee, setFilterAssignee] = useState('');
   const [filterClient, setFilterClient]     = useState('');
   const [filterPriority, setFilterPriority] = useState<Priority | ''>('');
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { setTasks(loadTasks()); }, []);
-  useEffect(() => { if (addingTo && inputRef.current) inputRef.current.focus(); }, [addingTo]);
+  // ── Load from Supabase ──────────────────────────────────────────────────────
+  useEffect(() => {
+    fetch('/api/tasks')
+      .then(r => r.json())
+      .then(data => { setTasks(Array.isArray(data) ? data : []); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
 
-  function update(next: Task[]) { setTasks(next); saveTasks(next); }
+  useEffect(() => { if (addingTo && inputRef.current) inputRef.current.focus(); }, [addingTo]);
 
   // ── Derived option lists ────────────────────────────────────────────────────
   const assigneeOptions = [...new Set(tasks.map(t => t.assignee).filter(Boolean))];
@@ -134,29 +128,54 @@ export default function TaskBoard() {
   const activeFilters = [filterAssignee, filterClient, filterPriority].filter(Boolean).length;
 
   // ── CRUD ────────────────────────────────────────────────────────────────────
-  function addTask() {
+  async function addTask() {
     if (!newTitle.trim() || !addingTo) return;
-    const task: Task = { id: genId(), createdAt: new Date().toISOString(),
-      ...BLANK_TASK, title: newTitle.trim(), status: addingTo, priority: newPriority };
-    update([task, ...tasks]);
+    const payload = { ...BLANK, title: newTitle.trim(), status: addingTo, priority: newPriority };
     setNewTitle(''); setNewPriority('medium'); setAddingTo(null);
+    const res = await fetch('/api/tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      const task = await res.json();
+      setTasks(prev => [task, ...prev]);
+    }
   }
 
   function openTask(task: Task) { setModalTask(task); setDraft({ ...task }); }
 
-  function saveModal() {
+  async function saveModal() {
     if (!draft) return;
-    update(tasks.map(t => t.id === draft.id ? draft : t));
+    setSaving(true);
+    const res = await fetch(`/api/tasks/${draft.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(draft),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      setTasks(prev => prev.map(t => t.id === updated.id ? updated : t));
+    }
+    setSaving(false);
     setModalTask(null); setDraft(null);
   }
 
-  function deleteTask(id: string) {
-    update(tasks.filter(t => t.id !== id));
+  async function deleteTask(id: string) {
+    // Optimistic
+    setTasks(prev => prev.filter(t => t.id !== id));
     if (modalTask?.id === id) { setModalTask(null); setDraft(null); }
+    await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
   }
 
   function moveTask(id: string, status: Status) {
-    update(tasks.map(t => t.id === id ? { ...t, status } : t));
+    // Optimistic update for snappy drag & drop
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, status } : t));
+    fetch(`/api/tasks/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    });
   }
 
   // ── Drag ────────────────────────────────────────────────────────────────────
@@ -197,21 +216,18 @@ export default function TaskBoard() {
         <div className="flex items-center gap-2 mb-4 flex-wrap">
           <span className="text-xs text-gray-400 font-medium">Filter:</span>
 
-          {/* Assignee filter */}
           <select value={filterAssignee} onChange={e => setFilterAssignee(e.target.value)}
             className="text-xs px-2.5 py-1.5 border border-gray-200 rounded-full bg-white text-gray-600 outline-none cursor-pointer">
             <option value="">All assignees</option>
             {assigneeOptions.map(a => <option key={a} value={a}>{a}</option>)}
           </select>
 
-          {/* Client filter */}
           <select value={filterClient} onChange={e => setFilterClient(e.target.value)}
             className="text-xs px-2.5 py-1.5 border border-gray-200 rounded-full bg-white text-gray-600 outline-none cursor-pointer">
             <option value="">All clients</option>
             {clientOptions.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
 
-          {/* Priority filter */}
           <select value={filterPriority} onChange={e => setFilterPriority(e.target.value as Priority | '')}
             className="text-xs px-2.5 py-1.5 border border-gray-200 rounded-full bg-white text-gray-600 outline-none cursor-pointer">
             <option value="">All priorities</option>
@@ -229,121 +245,132 @@ export default function TaskBoard() {
         </div>
       )}
 
+      {/* ── Loading skeleton ── */}
+      {loading && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          {COLUMNS.map(col => (
+            <div key={col.id} className="rounded-2xl border border-gray-200 bg-white min-h-40 animate-pulse" />
+          ))}
+        </div>
+      )}
+
       {/* ── Columns ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        {COLUMNS.map(col => {
-          const colTasks = filtered.filter(t => t.status === col.id);
-          const isOver = dragOver === col.id;
-          return (
-            <div key={col.id}
-              onDragOver={e => onDragOver(e, col.id)}
-              onDrop={e => onDrop(e, col.id)}
-              onDragLeave={() => setDragOver(null)}
-              className={`rounded-2xl border transition-all min-h-40 flex flex-col ${
-                isOver ? 'border-yellow-300 bg-yellow-50 shadow-sm' : 'border-gray-200 bg-white'
-              }`}>
+      {!loading && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          {COLUMNS.map(col => {
+            const colTasks = filtered.filter(t => t.status === col.id);
+            const isOver = dragOver === col.id;
+            return (
+              <div key={col.id}
+                onDragOver={e => onDragOver(e, col.id)}
+                onDrop={e => onDrop(e, col.id)}
+                onDragLeave={() => setDragOver(null)}
+                className={`rounded-2xl border transition-all min-h-40 flex flex-col ${
+                  isOver ? 'border-yellow-300 bg-yellow-50 shadow-sm' : 'border-gray-200 bg-white'
+                }`}>
 
-              {/* Column header */}
-              <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-gray-100">
-                <div className="flex items-center gap-2">
-                  <span className={`text-xs font-bold uppercase tracking-wider ${col.color}`}>{col.label}</span>
-                  {colTasks.length > 0 && (
-                    <span className={`text-xs font-semibold px-1.5 py-0.5 rounded-full ${col.bg} ${col.color}`}>
-                      {colTasks.length}
-                    </span>
-                  )}
-                </div>
-                <button onClick={() => { setAddingTo(col.id); setNewTitle(''); setNewPriority('medium'); }}
-                  className="w-6 h-6 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors cursor-pointer text-lg leading-none"
-                  title={`Add to ${col.label}`}>+</button>
-              </div>
-
-              {/* Inline add form */}
-              {addingTo === col.id && (
-                <div className="px-3 pt-3 pb-2 border-b border-gray-100">
-                  <input ref={inputRef} value={newTitle} onChange={e => setNewTitle(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') addTask(); if (e.key === 'Escape') setAddingTo(null); }}
-                    placeholder="Task title..."
-                    className="w-full text-sm px-2.5 py-1.5 border border-gray-200 rounded-lg outline-none focus:border-yellow-400 bg-gray-50 text-gray-900 placeholder-gray-400" />
-                  <div className="flex items-center gap-2 mt-2">
-                    <select value={newPriority} onChange={e => setNewPriority(e.target.value as Priority)}
-                      className="text-xs px-2 py-1 border border-gray-200 rounded-lg bg-white text-gray-600 outline-none cursor-pointer">
-                      <option value="low">Low</option>
-                      <option value="medium">Medium</option>
-                      <option value="high">High</option>
-                    </select>
-                    <button onClick={addTask}
-                      className="px-3 py-1 text-xs font-semibold bg-gray-900 text-white rounded-lg hover:bg-gray-700 transition-colors cursor-pointer">Add</button>
-                    <button onClick={() => setAddingTo(null)}
-                      className="px-2 py-1 text-xs text-gray-400 hover:text-gray-600 cursor-pointer">Cancel</button>
+                {/* Column header */}
+                <div className="flex items-center justify-between px-4 pt-4 pb-3 border-b border-gray-100">
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs font-bold uppercase tracking-wider ${col.color}`}>{col.label}</span>
+                    {colTasks.length > 0 && (
+                      <span className={`text-xs font-semibold px-1.5 py-0.5 rounded-full ${col.bg} ${col.color}`}>
+                        {colTasks.length}
+                      </span>
+                    )}
                   </div>
+                  <button onClick={() => { setAddingTo(col.id); setNewTitle(''); setNewPriority('medium'); }}
+                    className="w-6 h-6 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors cursor-pointer text-lg leading-none"
+                    title={`Add to ${col.label}`}>+</button>
                 </div>
-              )}
 
-              {/* Task cards */}
-              <div className="flex flex-col gap-2 p-3 flex-1">
-                {colTasks.map(task => {
-                  const overdue = isOverdue(task.dueDate);
-                  return (
-                    <div key={task.id} draggable
-                      onDragStart={e => onDragStart(e, task.id)}
-                      onDragEnd={() => { setDragging(null); setDragOver(null); }}
-                      onClick={() => openTask(task)}
-                      className={`group bg-white border rounded-xl px-3 py-2.5 cursor-pointer shadow-sm hover:shadow-md transition-all ${
-                        dragging === task.id ? 'opacity-40' : 'opacity-100'
-                      } border-gray-200 hover:border-gray-300`}>
-
-                      {/* Title row */}
-                      <div className="flex items-start gap-2 mb-2">
-                        <span className={`mt-1.5 w-1.5 h-1.5 rounded-full flex-shrink-0 ${PRIORITY_STYLE[task.priority].dot}`} />
-                        <p className="text-sm text-gray-800 leading-snug flex-1 font-medium">{task.title}</p>
-                      </div>
-
-                      {/* Description preview */}
-                      {task.description && (
-                        <p className="text-xs text-gray-400 mb-2 line-clamp-2 leading-relaxed pl-3.5">
-                          {task.description}
-                        </p>
-                      )}
-
-                      {/* Footer: assignee + client + due */}
-                      <div className="flex items-center gap-1.5 flex-wrap pl-3.5">
-                        {task.assignee && (
-                          <span className="flex items-center gap-1 text-xs text-gray-500">
-                            <span className="w-4 h-4 rounded-full flex items-center justify-center text-gray-700 font-semibold flex-shrink-0"
-                              style={{ background: avatarColor(task.assignee), fontSize: 8 }}>
-                              {initials(task.assignee)}
-                            </span>
-                            <span className="truncate max-w-16">{task.assignee.split(' ')[0]}</span>
-                          </span>
-                        )}
-                        {task.client && (
-                          <span className="text-xs px-1.5 py-0.5 bg-violet-50 text-violet-600 rounded-md font-medium truncate max-w-20">
-                            {task.client}
-                          </span>
-                        )}
-                        {task.dueDate && (
-                          <span className={`text-xs px-1.5 py-0.5 rounded-md font-medium ml-auto flex-shrink-0 ${
-                            overdue ? 'bg-red-50 text-red-500' : 'bg-gray-100 text-gray-400'
-                          }`}>
-                            {overdue ? '⚠ ' : ''}{formatDue(task.dueDate)}
-                          </span>
-                        )}
-                      </div>
+                {/* Inline add form */}
+                {addingTo === col.id && (
+                  <div className="px-3 pt-3 pb-2 border-b border-gray-100">
+                    <input ref={inputRef} value={newTitle} onChange={e => setNewTitle(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') addTask(); if (e.key === 'Escape') setAddingTo(null); }}
+                      placeholder="Task title..."
+                      className="w-full text-sm px-2.5 py-1.5 border border-gray-200 rounded-lg outline-none focus:border-yellow-400 bg-gray-50 text-gray-900 placeholder-gray-400" />
+                    <div className="flex items-center gap-2 mt-2">
+                      <select value={newPriority} onChange={e => setNewPriority(e.target.value as Priority)}
+                        className="text-xs px-2 py-1 border border-gray-200 rounded-lg bg-white text-gray-600 outline-none cursor-pointer">
+                        <option value="low">Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                      </select>
+                      <button onClick={addTask}
+                        className="px-3 py-1 text-xs font-semibold bg-gray-900 text-white rounded-lg hover:bg-gray-700 transition-colors cursor-pointer">Add</button>
+                      <button onClick={() => setAddingTo(null)}
+                        className="px-2 py-1 text-xs text-gray-400 hover:text-gray-600 cursor-pointer">Cancel</button>
                     </div>
-                  );
-                })}
-
-                {colTasks.length === 0 && addingTo !== col.id && (
-                  <div className="flex-1 flex items-center justify-center py-6">
-                    <p className="text-xs text-gray-300">Drop tasks here</p>
                   </div>
                 )}
+
+                {/* Task cards */}
+                <div className="flex flex-col gap-2 p-3 flex-1">
+                  {colTasks.map(task => {
+                    const overdue = isOverdue(task.dueDate);
+                    return (
+                      <div key={task.id} draggable
+                        onDragStart={e => onDragStart(e, task.id)}
+                        onDragEnd={() => { setDragging(null); setDragOver(null); }}
+                        onClick={() => openTask(task)}
+                        className={`group bg-white border rounded-xl px-3 py-2.5 cursor-pointer shadow-sm hover:shadow-md transition-all ${
+                          dragging === task.id ? 'opacity-40' : 'opacity-100'
+                        } border-gray-200 hover:border-gray-300`}>
+
+                        {/* Title row */}
+                        <div className="flex items-start gap-2 mb-2">
+                          <span className={`mt-1.5 w-1.5 h-1.5 rounded-full flex-shrink-0 ${PRIORITY_STYLE[task.priority].dot}`} />
+                          <p className="text-sm text-gray-800 leading-snug flex-1 font-medium">{task.title}</p>
+                        </div>
+
+                        {/* Description preview */}
+                        {task.description && (
+                          <p className="text-xs text-gray-400 mb-2 line-clamp-2 leading-relaxed pl-3.5">
+                            {task.description}
+                          </p>
+                        )}
+
+                        {/* Footer: assignee + client + due */}
+                        <div className="flex items-center gap-1.5 flex-wrap pl-3.5">
+                          {task.assignee && (
+                            <span className="flex items-center gap-1 text-xs text-gray-500">
+                              <span className="w-4 h-4 rounded-full flex items-center justify-center text-gray-700 font-semibold flex-shrink-0"
+                                style={{ background: avatarColor(task.assignee), fontSize: 8 }}>
+                                {initials(task.assignee)}
+                              </span>
+                              <span className="truncate max-w-16">{task.assignee.split(' ')[0]}</span>
+                            </span>
+                          )}
+                          {task.client && (
+                            <span className="text-xs px-1.5 py-0.5 bg-violet-50 text-violet-600 rounded-md font-medium truncate max-w-20">
+                              {task.client}
+                            </span>
+                          )}
+                          {task.dueDate && (
+                            <span className={`text-xs px-1.5 py-0.5 rounded-md font-medium ml-auto flex-shrink-0 ${
+                              overdue ? 'bg-red-50 text-red-500' : 'bg-gray-100 text-gray-400'
+                            }`}>
+                              {overdue ? '⚠ ' : ''}{formatDue(task.dueDate)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {colTasks.length === 0 && addingTo !== col.id && (
+                    <div className="flex-1 flex items-center justify-center py-6">
+                      <p className="text-xs text-gray-300">Drop tasks here</p>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* ── Task detail modal ── */}
       {modalTask && draft && (
@@ -431,9 +458,9 @@ export default function TaskBoard() {
               </div>
 
               {/* Save */}
-              <button onClick={saveModal}
-                className="w-full py-2.5 bg-gray-900 text-white text-sm font-semibold rounded-xl hover:bg-gray-700 transition-colors cursor-pointer">
-                Save changes
+              <button onClick={saveModal} disabled={saving}
+                className="w-full py-2.5 bg-gray-900 text-white text-sm font-semibold rounded-xl hover:bg-gray-700 transition-colors cursor-pointer disabled:opacity-60">
+                {saving ? 'Saving…' : 'Save changes'}
               </button>
             </div>
           </div>
