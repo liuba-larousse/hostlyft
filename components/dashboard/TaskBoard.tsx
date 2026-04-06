@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { UserPlus } from 'lucide-react';
 
 type Priority = 'low' | 'medium' | 'high';
 type Status = 'todo' | 'inprogress' | 'review' | 'done';
@@ -15,6 +16,14 @@ interface Task {
   client: string;
   dueDate: string;
   createdAt: string;
+}
+
+interface TeamMember {
+  id: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  avatar_url: string;
 }
 
 const COLUMNS: { id: Status; label: string; color: string; bg: string; border: string }[] = [
@@ -87,9 +96,95 @@ function Autocomplete({ value, onChange, options, placeholder, className = '' }:
   );
 }
 
+// ── Assignee toggle popover ────────────────────────────────────────────────────
+function AssigneeToggle({ taskId, assignee, teamMembers, onAssign }: {
+  taskId: string;
+  assignee: string;
+  teamMembers: TeamMember[];
+  onAssign: (taskId: string, name: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    if (open) document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [open]);
+
+  const assigned = teamMembers.find(m => `${m.first_name} ${m.last_name}` === assignee);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={e => { e.stopPropagation(); setOpen(o => !o); }}
+        title={assignee || 'Assign member'}
+        className="flex items-center gap-1 cursor-pointer"
+      >
+        {assigned ? (
+          assigned.avatar_url ? (
+            <img src={assigned.avatar_url} alt={assignee}
+              className="w-5 h-5 rounded-full object-cover ring-1 ring-white" />
+          ) : (
+            <span className="w-5 h-5 rounded-full flex items-center justify-center text-gray-800 font-bold flex-shrink-0 ring-1 ring-white"
+              style={{ background: avatarColor(assignee), fontSize: 8 }}>
+              {initials(assignee)}
+            </span>
+          )
+        ) : (
+          <span className="w-5 h-5 rounded-full border border-dashed border-gray-300 flex items-center justify-center text-gray-300 hover:border-gray-400 hover:text-gray-400 transition-colors">
+            <UserPlus size={10} />
+          </span>
+        )}
+      </button>
+
+      {open && (
+        <div className="absolute bottom-full left-0 mb-1 z-30 bg-white border border-gray-200 rounded-xl shadow-lg p-2 min-w-[160px]">
+          <p className="text-xs text-gray-400 font-medium px-2 pb-1.5">Assign to</p>
+          {teamMembers.map(m => {
+            const name = `${m.first_name} ${m.last_name}`;
+            const isActive = name === assignee;
+            return (
+              <button
+                key={m.id}
+                onMouseDown={() => { onAssign(taskId, isActive ? '' : name); setOpen(false); }}
+                className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-sm cursor-pointer transition-colors ${
+                  isActive ? 'bg-yellow-50 text-yellow-800' : 'text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                {m.avatar_url ? (
+                  <img src={m.avatar_url} alt={name} className="w-5 h-5 rounded-full object-cover shrink-0" />
+                ) : (
+                  <span className="w-5 h-5 rounded-full flex items-center justify-center text-gray-800 font-bold shrink-0"
+                    style={{ background: avatarColor(name), fontSize: 8 }}>
+                    {initials(name)}
+                  </span>
+                )}
+                <span className="truncate">{name}</span>
+                {isActive && <span className="ml-auto text-yellow-500 text-xs">✓</span>}
+              </button>
+            );
+          })}
+          {assignee && (
+            <button
+              onMouseDown={() => { onAssign(taskId, ''); setOpen(false); }}
+              className="w-full text-left px-2 py-1.5 rounded-lg text-xs text-gray-400 hover:bg-gray-50 cursor-pointer mt-1 border-t border-gray-100 pt-2"
+            >
+              Remove assignee
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 export default function TaskBoard() {
   const [tasks, setTasks]           = useState<Task[]>([]);
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [loading, setLoading]       = useState(true);
   const [addingTo, setAddingTo]     = useState<Status | null>(null);
   const [newTitle, setNewTitle]     = useState('');
@@ -104,20 +199,22 @@ export default function TaskBoard() {
   const [filterPriority, setFilterPriority] = useState<Priority | ''>('');
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // ── Load from Supabase ──────────────────────────────────────────────────────
+  // ── Load tasks + team members ────────────────────────────────────────────────
   useEffect(() => {
-    fetch('/api/tasks')
-      .then(r => r.json())
-      .then(data => { setTasks(Array.isArray(data) ? data : []); })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    Promise.all([
+      fetch('/api/tasks').then(r => r.json()),
+      fetch('/api/team').then(r => r.json()),
+    ]).then(([tasksData, membersData]) => {
+      setTasks(Array.isArray(tasksData) ? tasksData : []);
+      setTeamMembers(Array.isArray(membersData) ? membersData : []);
+    }).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
   useEffect(() => { if (addingTo && inputRef.current) inputRef.current.focus(); }, [addingTo]);
 
   // ── Derived option lists ────────────────────────────────────────────────────
-  const assigneeOptions = [...new Set(tasks.map(t => t.assignee).filter(Boolean))];
-  const clientOptions   = [...new Set(tasks.map(t => t.client).filter(Boolean))];
+  const memberNames    = teamMembers.map(m => `${m.first_name} ${m.last_name}`);
+  const clientOptions  = [...new Set(tasks.map(t => t.client).filter(Boolean))];
 
   // ── Filtered tasks ──────────────────────────────────────────────────────────
   const filtered = tasks.filter(t =>
@@ -162,19 +259,26 @@ export default function TaskBoard() {
   }
 
   async function deleteTask(id: string) {
-    // Optimistic
     setTasks(prev => prev.filter(t => t.id !== id));
     if (modalTask?.id === id) { setModalTask(null); setDraft(null); }
     await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
   }
 
   function moveTask(id: string, status: Status) {
-    // Optimistic update for snappy drag & drop
     setTasks(prev => prev.map(t => t.id === id ? { ...t, status } : t));
     fetch(`/api/tasks/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status }),
+    });
+  }
+
+  async function assignTask(id: string, assignee: string) {
+    setTasks(prev => prev.map(t => t.id === id ? { ...t, assignee } : t));
+    await fetch(`/api/tasks/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assignee }),
     });
   }
 
@@ -219,7 +323,7 @@ export default function TaskBoard() {
           <select value={filterAssignee} onChange={e => setFilterAssignee(e.target.value)}
             className="text-xs px-2.5 py-1.5 border border-gray-200 rounded-full bg-white text-gray-600 outline-none cursor-pointer">
             <option value="">All assignees</option>
-            {assigneeOptions.map(a => <option key={a} value={a}>{a}</option>)}
+            {memberNames.map(a => <option key={a} value={a}>{a}</option>)}
           </select>
 
           <select value={filterClient} onChange={e => setFilterClient(e.target.value)}
@@ -332,15 +436,19 @@ export default function TaskBoard() {
                           </p>
                         )}
 
-                        {/* Footer: assignee + client + due */}
+                        {/* Footer: assignee toggle + client + due */}
                         <div className="flex items-center gap-1.5 flex-wrap pl-3.5">
+                          <span onClick={e => e.stopPropagation()}>
+                            <AssigneeToggle
+                              taskId={task.id}
+                              assignee={task.assignee}
+                              teamMembers={teamMembers}
+                              onAssign={assignTask}
+                            />
+                          </span>
                           {task.assignee && (
-                            <span className="flex items-center gap-1 text-xs text-gray-500">
-                              <span className="w-4 h-4 rounded-full flex items-center justify-center text-gray-700 font-semibold flex-shrink-0"
-                                style={{ background: avatarColor(task.assignee), fontSize: 8 }}>
-                                {initials(task.assignee)}
-                              </span>
-                              <span className="truncate max-w-16">{task.assignee.split(' ')[0]}</span>
+                            <span className="text-xs text-gray-500 truncate max-w-16">
+                              {task.assignee.split(' ')[0]}
                             </span>
                           )}
                           {task.client && (
@@ -437,9 +545,17 @@ export default function TaskBoard() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Assignee</label>
-                  <Autocomplete value={draft.assignee}
-                    onChange={v => setDraft({ ...draft, assignee: v })}
-                    options={assigneeOptions} placeholder="Team member..." />
+                  <select
+                    value={draft.assignee}
+                    onChange={e => setDraft({ ...draft, assignee: e.target.value })}
+                    className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg outline-none focus:border-yellow-400 bg-white text-gray-700 cursor-pointer"
+                  >
+                    <option value="">Unassigned</option>
+                    {teamMembers.map(m => {
+                      const name = `${m.first_name} ${m.last_name}`;
+                      return <option key={m.id} value={name}>{name}</option>;
+                    })}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Client</label>
