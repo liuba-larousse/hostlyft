@@ -148,96 +148,90 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'No Toggl tokens configured. Add your Toggl API token on the Team page.' }, { status: 500 });
     }
 
-    // Use the first token for workspace structure (projects/clients)
-    const ws = await fetchWorkspaceData(teamTokens[0].token);
-    if (!ws) return NextResponse.json({ error: 'Toggl auth failed' }, { status: 500 });
-    const { wsId, projects, clients } = ws;
-
     if (action === 'sync') {
       const { start, end } = getDateRange(range);
 
-      // Fetch each member's entries in parallel
+      // Fetch each member's own workspace data + time entries in parallel
       const memberResults = await Promise.all(
         teamTokens.map(async m => {
+          const ws = await fetchWorkspaceData(m.token);
+          if (!ws) return { name: m.name, email: m.email, secByClientName: {} as Record<string, number>, totalSeconds: 0 };
+
+          const { projects, clients } = ws;
           const secByProject = await fetchSecondsByProject(m.token, start, end);
-          const secByClient: Record<number, number> = {};
+
+          // Map project → client name using THIS member's workspace
+          const secByClientName: Record<string, number> = {};
           for (const p of projects) {
-            if (p.client_id && secByProject[p.id]) {
-              secByClient[p.client_id] = (secByClient[p.client_id] || 0) + secByProject[p.id];
+            const secs = secByProject[p.id];
+            if (!secs || secs <= 0) continue;
+            if (p.client_id) {
+              const client = clients.find(c => c.id === p.client_id);
+              if (client?.name) {
+                secByClientName[client.name] = (secByClientName[client.name] || 0) + secs;
+              }
             }
           }
-          return { name: m.name, email: m.email, secByProject, secByClient };
+
+          const totalSeconds = Object.values(secByProject).filter(s => s > 0).reduce((a, b) => a + b, 0);
+          return { name: m.name, email: m.email, secByClientName, totalSeconds };
         })
       );
 
-      // Aggregate totals across all members
-      const totalSecByProject: Record<number, number> = {};
-      const totalSecByClient: Record<number, number> = {};
+      // Aggregate totals by client name across all members
+      const totalByClientName: Record<string, number> = {};
       for (const m of memberResults) {
-        for (const [k, v] of Object.entries(m.secByProject)) {
-          totalSecByProject[Number(k)] = (totalSecByProject[Number(k)] || 0) + v;
-        }
-        for (const [k, v] of Object.entries(m.secByClient)) {
-          totalSecByClient[Number(k)] = (totalSecByClient[Number(k)] || 0) + v;
+        for (const [name, secs] of Object.entries(m.secByClientName)) {
+          totalByClientName[name] = (totalByClientName[name] || 0) + secs;
         }
       }
 
       return NextResponse.json({
-        email: ws.me.email,
-        workspaceId: wsId,
         range,
-        projects: projects.map(p => ({ id: p.id, name: p.name, clientId: p.client_id ?? null })),
-        clients: clients.map(c => ({ id: c.id, name: c.name })),
-        clientGroups: Object.entries(totalSecByClient).map(([clientId, seconds]) => ({
-          clientId: Number(clientId), seconds,
-        })),
-        weekGroups: Object.entries(totalSecByProject).map(([projectId, seconds]) => ({
-          projectId: Number(projectId), seconds,
-        })),
-        // Per-member breakdown
+        clientTotals: Object.entries(totalByClientName).map(([clientName, seconds]) => ({ clientName, seconds })),
         memberBreakdown: memberResults.map(m => ({
           name: m.name,
           email: m.email,
-          clientGroups: Object.entries(m.secByClient).map(([clientId, seconds]) => ({
-            clientId: Number(clientId), seconds,
-          })),
-          totalSeconds: Object.values(m.secByProject).reduce((a, b) => a + b, 0),
+          clientHours: Object.entries(m.secByClientName).map(([clientName, seconds]) => ({ clientName, seconds })),
+          totalSeconds: m.totalSeconds,
         })),
       });
     }
 
+    // For weekly and debug actions, use the first token's workspace
+    const ws = await fetchWorkspaceData(teamTokens[0].token);
+    if (!ws) return NextResponse.json({ error: 'Toggl auth failed' }, { status: 500 });
+    const { wsId, projects, clients } = ws;
+
     if (action === 'weekly') {
       const firstName = req.nextUrl.searchParams.get('firstName') || '';
       const company   = req.nextUrl.searchParams.get('company')   || '';
-      const clientId  = req.nextUrl.searchParams.get('clientId');
+      const clientName = req.nextUrl.searchParams.get('clientName') || '';
       const weeks     = getWeeks();
 
       const results = await Promise.all(
         weeks.map(async w => {
-          // Fetch all members' entries for this week in parallel
-          const memberSecs = await Promise.all(
-            teamTokens.map(m => fetchSecondsByProject(m.token, w.start, w.end))
+          // Fetch all members' entries for this week in parallel (per-member workspace)
+          const memberWeekData = await Promise.all(
+            teamTokens.map(async m => {
+              const mws = await fetchWorkspaceData(m.token);
+              if (!mws) return 0;
+              const secByProject = await fetchSecondsByProject(m.token, w.start, w.end);
+              let hours = 0;
+              for (const p of mws.projects) {
+                const secs = secByProject[p.id] || 0;
+                if (!secs) continue;
+                if (clientName) {
+                  const client = p.client_id ? mws.clients.find(c => c.id === p.client_id) : null;
+                  if (client?.name?.toLowerCase() === clientName.toLowerCase()) hours += secs / 3600;
+                } else if (matchesContact(p.name, firstName, company)) {
+                  hours += secs / 3600;
+                }
+              }
+              return hours;
+            })
           );
-
-          // Combine into total seconds by project
-          const combined: Record<number, number> = {};
-          for (const secByProject of memberSecs) {
-            for (const [k, v] of Object.entries(secByProject)) {
-              combined[Number(k)] = (combined[Number(k)] || 0) + v;
-            }
-          }
-
-          let hours = 0;
-          if (clientId) {
-            const cid = parseInt(clientId);
-            projects.filter(p => p.client_id === cid).forEach(p => { hours += (combined[p.id] || 0) / 3600; });
-          } else {
-            for (const [projId, secs] of Object.entries(combined)) {
-              const proj = projects.find(p => p.id === Number(projId));
-              if (proj && matchesContact(proj.name, firstName, company)) hours += secs / 3600;
-            }
-          }
-          return { key: w.key, hours };
+          return { key: w.key, hours: memberWeekData.reduce((a, b) => a + b, 0) };
         })
       );
 
@@ -262,6 +256,7 @@ export async function GET(req: NextRequest) {
           id: p.id, name: p.name, clientId: p.client_id, hours: (secByProject[p.id] || 0) / 3600,
         })),
         clients: clients.map(c => ({ id: c.id, name: c.name, hours: (secByClient[c.id] || 0) / 3600 })),
+        wsId,
       });
     }
 

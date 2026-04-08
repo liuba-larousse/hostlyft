@@ -29,7 +29,6 @@ export interface Contact {
   };
 }
 
-interface TogglProject { id: number; name: string; clientId?: number | null; }
 interface TogglProjectHours { name: string; hours: number; }
 interface TogglMemberHours { name: string; hours: number; }
 interface TogglCache {
@@ -38,7 +37,6 @@ interface TogglCache {
   breakdown: Record<string, TogglProjectHours[]>;
   memberHours: Record<string, TogglMemberHours[]>;
   range: string;
-  email: string;
   timestamp: string;
 }
 
@@ -203,73 +201,29 @@ export default function ClientsView({
       const data = await res.json();
       if (data.error) throw new Error(data.error);
 
-      const projects: TogglProject[] = data.projects || [];
-      const togglClients: TogglProject[] = data.clients || [];
-      const clientGroups: { clientId: number; seconds: number }[] = data.clientGroups || [];
+      const clientTotals: { clientName: string; seconds: number }[] = data.clientTotals || [];
+      const apiMemberBreakdown: { name: string; email: string; clientHours: { clientName: string; seconds: number }[] }[] = data.memberBreakdown || [];
+
       const hours: Record<string, number> = {};
-      const clientIds: Record<string, number> = {};
-
-      // Match contacts to Toggl clients by name
-      allContacts.forEach(c => {
-        const match = togglClients.find(tc => matchContact(c, tc.name));
-        if (match) clientIds[c.id] = match.id;
-      });
-
-      const weekGroups: { projectId: number; seconds: number }[] = data.weekGroups || [];
+      const clientIds: Record<string, number> = {}; // kept for backward compat (openModal weekly fetch)
       const breakdown: Record<string, TogglProjectHours[]> = {};
+      const memberHours: Record<string, TogglMemberHours[]> = {};
 
-      // Build a lookup: projectId → hours
-      const projHoursMap: Record<number, number> = {};
-      weekGroups.forEach(g => { if (g.seconds > 0) projHoursMap[g.projectId] = g.seconds / 3600; });
-
-      // PRIMARY: for contacts with a matched Toggl client, sum ALL projects
-      // that have client_id === togglClientId (regardless of project name)
+      // Match contacts to Toggl client names
       allContacts.forEach(c => {
-        const cid = clientIds[c.id];
-        if (!cid) return;
-        const clientProjects = projects.filter(p => p.clientId === cid);
-        let total = 0;
-        const lines: TogglProjectHours[] = [];
-        clientProjects.forEach(p => {
-          const h = projHoursMap[p.id] ?? 0;
-          if (h > 0) { total += h; lines.push({ name: p.name, hours: h }); }
-        });
-        if (total > 0) {
-          hours[c.id] = total;
-          breakdown[c.id] = lines.sort((a, b) => b.hours - a.hours);
-        } else {
-          // clientGroups fallback (if projects aren't yet linked via client_id in Toggl)
-          const cg = clientGroups.find(g => g.clientId === cid);
-          if (cg && cg.seconds > 0) hours[c.id] = cg.seconds / 3600;
+        const match = clientTotals.find(tc => matchContact(c, tc.clientName));
+        if (match && match.seconds > 0) {
+          hours[c.id] = match.seconds / 3600;
+          breakdown[c.id] = [{ name: match.clientName, hours: match.seconds / 3600 }];
         }
       });
 
-      // FALLBACK: for contacts without a Toggl client match, try project name matching
-      weekGroups.forEach(g => {
-        const proj = projects.find(p => p.id === g.projectId);
-        if (!proj || !g.seconds) return;
-        allContacts.forEach(c => {
-          if (clientIds[c.id]) return; // already handled above
-          if (!matchContact(c, proj.name)) return;
-          const h = g.seconds / 3600;
-          hours[c.id] = (hours[c.id] || 0) + h;
-          breakdown[c.id] = breakdown[c.id] || [];
-          breakdown[c.id].push({ name: proj.name, hours: h });
-        });
-      });
-
-      Object.keys(breakdown).forEach(id => breakdown[id].sort((a, b) => b.hours - a.hours));
-
-      // Build per-member hours per contact using memberBreakdown from API
-      const memberHours: Record<string, TogglMemberHours[]> = {};
-      const apiMemberBreakdown: { name: string; email: string; clientGroups: { clientId: number; seconds: number }[] }[] = data.memberBreakdown || [];
+      // Per-member hours per contact
       allContacts.forEach(c => {
-        const cid = clientIds[c.id];
-        if (!cid) return;
         const list: TogglMemberHours[] = [];
         for (const member of apiMemberBreakdown) {
-          const cg = member.clientGroups.find(g => g.clientId === cid);
-          if (cg && cg.seconds > 0) list.push({ name: member.name, hours: cg.seconds / 3600 });
+          const ch = member.clientHours.find(h => matchContact(c, h.clientName));
+          if (ch && ch.seconds > 0) list.push({ name: member.name, hours: ch.seconds / 3600 });
         }
         if (list.length > 0) memberHours[c.id] = list.sort((a, b) => b.hours - a.hours);
       });
@@ -278,22 +232,20 @@ export default function ClientsView({
       setTogglClientIds(clientIds);
       setTogglBreakdown(breakdown);
       setTogglMemberHours(memberHours);
+
       const totalHrs = Object.values(hours).reduce((s, h) => s + h, 0);
-      const matchedClients = Object.keys(clientIds).length;
-      const projectsWithClient = (data.projects as TogglProject[]).filter((p: TogglProject) => p.clientId).length;
-      const memberCount = (data.memberBreakdown as { name: string }[])?.length ?? 1;
+      const matchedClients = Object.keys(hours).length;
+      const memberCount = apiMemberBreakdown.length;
       const memberLabel = memberCount === 1 ? '1 member' : `${memberCount} members`;
       setTogglSynced(true);
       setTogglStatus(
         totalHrs > 0
           ? `Toggl synced — ${memberLabel} — ${DATE_RANGE_LABELS[range]} — ${totalHrs.toFixed(1)} hrs across ${matchedClients} clients — ${new Date().toLocaleTimeString()}`
-          : `Toggl synced — ${memberLabel} — ${DATE_RANGE_LABELS[range]} — 0 hrs found (${projectsWithClient} projects have a client assigned, ${(data.weekGroups as {projectId:number;seconds:number}[]).length} projects have entries) — try a wider range`
+          : `Toggl synced — ${memberLabel} — ${DATE_RANGE_LABELS[range]} — 0 hrs found — try a wider range`
       );
 
-      // Persist to localStorage so data survives page refresh
       lsj<TogglCache>('toggl_cache', {
         hours, clientIds, breakdown, memberHours, range,
-        email: data.email,
         timestamp: new Date().toISOString(),
       });
     } catch (err: unknown) {
@@ -314,10 +266,9 @@ export default function ClientsView({
       if (cache.range) setDateRange(cache.range as DateRange);
       const label = DATE_RANGE_LABELS[cache.range as DateRange] || '';
       const time = cache.timestamp ? new Date(cache.timestamp).toLocaleTimeString() : '';
-      const cachedMemberCount = Object.keys(cache.memberHours || {}).length > 0
-        ? `${new Set(Object.values(cache.memberHours!).flat().map(m => m.name)).size} members`
-        : cache.email || '';
-      setTogglStatus(`Toggl cached — ${cachedMemberCount} — ${label} — synced ${time}`);
+      const cachedMemberNames = new Set(Object.values(cache.memberHours || {}).flat().map(m => m.name));
+      const cachedMemberLabel = cachedMemberNames.size > 0 ? `${cachedMemberNames.size} members` : '';
+      setTogglStatus(`Toggl cached — ${cachedMemberLabel} — ${label} — synced ${time}`);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -423,9 +374,9 @@ export default function ClientsView({
     if (togglSynced) {
       setWeeklyLoading(true);
       try {
-        const cid = togglClientIds[id];
-        const params = cid
-          ? `clientId=${cid}`
+        const matchedClient = (togglBreakdown[id] || [])[0]?.name;
+        const params = matchedClient
+          ? `clientName=${encodeURIComponent(matchedClient)}`
           : `firstName=${encodeURIComponent(c.firstName)}&company=${encodeURIComponent(c.company)}`;
         const res = await fetch(`/api/toggl?action=weekly&${params}`);
         const data = await res.json();
