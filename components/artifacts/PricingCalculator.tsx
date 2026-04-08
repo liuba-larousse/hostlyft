@@ -114,6 +114,25 @@ function buildLTMwindow() {
   return w;
 }
 
+// ── ISO week → month mapping ──────────────────────────────────────────────────
+function buildWeeklyRows(months: MonthData[], year: number) {
+  const jan4 = new Date(year, 0, 4);
+  const dow4 = (jan4.getDay() + 6) % 7; // 0=Mon
+  const startOfW1 = new Date(year, 0, 4 - dow4);
+  const ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const rows: (MonthData & { week: number })[] = [];
+  for (let w = 1; w <= 53; w++) {
+    const monday = new Date(startOfW1); monday.setDate(startOfW1.getDate() + (w - 1) * 7);
+    const thursday = new Date(monday); thursday.setDate(monday.getDate() + 3);
+    if (thursday.getFullYear() !== year) continue;
+    const month = thursday.getMonth() + 1;
+    const md = months.find(m => m.month === month);
+    if (!md) continue;
+    rows.push({ ...md, week: w, label: `W${String(w).padStart(2,'0')} · ${ABBR[month-1]}` });
+  }
+  return rows;
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 export default function PricingCalculator() {
   const [tier, setTierState]       = useState('Midscale');
@@ -128,6 +147,15 @@ export default function PricingCalculator() {
   const [fileLoaded, setFileLoaded] = useState(false);
   const [fileName, setFileName]    = useState('');
   const [statusMsg, setStatusMsg]  = useState<{ msg: string; ok: boolean } | null>(null);
+  const [viewMode, setViewMode]    = useState<'monthly' | 'weekly'>('monthly');
+
+  function reset() {
+    setTierState('Midscale'); setRevparSrc('market'); setAdrSrc('market');
+    setPercentile(50); setChannelPct(0); setCurrency('$');
+    setReportMonths(null); setDetected(null);
+    setFileLoaded(false); setFileName(''); setStatusMsg(null);
+    setViewMode('monthly');
+  }
 
   // ── File handling ─────────────────────────────────────────────────────────
   const processFile = useCallback((file: File) => {
@@ -224,8 +252,10 @@ export default function PricingCalculator() {
   const factor   = usePercentile ? percentilePremium(percentile) : 1.0;
   const premiumPct = (factor - 1) * 100;
 
+  type ComputedRow = MonthData & { revpar: number; mktAdr: number; unitAdr: number };
   let computed: {
-    values: (MonthData & { revpar: number; mktAdr: number; unitAdr: number })[];
+    values: ComputedRow[];
+    weeklyValues: (ComputedRow & { week: number })[];
     ltmRevpar: number; ltmUnitAdr: number; ltmMktAdr: number;
     boardBase: number; boardMin: number; boardMax: number;
   } | null = null;
@@ -247,8 +277,12 @@ export default function PricingCalculator() {
     const ltmRevpar  = nonZeroR.length ? nonZeroR.reduce((a, b) => a + b, 0) / nonZeroR.length : 1;
     const ltmUnitAdr = nonZeroA.length ? nonZeroA.reduce((a, b) => a + b, 0) / nonZeroA.length : 1;
     const ltmMktAdr  = nonZeroM.length ? nonZeroM.reduce((a, b) => a + b, 0) / nonZeroM.length : 1;
+    const weeklyRows = buildWeeklyRows(reportMonths, new Date().getFullYear());
+    const weeklyValues = weeklyRows.map(d => ({
+      ...d, revpar: getRevpar(d), mktAdr: getMktAdr(d), unitAdr: getUnitAdr(d),
+    }));
     computed = {
-      values, ltmRevpar, ltmUnitAdr, ltmMktAdr,
+      values, weeklyValues, ltmRevpar, ltmUnitAdr, ltmMktAdr,
       boardBase: ltmUnitAdr,
       boardMin:  ltmUnitAdr * tierData.baseMin,
       boardMax:  ltmUnitAdr * tierData.stdMax,
@@ -257,8 +291,9 @@ export default function PricingCalculator() {
 
   // ── Season counts for badge row ───────────────────────────────────────────
   const seasonCounts: Record<string, number> = {};
+  const activeRows = computed ? (viewMode === 'weekly' ? computed.weeklyValues : computed.values) : [];
   if (computed) {
-    computed.values.forEach(d => {
+    activeRows.forEach(d => {
       const seaIdx = computed!.ltmRevpar > 0 ? ((d.revpar / computed!.ltmRevpar) - 1) * 100 : 0;
       const s = getSeason(seaIdx);
       seasonCounts[s.name] = (seasonCounts[s.name] || 0) + 1;
@@ -269,16 +304,24 @@ export default function PricingCalculator() {
     <div className="p-6 max-w-5xl mx-auto font-sans">
 
       {/* Header */}
-      <div className="flex items-center gap-3 mb-6">
-        <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: NAVY }}>
-          <svg viewBox="0 0 16 16" fill="none" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" className="w-4 h-4">
-            <path d="M2 12L8 4l6 8"/><path d="M5 12v-3h6v3"/>
-          </svg>
+      <div className="flex items-center justify-between gap-3 mb-6">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: NAVY }}>
+            <svg viewBox="0 0 16 16" fill="none" stroke="#fff" strokeWidth="1.5" strokeLinecap="round" className="w-4 h-4">
+              <path d="M2 12L8 4l6 8"/><path d="M5 12v-3h6v3"/>
+            </svg>
+          </div>
+          <div>
+            <div className="text-sm font-medium text-gray-900">hostlyft</div>
+            <div className="text-xs text-gray-400">BASE, MIN, MAX & Seasonality Calculator</div>
+          </div>
         </div>
-        <div>
-          <div className="text-sm font-medium text-gray-900">hostlyft</div>
-          <div className="text-xs text-gray-400">BASE, MIN, MAX & Seasonality Calculator</div>
-        </div>
+        {fileLoaded && (
+          <button onClick={reset}
+            className="px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 hover:text-gray-800 cursor-pointer transition-colors">
+            ↺ Reset
+          </button>
+        )}
       </div>
 
       {/* ── Import report ── */}
@@ -501,8 +544,21 @@ export default function PricingCalculator() {
       {/* ── Seasonality table ── */}
       {computed ? (
         <div className="bg-white border border-gray-200 rounded-2xl p-5">
-          <div className="text-xs font-medium text-gray-400 uppercase tracking-widest mb-3">
-            {(() => { const n = new Date(); const todayM = n.getMonth()+1; const y = n.getFullYear(); const ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; const ltmStart = `${ABBR[todayM-1 > 11 ? 0 : todayM-1]} ${y}`; const ltmEnd = `${ABBR[todayM-2 < 0 ? 11 : todayM-2]} ${y}`; return `12-month seasonality pricing — Jan → Dec (LTM ${ltmStart} – ${ltmEnd})`; })()}
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-xs font-medium text-gray-400 uppercase tracking-widest">
+              {viewMode === 'monthly'
+                ? (() => { const n = new Date(); const todayM = n.getMonth()+1; const y = n.getFullYear(); const ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; const ltmStart = `${ABBR[todayM-1 > 11 ? 0 : todayM-1]} ${y}`; const ltmEnd = `${ABBR[todayM-2 < 0 ? 11 : todayM-2]} ${y}`; return `12-month seasonality pricing — Jan → Dec (LTM ${ltmStart} – ${ltmEnd})`; })()
+                : `${computed.weeklyValues.length}-week seasonality pricing`}
+            </div>
+            <div className="flex gap-1">
+              {(['monthly', 'weekly'] as const).map(m => (
+                <button key={m} onClick={() => setViewMode(m)}
+                  className="px-2.5 py-1 rounded-md border text-xs cursor-pointer transition-all"
+                  style={viewMode === m ? { background: NAVY, borderColor: NAVY, color: '#fff' } : { background: 'transparent', borderColor: '#e5e7eb', color: '#6b7280' }}>
+                  {m === 'monthly' ? '12 months' : '53 weeks'}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* LTM summary */}
@@ -525,7 +581,7 @@ export default function PricingCalculator() {
               <span key={s.name} className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full"
                 style={{ background: s.bg, color: s.tc }}>
                 <span className="w-1.5 h-1.5 rounded-full" style={{ background: s.dot }} />
-                {s.name} <strong>{seasonCounts[s.name]}</strong> months
+                {s.name} <strong>{seasonCounts[s.name]}</strong> {viewMode === 'weekly' ? 'weeks' : 'months'}
               </span>
             ))}
           </div>
@@ -542,7 +598,7 @@ export default function PricingCalculator() {
                 </tr>
               </thead>
               <tbody>
-                {computed.values.map(d => {
+                {activeRows.map(d => {
                   const seaIdx = computed!.ltmRevpar > 0 ? ((d.revpar / computed!.ltmRevpar) - 1) * 100 : 0;
                   const s = getSeason(seaIdx);
                   const isPeak = s.name === 'Peak';
@@ -592,9 +648,9 @@ export default function PricingCalculator() {
               <tfoot>
                 <tr className="border-t border-gray-300 bg-gray-50 font-medium">
                   <td colSpan={2} className="px-2 py-2">LTM average</td>
-                  <td className="px-2 py-2">{fmtC(computed.values.reduce((a, d) => a + d.revpar, 0) / computed.values.length, currency)}</td>
-                  <td className="px-2 py-2">{fmtC(computed.values.reduce((a, d) => a + d.mktAdr, 0) / computed.values.length, currency)}</td>
-                  <td className="px-2 py-2">{fmtC(computed.values.reduce((a, d) => a + d.unitAdr, 0) / computed.values.length, currency)}</td>
+                  <td className="px-2 py-2">{fmtC(activeRows.reduce((a, d) => a + d.revpar, 0) / activeRows.length, currency)}</td>
+                  <td className="px-2 py-2">{fmtC(activeRows.reduce((a, d) => a + d.mktAdr, 0) / activeRows.length, currency)}</td>
+                  <td className="px-2 py-2">{fmtC(activeRows.reduce((a, d) => a + d.unitAdr, 0) / activeRows.length, currency)}</td>
                   <td colSpan={9} />
                 </tr>
               </tfoot>
