@@ -1,6 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { auth } from '@/lib/auth';
 
 const BASE = 'https://api.hubapi.com/crm/v3/objects/contacts';
+
+export async function GET() {
+  const session = await auth();
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const token = process.env.HUBSPOT_ACCESS_TOKEN;
+  if (!token) return NextResponse.json({ names: [] });
+
+  const names: string[] = [];
+  let after: string | undefined;
+
+  do {
+    const params = new URLSearchParams({ properties: 'firstname,lastname,lifecyclestage', limit: '100', ...(after ? { after } : {}) });
+    const res = await fetch(`${BASE}?${params}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) break;
+    const data = await res.json();
+    for (const c of data.results ?? []) {
+      const p = c.properties as Record<string, string>;
+      if (p.lifecyclestage !== 'customer') continue;
+      const name = [p.firstname, p.lastname].filter(Boolean).join(' ');
+      if (name) names.push(name);
+    }
+    after = data.paging?.next?.after;
+  } while (after);
+
+  names.sort((a, b) => a.localeCompare(b));
+  return NextResponse.json({ names });
+}
 
 export async function POST(req: NextRequest) {
   const token = process.env.HUBSPOT_ACCESS_TOKEN;

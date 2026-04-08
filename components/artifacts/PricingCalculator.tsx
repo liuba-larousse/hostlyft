@@ -25,6 +25,12 @@ interface MonthData {
   mRevparLY: number; mAdrLY: number; revparLY: number; adrLY: number;
 }
 
+interface WeekData {
+  label: string; week: number; year: number; month: number; isCurrentYear: boolean;
+  mRevparCY: number; mAdrCY: number; revparCY: number; adrCY: number;
+  mRevparLY: number; mAdrLY: number; revparLY: number; adrLY: number;
+}
+
 interface DetectedCols {
   mRevparCY: string; mAdrCY: string; revparCY: string; adrCY: string;
   mRevparLY: string; mAdrLY: string; revparLY: string; adrLY: string;
@@ -100,6 +106,30 @@ function parseRowDate(label: string) {
   return null;
 }
 
+// Parse weekly row labels like "2025-W01", "2025-W01 (Jan W1)", "W01 2025"
+function parseRowWeek(label: string): { year: number; week: number } | null {
+  const s = String(label).trim();
+  // "2025-W01" or "2025-W01 ..."
+  let m = s.match(/(\d{4})[- ]?[Ww](\d{1,2})/);
+  if (m) return { year: parseInt(m[1]), week: parseInt(m[2]) };
+  // "W01 2025" or "W1 2025"
+  m = s.match(/[Ww](\d{1,2})\s+(\d{4})/);
+  if (m) return { year: parseInt(m[2]), week: parseInt(m[1]) };
+  return null;
+}
+
+// For a given ISO week + year, return the month (1-12) using Thursday rule
+function isoWeekToMonth(year: number, week: number): number {
+  const jan4 = new Date(year, 0, 4);
+  const dow4 = (jan4.getDay() + 6) % 7;
+  const startOfW1 = new Date(year, 0, 4 - dow4);
+  const monday = new Date(startOfW1);
+  monday.setDate(startOfW1.getDate() + (week - 1) * 7);
+  const thursday = new Date(monday);
+  thursday.setDate(monday.getDate() + 3);
+  return thursday.getMonth() + 1;
+}
+
 function buildLTMwindow() {
   const now = new Date();
   const todayYear = now.getFullYear();
@@ -142,6 +172,7 @@ export default function PricingCalculator() {
   const [channelPct, setChannelPct] = useState(0);
   const [currency, setCurrency]    = useState('$');
   const [reportMonths, setReportMonths] = useState<MonthData[] | null>(null);
+  const [reportWeeks, setReportWeeks]   = useState<WeekData[] | null>(null);
   const [detected, setDetected]    = useState<DetectedCols | null>(null);
   const [dragOver, setDragOver]    = useState(false);
   const [fileLoaded, setFileLoaded] = useState(false);
@@ -153,7 +184,7 @@ export default function PricingCalculator() {
   function reset() {
     setTierState('Midscale'); setRevparSrc('market'); setAdrSrc('market');
     setPercentile(50); setChannelPct(0); setCurrency('$');
-    setReportMonths(null); setDetected(null);
+    setReportMonths(null); setReportWeeks(null); setDetected(null);
     setFileLoaded(false); setFileName(''); setStatusMsg(null);
     setViewMode('monthly'); setCopied(false);
   }
@@ -241,34 +272,99 @@ export default function PricingCalculator() {
           currency: cur,
         });
 
-        const rowMap: Record<string, { row: string[]; label: string }> = {};
+        // Detect whether report has weekly rows
+        const weekRowMap: Record<string, { row: string[]; label: string }> = {};
+        const monthRowMap: Record<string, { row: string[]; label: string }> = {};
         for (let i = 1; i < rows.length; i++) {
           const r = rows[i];
           const lbl = String(r[idxDate] || r[0] || '').trim();
-          const d = parseRowDate(lbl);
-          if (d) rowMap[`${d.year}-${d.month}`] = { row: r, label: lbl };
+          const wd = parseRowWeek(lbl);
+          if (wd) { weekRowMap[`${wd.year}-W${wd.week}`] = { row: r, label: lbl }; continue; }
+          const md = parseRowDate(lbl);
+          if (md) monthRowMap[`${md.year}-${md.month}`] = { row: r, label: lbl };
         }
 
-        const result: MonthData[] = [];
-        buildLTMwindow().forEach(({ year, month, cy }) => {
-          const found = rowMap[`${year}-${month}`];
-          if (!found) return;
-          const r = found.row;
-          const n = (v: string) => parseFloat(v) || 0;
-          result.push({
-            label: found.label, year, month, isCurrentYear: cy,
-            mRevparCY: n(r[idxMRevparCY]), mAdrCY: n(r[idxMAdrCY]),
-            revparCY: n(r[idxRevparCY]),   adrCY: n(r[idxAdrCY]),
-            mRevparLY: n(r[idxMRevparLY]), mAdrLY: n(r[idxMAdrLY]),
-            revparLY: n(r[idxRevparLY]),   adrLY: n(r[idxAdrLY]),
-          });
-        });
+        const n = (v: string | number) => parseFloat(String(v)) || 0;
+        const hasWeeks = Object.keys(weekRowMap).length >= 4;
 
-        if (!result.length) { setStatusMsg({ msg: 'No matching LTM months found.', ok: false }); return; }
-        setReportMonths(result);
-        setFileLoaded(true);
-        setFileName(file.name);
-        setStatusMsg({ msg: `Loaded ${result.length}/12 months · sorted Jan → Dec · Currency: ${cur}.`, ok: true });
+        if (hasWeeks) {
+          // Build weekly data directly from report rows
+          const ltm = buildLTMwindow();
+          const ltmYears = [...new Set(ltm.map(w => w.year))];
+          // Determine cy/ly for each week based on LTM window
+          const ltmMonthSet = new Set(ltm.map(({ year, month }) => `${year}-${month}`));
+          const ltmCySet = new Set(ltm.filter(w => w.cy).map(({ year, month }) => `${year}-${month}`));
+
+          const weekResult: WeekData[] = [];
+          for (const [key, { row, label }] of Object.entries(weekRowMap)) {
+            const wd = parseRowWeek(label) || parseRowWeek(key);
+            if (!wd) continue;
+            if (!ltmYears.includes(wd.year)) continue;
+            const month = isoWeekToMonth(wd.year, wd.week);
+            const monthKey = `${wd.year}-${month}`;
+            if (!ltmMonthSet.has(monthKey)) continue;
+            const cy = ltmCySet.has(monthKey);
+            weekResult.push({
+              label, week: wd.week, year: wd.year, month, isCurrentYear: cy,
+              mRevparCY: n(row[idxMRevparCY]), mAdrCY: n(row[idxMAdrCY]),
+              revparCY: n(row[idxRevparCY]),   adrCY: n(row[idxAdrCY]),
+              mRevparLY: n(row[idxMRevparLY]), mAdrLY: n(row[idxMAdrLY]),
+              revparLY: n(row[idxRevparLY]),   adrLY: n(row[idxAdrLY]),
+            });
+          }
+          weekResult.sort((a, b) => a.week - b.week);
+
+          // Also build monthly aggregates for monthly view
+          const monthAgg: Record<string, { count: number; data: MonthData }> = {};
+          for (const wd of weekResult) {
+            const mk = `${wd.year}-${wd.month}`;
+            if (!monthAgg[mk]) {
+              monthAgg[mk] = { count: 0, data: { label: mk, year: wd.year, month: wd.month, isCurrentYear: wd.isCurrentYear, mRevparCY: 0, mAdrCY: 0, revparCY: 0, adrCY: 0, mRevparLY: 0, mAdrLY: 0, revparLY: 0, adrLY: 0 } };
+            }
+            const entry = monthAgg[mk];
+            entry.count++;
+            entry.data.mRevparCY += wd.mRevparCY; entry.data.mAdrCY += wd.mAdrCY;
+            entry.data.revparCY += wd.revparCY;   entry.data.adrCY += wd.adrCY;
+            entry.data.mRevparLY += wd.mRevparLY; entry.data.mAdrLY += wd.mAdrLY;
+            entry.data.revparLY += wd.revparLY;   entry.data.adrLY += wd.adrLY;
+          }
+          const monthResult: MonthData[] = Object.values(monthAgg).map(({ count, data }) => ({
+            ...data,
+            mRevparCY: data.mRevparCY / count, mAdrCY: data.mAdrCY / count,
+            revparCY: data.revparCY / count,   adrCY: data.adrCY / count,
+            mRevparLY: data.mRevparLY / count, mAdrLY: data.mAdrLY / count,
+            revparLY: data.revparLY / count,   adrLY: data.adrLY / count,
+          })).sort((a, b) => a.month - b.month);
+
+          if (!weekResult.length) { setStatusMsg({ msg: 'Weekly rows detected but none matched LTM window.', ok: false }); return; }
+          setReportWeeks(weekResult);
+          setReportMonths(monthResult.length ? monthResult : null);
+          setFileLoaded(true);
+          setFileName(file.name);
+          setStatusMsg({ msg: `Loaded ${weekResult.length} weeks (${monthResult.length} months) · Weekly data · Currency: ${cur}.`, ok: true });
+        } else {
+          // Monthly report
+          const result: MonthData[] = [];
+          buildLTMwindow().forEach(({ year, month, cy }) => {
+            const found = monthRowMap[`${year}-${month}`];
+            if (!found) return;
+            const r = found.row;
+            result.push({
+              label: found.label, year, month, isCurrentYear: cy,
+              mRevparCY: n(r[idxMRevparCY]), mAdrCY: n(r[idxMAdrCY]),
+              revparCY: n(r[idxRevparCY]),   adrCY: n(r[idxAdrCY]),
+              mRevparLY: n(r[idxMRevparLY]), mAdrLY: n(r[idxMAdrLY]),
+              revparLY: n(r[idxRevparLY]),   adrLY: n(r[idxAdrLY]),
+            });
+          });
+
+          if (!result.length) { setStatusMsg({ msg: 'No matching LTM months found.', ok: false }); return; }
+          setReportWeeks(null);
+          setReportMonths(result);
+          setFileLoaded(true);
+          setFileName(file.name);
+          setStatusMsg({ msg: `Loaded ${result.length}/12 months · sorted Jan → Dec · Currency: ${cur}.`, ok: true });
+        }
       } catch (err: unknown) {
         setStatusMsg({ msg: 'Error: ' + (err instanceof Error ? err.message : String(err)), ok: false });
       }
@@ -291,27 +387,43 @@ export default function PricingCalculator() {
     boardBase: number; boardMin: number; boardMax: number;
   } | null = null;
 
-  if (reportMonths) {
-    const getMktRevpar = (d: MonthData) => d.isCurrentYear ? d.mRevparCY : d.mRevparLY;
-    const getMktAdr    = (d: MonthData) => d.isCurrentYear ? d.mAdrCY    : d.mAdrLY;
-    const getRevpar    = (d: MonthData) => revparSrc === 'market' ? getMktRevpar(d) : (d.isCurrentYear ? d.revparCY : d.revparLY);
-    const getRawAdr    = (d: MonthData) => adrSrc === 'market'    ? getMktAdr(d)    : (d.isCurrentYear ? d.adrCY    : d.adrLY);
-    const getUnitAdr   = (d: MonthData) => { const raw = getRawAdr(d); return raw > 0 ? raw * factor : 0; };
+  if (reportMonths || reportWeeks) {
+    type RowBase = { isCurrentYear: boolean; mRevparCY: number; mAdrCY: number; revparCY: number; adrCY: number; mRevparLY: number; mAdrLY: number; revparLY: number; adrLY: number };
+    const getMktRevpar = (d: RowBase) => d.isCurrentYear ? d.mRevparCY : d.mRevparLY;
+    const getMktAdr    = (d: RowBase) => d.isCurrentYear ? d.mAdrCY    : d.mAdrLY;
+    const getRevpar    = (d: RowBase) => revparSrc === 'market' ? getMktRevpar(d) : (d.isCurrentYear ? d.revparCY : d.revparLY);
+    const getRawAdr    = (d: RowBase) => adrSrc === 'market'    ? getMktAdr(d)    : (d.isCurrentYear ? d.adrCY    : d.adrLY);
+    const getUnitAdr   = (d: RowBase) => { const raw = getRawAdr(d); return raw > 0 ? raw * factor : 0; };
 
-    const values = reportMonths.map(d => ({
+    const months = reportMonths ?? [];
+    const values = months.map(d => ({
       ...d, revpar: getRevpar(d), mktAdr: getMktAdr(d), unitAdr: getUnitAdr(d),
     }));
 
-    const nonZeroR = values.filter(v => v.revpar > 0).map(v => v.revpar);
-    const nonZeroA = values.filter(v => v.unitAdr > 0).map(v => v.unitAdr);
-    const nonZeroM = values.filter(v => v.mktAdr > 0).map(v => v.mktAdr);
+    // Use weekly report rows directly if available, else distribute from months
+    let weeklyValues: (MonthData & { week: number; revpar: number; mktAdr: number; unitAdr: number })[];
+    if (reportWeeks) {
+      const ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      weeklyValues = reportWeeks.map(d => ({
+        ...d,
+        label: `W${String(d.week).padStart(2,'0')} · ${ABBR[d.month - 1]}`,
+        revpar: getRevpar(d), mktAdr: getMktAdr(d), unitAdr: getUnitAdr(d),
+      }));
+    } else {
+      const weeklyRows = buildWeeklyRows(months, new Date().getFullYear());
+      weeklyValues = weeklyRows.map(d => ({
+        ...d, revpar: getRevpar(d), mktAdr: getMktAdr(d), unitAdr: getUnitAdr(d),
+      }));
+    }
+
+    // LTM averages: base on monthly values if available, else on weekly
+    const baseForLtm = values.length ? values : weeklyValues;
+    const nonZeroR = baseForLtm.filter(v => v.revpar > 0).map(v => v.revpar);
+    const nonZeroA = baseForLtm.filter(v => v.unitAdr > 0).map(v => v.unitAdr);
+    const nonZeroM = baseForLtm.filter(v => v.mktAdr > 0).map(v => v.mktAdr);
     const ltmRevpar  = nonZeroR.length ? nonZeroR.reduce((a, b) => a + b, 0) / nonZeroR.length : 1;
     const ltmUnitAdr = nonZeroA.length ? nonZeroA.reduce((a, b) => a + b, 0) / nonZeroA.length : 1;
     const ltmMktAdr  = nonZeroM.length ? nonZeroM.reduce((a, b) => a + b, 0) / nonZeroM.length : 1;
-    const weeklyRows = buildWeeklyRows(reportMonths, new Date().getFullYear());
-    const weeklyValues = weeklyRows.map(d => ({
-      ...d, revpar: getRevpar(d), mktAdr: getMktAdr(d), unitAdr: getUnitAdr(d),
-    }));
     computed = {
       values, weeklyValues, ltmRevpar, ltmUnitAdr, ltmMktAdr,
       boardBase: ltmUnitAdr,

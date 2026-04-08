@@ -65,37 +65,6 @@ const BLANK: Omit<Task, 'id' | 'createdAt'> = {
   priority: 'medium', assignee: '', client: '', dueDate: '',
 };
 
-// ── Autocomplete input ────────────────────────────────────────────────────────
-function Autocomplete({ value, onChange, options, placeholder, className = '' }: {
-  value: string; onChange: (v: string) => void;
-  options: string[]; placeholder?: string; className?: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const filtered = options.filter(o => o.toLowerCase().includes(value.toLowerCase()) && o !== value);
-  return (
-    <div className="relative">
-      <input
-        value={value}
-        onChange={e => { onChange(e.target.value); setOpen(true); }}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setTimeout(() => setOpen(false), 150)}
-        placeholder={placeholder}
-        className={`w-full text-sm px-3 py-2 border border-gray-200 rounded-lg outline-none focus:border-yellow-400 bg-white text-gray-900 placeholder-gray-400 ${className}`}
-      />
-      {open && filtered.length > 0 && (
-        <div className="absolute z-20 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
-          {filtered.map(o => (
-            <button key={o} onMouseDown={() => onChange(o)}
-              className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 cursor-pointer">
-              {o}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ── Assignee toggle popover ────────────────────────────────────────────────────
 function AssigneeToggle({ taskId, assignee, teamMembers, onAssign }: {
   taskId: string;
@@ -185,6 +154,7 @@ function AssigneeToggle({ taskId, assignee, teamMembers, onAssign }: {
 export default function TaskBoard() {
   const [tasks, setTasks]           = useState<Task[]>([]);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [contactNames, setContactNames] = useState<string[]>([]);
   const [loading, setLoading]       = useState(true);
   const [addingTo, setAddingTo]     = useState<Status | null>(null);
   const [newTitle, setNewTitle]     = useState('');
@@ -204,9 +174,11 @@ export default function TaskBoard() {
     Promise.all([
       fetch('/api/tasks').then(r => r.json()),
       fetch('/api/team').then(r => r.json()),
-    ]).then(([tasksData, membersData]) => {
+      fetch('/api/hubspot/contacts').then(r => r.json()).catch(() => ({ names: [] })),
+    ]).then(([tasksData, membersData, contactsData]) => {
       setTasks(Array.isArray(tasksData) ? tasksData : []);
       setTeamMembers(Array.isArray(membersData) ? membersData : []);
+      setContactNames(Array.isArray(contactsData?.names) ? contactsData.names : []);
     }).catch(() => {}).finally(() => setLoading(false));
   }, []);
 
@@ -214,7 +186,8 @@ export default function TaskBoard() {
 
   // ── Derived option lists ────────────────────────────────────────────────────
   const memberNames    = teamMembers.map(m => `${m.first_name} ${m.last_name}`);
-  const clientOptions  = [...new Set(tasks.map(t => t.client).filter(Boolean))];
+  // Merge HubSpot contacts with any client names already used in tasks (in case HubSpot is not connected)
+  const clientOptions  = [...new Set([...contactNames, ...tasks.map(t => t.client).filter(Boolean)])].sort((a, b) => a.localeCompare(b));
 
   // ── Filtered tasks ──────────────────────────────────────────────────────────
   const filtered = tasks.filter(t =>
@@ -559,9 +532,11 @@ export default function TaskBoard() {
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Client</label>
-                  <Autocomplete value={draft.client}
-                    onChange={v => setDraft({ ...draft, client: v })}
-                    options={clientOptions} placeholder="Client name..." />
+                  <select value={draft.client} onChange={e => setDraft({ ...draft, client: e.target.value })}
+                    className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg outline-none focus:border-yellow-400 bg-white text-gray-900 cursor-pointer">
+                    <option value="">— No client —</option>
+                    {clientOptions.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
                 </div>
               </div>
 
