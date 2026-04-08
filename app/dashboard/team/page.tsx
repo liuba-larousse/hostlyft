@@ -9,6 +9,7 @@ interface TeamMember {
   first_name: string;
   last_name: string;
   toggl_api_token?: string;
+  isCurrentUser?: boolean;
   avatar_url: string;
   created_at: string;
 }
@@ -27,7 +28,6 @@ function initials(first: string, last: string) {
 export default function TeamPage() {
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
-  const [myEmail, setMyEmail] = useState('');
   const [showInvite, setShowInvite] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [copied, setCopied] = useState(false);
@@ -37,13 +37,10 @@ export default function TeamPage() {
   const [togglSaving, setTogglSaving] = useState(false);
 
   useEffect(() => {
-    Promise.all([
-      fetch('/api/team').then(r => r.json()),
-      fetch('/api/me').then(r => r.json()),
-    ]).then(([membersData, meData]) => {
-      setMembers(Array.isArray(membersData) ? membersData : []);
-      setMyEmail(meData.email ?? '');
-    }).finally(() => setLoading(false));
+    fetch('/api/team')
+      .then(r => r.json())
+      .then(data => setMembers(Array.isArray(data) ? data : []))
+      .finally(() => setLoading(false));
   }, []);
 
   async function saveTogglToken(memberId: string) {
@@ -128,7 +125,7 @@ export default function TeamPage() {
                   <p className="font-semibold text-gray-900 text-base">{fullName}</p>
                   <p className="text-sm text-gray-500 truncate">{member.email}</p>
                   {/* Toggl token row */}
-                  {member.email.toLowerCase() === myEmail.toLowerCase() && (
+                  {member.isCurrentUser && (
                     <div className="mt-2">
                       {togglEdit === member.id ? (
                         <div className="flex items-center gap-2">
@@ -163,7 +160,7 @@ export default function TeamPage() {
                       )}
                     </div>
                   )}
-                  {member.email.toLowerCase() !== myEmail.toLowerCase() && member.toggl_api_token && (
+                  {!member.isCurrentUser && member.toggl_api_token && (
                     <div className="mt-1 inline-flex items-center gap-1 text-xs text-emerald-600">
                       <Clock size={11} /> Toggl connected
                     </div>

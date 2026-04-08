@@ -13,7 +13,8 @@ export async function GET() {
     .order('created_at', { ascending: true });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data);
+  const myEmail = session.user?.email?.toLowerCase() ?? '';
+  return NextResponse.json(data.map(m => ({ ...m, isCurrentUser: m.email.toLowerCase() === myEmail })));
 }
 
 export async function PATCH(req: Request) {
