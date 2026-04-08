@@ -268,17 +268,18 @@ function parseKPI(wb, sheet, fileName) {
   let selectedRows;
 
   if(hasLYCols) {
-    // Forward-calendar file: classify each row as complete (use current) or not (use LY)
-    // Past year: all complete. Current year: split by today. Future year: all LY.
+    // Classify each row as complete (use CY data) or future slot (use LY data)
+    // Works for multi-year reports (e.g. Apr 2025–Mar 2026) and full-year reports
     const completeRows = [], lySlots = [];
     allRows.forEach(r=>{
       const {year, monthIdx} = r.dateInfo;
-      if(!year||!monthIdx||year!==fileYear) return;
-      if(fileYearIsPast || isComplete(year, monthIdx)) completeRows.push(r);
-      else                                              lySlots.push(r);
+      if(!year||!monthIdx) return;
+      if(isComplete(year, monthIdx)) completeRows.push(r);
+      else                           lySlots.push(r);
     });
-    completeRows.sort((a,b)=>a.dateInfo.monthIdx - b.dateInfo.monthIdx);
-    lySlots.sort((a,b)=>a.dateInfo.monthIdx - b.dateInfo.monthIdx);
+    const rowOrder = r => r.dateInfo.year * 100 + r.dateInfo.monthIdx;
+    completeRows.sort((a,b)=>rowOrder(a)-rowOrder(b));
+    lySlots.sort((a,b)=>rowOrder(a)-rowOrder(b));
     const combined = [...lySlots, ...completeRows];
     selectedRows = combined.slice(-12).map(r=>{
       const {year, monthIdx, label} = r.dateInfo;
