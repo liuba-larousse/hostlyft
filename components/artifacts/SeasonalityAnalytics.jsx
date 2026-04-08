@@ -239,12 +239,18 @@ function parseKPI(wb, sheet, fileName) {
   const todayYear  = now.getFullYear();
   const todayMonth = now.getMonth() + 1; // 1-indexed
 
+  console.log('[Seasonality] allRows count:', allRows.length);
+  console.log('[Seasonality] allRows dates:', allRows.map(r=>`${r.dateInfo.year}-${r.dateInfo.monthIdx} (${r.dateInfo.label})`));
+  console.log('[Seasonality] hasLYCols:', hasLYCols, '| today:', todayYear+'-'+todayMonth);
+
   // Detect the file's primary year (most frequent year in date column)
   const yearCounts = {};
   allRows.forEach(r=>{ const yr=r.dateInfo.year; if(yr) yearCounts[yr]=(yearCounts[yr]||0)+1; });
   const fileYear = Object.keys(yearCounts).length
     ? +Object.entries(yearCounts).sort((a,b)=>b[1]-a[1])[0][0]
     : todayYear;
+
+  console.log('[Seasonality] yearCounts:', yearCounts, '| fileYear:', fileYear);
 
   // Is the file year already fully in the past?
   // If fileYear < todayYear: ALL months are complete — no LY substitution needed
@@ -277,10 +283,13 @@ function parseKPI(wb, sheet, fileName) {
       if(isComplete(year, monthIdx)) completeRows.push(r);
       else                           lySlots.push(r);
     });
+    console.log('[Seasonality] completeRows:', completeRows.map(r=>`${r.dateInfo.year}-${r.dateInfo.monthIdx}`));
+    console.log('[Seasonality] lySlots:', lySlots.map(r=>`${r.dateInfo.year}-${r.dateInfo.monthIdx}`));
     const rowOrder = r => r.dateInfo.year * 100 + r.dateInfo.monthIdx;
     completeRows.sort((a,b)=>rowOrder(a)-rowOrder(b));
     lySlots.sort((a,b)=>rowOrder(a)-rowOrder(b));
     const combined = [...lySlots, ...completeRows];
+    console.log('[Seasonality] combined (pre-slice):', combined.map(r=>`${r.dateInfo.year}-${r.dateInfo.monthIdx}`));
     selectedRows = combined.slice(-12).map(r=>{
       const {year, monthIdx, label} = r.dateInfo;
       const isLY       = lySlots.includes(r);
