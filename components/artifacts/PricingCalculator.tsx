@@ -148,13 +148,44 @@ export default function PricingCalculator() {
   const [fileName, setFileName]    = useState('');
   const [statusMsg, setStatusMsg]  = useState<{ msg: string; ok: boolean } | null>(null);
   const [viewMode, setViewMode]    = useState<'monthly' | 'weekly'>('monthly');
+  const [copied, setCopied]        = useState(false);
 
   function reset() {
     setTierState('Midscale'); setRevparSrc('market'); setAdrSrc('market');
     setPercentile(50); setChannelPct(0); setCurrency('$');
     setReportMonths(null); setDetected(null);
     setFileLoaded(false); setFileName(''); setStatusMsg(null);
-    setViewMode('monthly');
+    setViewMode('monthly'); setCopied(false);
+  }
+
+  function copyTable(rows: typeof activeRows, ltmRevpar: number) {
+    const headers = ['Period','Src','Mkt RevPAR','Mkt ADR','Unit ADR','Seas. Index','Season','Min','Base','Max','Min % of Base','Max % of Base'];
+    const lines = [headers.join('\t')];
+    rows.forEach(d => {
+      const seaIdx = ltmRevpar > 0 ? ((d.revpar / ltmRevpar) - 1) * 100 : 0;
+      const s = getSeason(seaIdx);
+      const isPeak = s.name === 'Peak';
+      const unitAdr = d.unitAdr > 0 ? d.unitAdr : (computed?.ltmUnitAdr ?? 0);
+      const tgtMinPct = tierData.baseMin * s.minAdj;
+      const tgtMaxPct = (isPeak ? tierData.peakMax : tierData.stdMax) * s.maxAdj;
+      lines.push([
+        d.label,
+        d.isCurrentYear ? 'CY' : 'LY',
+        d.revpar > 0 ? Math.round(d.revpar) : '',
+        d.mktAdr > 0 ? Math.round(d.mktAdr) : '',
+        Math.round(unitAdr),
+        seaIdx.toFixed(1) + '%',
+        s.name,
+        Math.round(unitAdr * tgtMinPct * chF),
+        Math.round(unitAdr * chF),
+        Math.round(unitAdr * tgtMaxPct * chF),
+        (tgtMinPct * 100).toFixed(0) + '%',
+        (tgtMaxPct * 100).toFixed(0) + '%',
+      ].join('\t'));
+    });
+    navigator.clipboard.writeText(lines.join('\n'));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   }
 
   // ── File handling ─────────────────────────────────────────────────────────
@@ -550,7 +581,7 @@ export default function PricingCalculator() {
                 ? (() => { const n = new Date(); const todayM = n.getMonth()+1; const y = n.getFullYear(); const ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; const ltmStart = `${ABBR[todayM-1 > 11 ? 0 : todayM-1]} ${y}`; const ltmEnd = `${ABBR[todayM-2 < 0 ? 11 : todayM-2]} ${y}`; return `12-month seasonality pricing — Jan → Dec (LTM ${ltmStart} – ${ltmEnd})`; })()
                 : `${computed.weeklyValues.length}-week seasonality pricing`}
             </div>
-            <div className="flex gap-1">
+            <div className="flex gap-1.5">
               {(['monthly', 'weekly'] as const).map(m => (
                 <button key={m} onClick={() => setViewMode(m)}
                   className="px-2.5 py-1 rounded-md border text-xs cursor-pointer transition-all"
@@ -558,6 +589,12 @@ export default function PricingCalculator() {
                   {m === 'monthly' ? '12 months' : '53 weeks'}
                 </button>
               ))}
+              <button
+                onClick={() => copyTable(activeRows, computed!.ltmRevpar)}
+                className="px-2.5 py-1 rounded-md border text-xs cursor-pointer transition-all"
+                style={copied ? { background: '#f0fdf4', borderColor: '#86efac', color: '#15803d' } : { background: 'transparent', borderColor: '#e5e7eb', color: '#6b7280' }}>
+                {copied ? '✓ Copied' : '⎘ Copy'}
+              </button>
             </div>
           </div>
 
