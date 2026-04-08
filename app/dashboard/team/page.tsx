@@ -1,13 +1,14 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Users, Plus, Copy, Check, Mail, X } from 'lucide-react';
+import { Users, Plus, Copy, Check, Mail, X, Clock, Eye, EyeOff } from 'lucide-react';
 
 interface TeamMember {
   id: string;
   email: string;
   first_name: string;
   last_name: string;
+  toggl_api_token?: string;
   avatar_url: string;
   created_at: string;
 }
@@ -26,16 +27,39 @@ function initials(first: string, last: string) {
 export default function TeamPage() {
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
+  const [myEmail, setMyEmail] = useState('');
   const [showInvite, setShowInvite] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [copied, setCopied] = useState(false);
+  const [togglEdit, setTogglEdit] = useState<string | null>(null); // member id being edited
+  const [togglInput, setTogglInput] = useState('');
+  const [togglShow, setTogglShow] = useState(false);
+  const [togglSaving, setTogglSaving] = useState(false);
 
   useEffect(() => {
-    fetch('/api/team')
-      .then(r => r.json())
-      .then(data => setMembers(Array.isArray(data) ? data : []))
-      .finally(() => setLoading(false));
+    Promise.all([
+      fetch('/api/team').then(r => r.json()),
+      fetch('/api/me').then(r => r.json()),
+    ]).then(([membersData, meData]) => {
+      setMembers(Array.isArray(membersData) ? membersData : []);
+      setMyEmail(meData.email ?? '');
+    }).finally(() => setLoading(false));
   }, []);
+
+  async function saveTogglToken(memberId: string) {
+    setTogglSaving(true);
+    const res = await fetch('/api/team', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ togglApiToken: togglInput.trim() }),
+    });
+    if (res.ok) {
+      setMembers(prev => prev.map(m => m.id === memberId ? { ...m, toggl_api_token: togglInput.trim() } : m));
+      setTogglEdit(null);
+      setTogglInput('');
+    }
+    setTogglSaving(false);
+  }
 
   const inviteLink = typeof window !== 'undefined'
     ? `${window.location.origin}/auth/signin`
@@ -103,6 +127,47 @@ export default function TeamPage() {
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold text-gray-900 text-base">{fullName}</p>
                   <p className="text-sm text-gray-500 truncate">{member.email}</p>
+                  {/* Toggl token row */}
+                  {member.email === myEmail && (
+                    <div className="mt-2">
+                      {togglEdit === member.id ? (
+                        <div className="flex items-center gap-2">
+                          <div className="relative flex-1 max-w-xs">
+                            <input
+                              type={togglShow ? 'text' : 'password'}
+                              value={togglInput}
+                              onChange={e => setTogglInput(e.target.value)}
+                              placeholder="Paste your Toggl API token"
+                              className="w-full text-xs px-2.5 py-1.5 pr-8 border border-gray-200 rounded-lg outline-none focus:border-yellow-400 text-gray-900 placeholder-gray-400"
+                              autoFocus
+                            />
+                            <button onClick={() => setTogglShow(s => !s)} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 cursor-pointer">
+                              {togglShow ? <EyeOff size={12} /> : <Eye size={12} />}
+                            </button>
+                          </div>
+                          <button onClick={() => saveTogglToken(member.id)} disabled={togglSaving}
+                            className="text-xs px-2.5 py-1.5 bg-gray-900 text-white rounded-lg hover:bg-gray-700 cursor-pointer disabled:opacity-50 transition-colors">
+                            {togglSaving ? 'Saving…' : 'Save'}
+                          </button>
+                          <button onClick={() => { setTogglEdit(null); setTogglInput(''); }}
+                            className="text-xs text-gray-400 hover:text-gray-600 cursor-pointer">Cancel</button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => { setTogglEdit(member.id); setTogglInput(member.toggl_api_token ?? ''); setTogglShow(false); }}
+                          className="inline-flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-700 cursor-pointer transition-colors"
+                        >
+                          <Clock size={11} />
+                          {member.toggl_api_token ? 'Toggl connected · update token' : 'Connect Toggl API token'}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {member.email !== myEmail && member.toggl_api_token && (
+                    <div className="mt-1 inline-flex items-center gap-1 text-xs text-emerald-600">
+                      <Clock size={11} /> Toggl connected
+                    </div>
+                  )}
                 </div>
                 <div className="text-xs text-gray-400 shrink-0">
                   Joined {new Date(member.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}

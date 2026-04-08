@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createSupabaseAdmin } from '@/lib/supabase';
+import { auth } from '@/lib/auth';
 
-const TOKEN = process.env.TOGGL_API_TOKEN;
 const BASE = 'https://api.track.toggl.com';
 
-function auth() {
-  return 'Basic ' + Buffer.from(`${TOKEN}:api_token`).toString('base64');
+function authHeader(token: string) {
+  return 'Basic ' + Buffer.from(`${token}:api_token`).toString('base64');
 }
 
 function isoDate(d: Date) { return d.toISOString().split('T')[0]; }
@@ -14,9 +15,9 @@ function getDateRange(range: string): { start: string; end: string } {
   switch (range) {
     case 'last_week': {
       const end = new Date(now);
-      end.setDate(now.getDate() - now.getDay()); // last Sunday
+      end.setDate(now.getDate() - now.getDay());
       const start = new Date(end);
-      start.setDate(end.getDate() - 6); // last Monday
+      start.setDate(end.getDate() - 6);
       return { start: isoDate(start), end: isoDate(end) };
     }
     case 'this_month': {
@@ -35,9 +36,9 @@ function getDateRange(range: string): { start: string; end: string } {
       start.setDate(now.getDate() - 27);
       return { start: isoDate(start), end: isoDate(end) };
     }
-    default: { // this_week
+    default: {
       const start = new Date(now);
-      start.setDate(now.getDate() - now.getDay() + 1); // Monday
+      start.setDate(now.getDate() - now.getDay() + 1);
       const end = new Date(start);
       end.setDate(start.getDate() + 6);
       return { start: isoDate(start), end: isoDate(new Date(end.getTime() + 86400000)) };
@@ -73,125 +74,168 @@ function matchesContact(projectName: string, firstName: string, company: string)
   );
 }
 
+// Fetch workspace info + projects/clients for a given token
+async function fetchWorkspaceData(token: string) {
+  const meRes = await fetch(`${BASE}/api/v9/me`, {
+    headers: { Authorization: authHeader(token) },
+  });
+  if (!meRes.ok) return null;
+  const me = await meRes.json();
+  const wsId: number = me.default_workspace_id;
+
+  const [projRes, clientsRes] = await Promise.all([
+    fetch(`${BASE}/api/v9/workspaces/${wsId}/projects?active=both&per_page=200`, { headers: { Authorization: authHeader(token) } }),
+    fetch(`${BASE}/api/v9/workspaces/${wsId}/clients?status=both`, { headers: { Authorization: authHeader(token) } }),
+  ]);
+
+  const projects: { id: number; name: string; client_id?: number | null }[] = projRes.ok ? await projRes.json() : [];
+  const clients: { id: number; name: string }[] = clientsRes.ok ? await clientsRes.json() : [];
+
+  return { me, wsId, projects, clients };
+}
+
+// Fetch seconds per project for a member token in a date range
+async function fetchSecondsByProject(token: string, start: string, end: string): Promise<Record<number, number>> {
+  const res = await fetch(
+    `${BASE}/api/v9/me/time_entries?start_date=${start}T00:00:00Z&end_date=${end}T23:59:59Z`,
+    { headers: { Authorization: authHeader(token) } }
+  );
+  if (!res.ok) return {};
+  const entries: { project_id: number | null; duration: number }[] = await res.json();
+  const map: Record<number, number> = {};
+  for (const e of entries) {
+    if (!e.project_id || e.duration < 0) continue;
+    map[e.project_id] = (map[e.project_id] || 0) + e.duration;
+  }
+  return map;
+}
+
+// Get all team member tokens from Supabase, falling back to env var
+async function getTeamTokens(): Promise<{ name: string; email: string; token: string }[]> {
+  const supabase = createSupabaseAdmin();
+  const { data } = await supabase
+    .from('team_members')
+    .select('first_name, last_name, email, toggl_api_token')
+    .neq('toggl_api_token', '');
+
+  const members = (data ?? [])
+    .filter(m => m.toggl_api_token)
+    .map(m => ({
+      name: `${m.first_name} ${m.last_name}`,
+      email: m.email,
+      token: m.toggl_api_token as string,
+    }));
+
+  // Fall back to env var token if no member tokens set yet
+  if (members.length === 0 && process.env.TOGGL_API_TOKEN) {
+    members.push({ name: 'Default', email: '', token: process.env.TOGGL_API_TOKEN });
+  }
+
+  return members;
+}
+
 export async function GET(req: NextRequest) {
-  if (!TOKEN) return NextResponse.json({ error: 'TOGGL_API_TOKEN not configured' }, { status: 500 });
+  const session = await auth();
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const action = req.nextUrl.searchParams.get('action') || 'sync';
-  const range = req.nextUrl.searchParams.get('range') || 'this_week';
+  const range  = req.nextUrl.searchParams.get('range')  || 'this_week';
 
   try {
-    const meRes = await fetch(`${BASE}/api/v9/me`, {
-      headers: { Authorization: auth(), 'Content-Type': 'application/json' },
-    });
-    if (!meRes.ok) throw new Error('Toggl auth failed');
-    const me = await meRes.json();
-    const wsId: number = me.default_workspace_id;
-
-    const [projRes, clientsRes] = await Promise.all([
-      fetch(`${BASE}/api/v9/workspaces/${wsId}/projects?active=both&per_page=200`, { headers: { Authorization: auth() } }),
-      fetch(`${BASE}/api/v9/workspaces/${wsId}/clients?status=both`, { headers: { Authorization: auth() } }),
-    ]);
-    const projects: { id: number; name: string; client_id?: number | null }[] = projRes.ok ? await projRes.json() : [];
-    const clients: { id: number; name: string }[] = clientsRes.ok ? await clientsRes.json() : [];
-
-    // Fetch time entries for a date range and aggregate seconds by project_id
-    async function fetchSecondsByProject(start: string, end: string): Promise<Record<number, number>> {
-      const res = await fetch(
-        `${BASE}/api/v9/me/time_entries?start_date=${start}T00:00:00Z&end_date=${end}T23:59:59Z`,
-        { headers: { Authorization: auth() } }
-      );
-      if (!res.ok) return {};
-      const entries: { project_id: number | null; duration: number }[] = await res.json();
-      const map: Record<number, number> = {};
-      for (const e of entries) {
-        if (!e.project_id || e.duration < 0) continue; // skip running entries
-        map[e.project_id] = (map[e.project_id] || 0) + e.duration;
-      }
-      return map;
+    const teamTokens = await getTeamTokens();
+    if (!teamTokens.length) {
+      return NextResponse.json({ error: 'No Toggl tokens configured. Add your Toggl API token on the Team page.' }, { status: 500 });
     }
+
+    // Use the first token for workspace structure (projects/clients)
+    const ws = await fetchWorkspaceData(teamTokens[0].token);
+    if (!ws) return NextResponse.json({ error: 'Toggl auth failed' }, { status: 500 });
+    const { wsId, projects, clients } = ws;
 
     if (action === 'sync') {
       const { start, end } = getDateRange(range);
-      const secByProject = await fetchSecondsByProject(start, end);
 
-      // Derive client totals from project totals using project→client mapping
-      const secByClient: Record<number, number> = {};
-      for (const p of projects) {
-        if (p.client_id && secByProject[p.id]) {
-          secByClient[p.client_id] = (secByClient[p.client_id] || 0) + secByProject[p.id];
+      // Fetch each member's entries in parallel
+      const memberResults = await Promise.all(
+        teamTokens.map(async m => {
+          const secByProject = await fetchSecondsByProject(m.token, start, end);
+          const secByClient: Record<number, number> = {};
+          for (const p of projects) {
+            if (p.client_id && secByProject[p.id]) {
+              secByClient[p.client_id] = (secByClient[p.client_id] || 0) + secByProject[p.id];
+            }
+          }
+          return { name: m.name, email: m.email, secByProject, secByClient };
+        })
+      );
+
+      // Aggregate totals across all members
+      const totalSecByProject: Record<number, number> = {};
+      const totalSecByClient: Record<number, number> = {};
+      for (const m of memberResults) {
+        for (const [k, v] of Object.entries(m.secByProject)) {
+          totalSecByProject[Number(k)] = (totalSecByProject[Number(k)] || 0) + v;
+        }
+        for (const [k, v] of Object.entries(m.secByClient)) {
+          totalSecByClient[Number(k)] = (totalSecByClient[Number(k)] || 0) + v;
         }
       }
 
       return NextResponse.json({
-        email: me.email,
+        email: ws.me.email,
         workspaceId: wsId,
         range,
         projects: projects.map(p => ({ id: p.id, name: p.name, clientId: p.client_id ?? null })),
         clients: clients.map(c => ({ id: c.id, name: c.name })),
-        clientGroups: Object.entries(secByClient).map(([clientId, seconds]) => ({
-          clientId: Number(clientId),
-          seconds,
+        clientGroups: Object.entries(totalSecByClient).map(([clientId, seconds]) => ({
+          clientId: Number(clientId), seconds,
         })),
-        weekGroups: Object.entries(secByProject).map(([projectId, seconds]) => ({
-          projectId: Number(projectId),
-          seconds,
+        weekGroups: Object.entries(totalSecByProject).map(([projectId, seconds]) => ({
+          projectId: Number(projectId), seconds,
         })),
-      });
-    }
-
-    if (action === 'debug') {
-      const { start, end } = getDateRange(range);
-      const secByProject = await fetchSecondsByProject(start, end);
-
-      const secByClient: Record<number, number> = {};
-      for (const p of projects) {
-        if (p.client_id && secByProject[p.id]) {
-          secByClient[p.client_id] = (secByClient[p.client_id] || 0) + secByProject[p.id];
-        }
-      }
-
-      return NextResponse.json({
-        range, start, end,
-        projectsWithClientId: projects.filter(p => p.client_id).map(p => ({
-          id: p.id, name: p.name, clientId: p.client_id,
-          hours: (secByProject[p.id] || 0) / 3600,
-        })),
-        projectsWithoutClientId: projects.filter(p => !p.client_id).map(p => ({
-          id: p.id, name: p.name,
-          hours: (secByProject[p.id] || 0) / 3600,
-        })),
-        clients: clients.map(c => ({
-          id: c.id, name: c.name,
-          hours: (secByClient[c.id] || 0) / 3600,
+        // Per-member breakdown
+        memberBreakdown: memberResults.map(m => ({
+          name: m.name,
+          email: m.email,
+          clientGroups: Object.entries(m.secByClient).map(([clientId, seconds]) => ({
+            clientId: Number(clientId), seconds,
+          })),
+          totalSeconds: Object.values(m.secByProject).reduce((a, b) => a + b, 0),
         })),
       });
     }
 
     if (action === 'weekly') {
       const firstName = req.nextUrl.searchParams.get('firstName') || '';
-      const company = req.nextUrl.searchParams.get('company') || '';
-      const clientId = req.nextUrl.searchParams.get('clientId');
-      const weeks = getWeeks();
+      const company   = req.nextUrl.searchParams.get('company')   || '';
+      const clientId  = req.nextUrl.searchParams.get('clientId');
+      const weeks     = getWeeks();
 
       const results = await Promise.all(
-        weeks.map(async (w) => {
-          const secByProject = await fetchSecondsByProject(w.start, w.end);
-          let hours = 0;
+        weeks.map(async w => {
+          // Fetch all members' entries for this week in parallel
+          const memberSecs = await Promise.all(
+            teamTokens.map(m => fetchSecondsByProject(m.token, w.start, w.end))
+          );
 
-          if (clientId) {
-            const cid = parseInt(clientId);
-            projects
-              .filter(p => p.client_id === cid)
-              .forEach(p => { hours += (secByProject[p.id] || 0) / 3600; });
-          } else {
-            for (const [projId, secs] of Object.entries(secByProject)) {
-              const proj = projects.find(p => p.id === Number(projId));
-              if (proj && matchesContact(proj.name, firstName, company)) {
-                hours += secs / 3600;
-              }
+          // Combine into total seconds by project
+          const combined: Record<number, number> = {};
+          for (const secByProject of memberSecs) {
+            for (const [k, v] of Object.entries(secByProject)) {
+              combined[Number(k)] = (combined[Number(k)] || 0) + v;
             }
           }
 
+          let hours = 0;
+          if (clientId) {
+            const cid = parseInt(clientId);
+            projects.filter(p => p.client_id === cid).forEach(p => { hours += (combined[p.id] || 0) / 3600; });
+          } else {
+            for (const [projId, secs] of Object.entries(combined)) {
+              const proj = projects.find(p => p.id === Number(projId));
+              if (proj && matchesContact(proj.name, firstName, company)) hours += secs / 3600;
+            }
+          }
           return { key: w.key, hours };
         })
       );
@@ -199,6 +243,25 @@ export async function GET(req: NextRequest) {
       const hoursByWeek: Record<string, number> = {};
       results.forEach(r => { hoursByWeek[r.key] = r.hours; });
       return NextResponse.json({ hoursByWeek });
+    }
+
+    if (action === 'debug') {
+      const { start, end } = getDateRange(range);
+      const secByProject = await fetchSecondsByProject(teamTokens[0].token, start, end);
+      const secByClient: Record<number, number> = {};
+      for (const p of projects) {
+        if (p.client_id && secByProject[p.id]) {
+          secByClient[p.client_id] = (secByClient[p.client_id] || 0) + secByProject[p.id];
+        }
+      }
+      return NextResponse.json({
+        range, start, end,
+        members: teamTokens.map(m => m.name),
+        projectsWithClientId: projects.filter(p => p.client_id).map(p => ({
+          id: p.id, name: p.name, clientId: p.client_id, hours: (secByProject[p.id] || 0) / 3600,
+        })),
+        clients: clients.map(c => ({ id: c.id, name: c.name, hours: (secByClient[c.id] || 0) / 3600 })),
+      });
     }
 
     return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
@@ -209,24 +272,22 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  if (!TOKEN) return NextResponse.json({ error: 'TOGGL_API_TOKEN not configured' }, { status: 500 });
+  const session = await auth();
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const teamTokens = await getTeamTokens();
+  if (!teamTokens.length) return NextResponse.json({ error: 'No Toggl tokens configured' }, { status: 500 });
 
   const { name } = await req.json() as { name: string };
   if (!name) return NextResponse.json({ error: 'name required' }, { status: 400 });
 
   try {
-    const meRes = await fetch(`${BASE}/api/v9/me`, {
-      headers: { Authorization: auth(), 'Content-Type': 'application/json' },
-    });
-    if (!meRes.ok) throw new Error('Toggl auth failed');
-    const me = await meRes.json();
-    const wsId: number = me.default_workspace_id;
+    const ws = await fetchWorkspaceData(teamTokens[0].token);
+    if (!ws) throw new Error('Toggl auth failed');
+    const { wsId } = ws;
+    const token = teamTokens[0].token;
 
-    // Check if client already exists
-    const clientsRes = await fetch(
-      `${BASE}/api/v9/workspaces/${wsId}/clients?status=both`,
-      { headers: { Authorization: auth() } }
-    );
+    const clientsRes = await fetch(`${BASE}/api/v9/workspaces/${wsId}/clients?status=both`, { headers: { Authorization: authHeader(token) } });
     const existingClients: { id: number; name: string }[] = clientsRes.ok ? await clientsRes.json() : [];
     let client = existingClients.find(c => c.name.toLowerCase() === name.toLowerCase());
     const clientExisted = !!client;
@@ -234,28 +295,20 @@ export async function POST(req: NextRequest) {
     if (!client) {
       const clientRes = await fetch(`${BASE}/api/v9/workspaces/${wsId}/clients`, {
         method: 'POST',
-        headers: { Authorization: auth(), 'Content-Type': 'application/json' },
+        headers: { Authorization: authHeader(token), 'Content-Type': 'application/json' },
         body: JSON.stringify({ name }),
       });
-      if (clientRes.ok) {
-        client = await clientRes.json() as { id: number; name: string };
-      }
+      if (clientRes.ok) client = await clientRes.json() as { id: number; name: string };
     }
 
-    // Check if project already exists
-    const projRes = await fetch(
-      `${BASE}/api/v9/workspaces/${wsId}/projects?active=both&per_page=200`,
-      { headers: { Authorization: auth() } }
-    );
+    const projRes = await fetch(`${BASE}/api/v9/workspaces/${wsId}/projects?active=both&per_page=200`, { headers: { Authorization: authHeader(token) } });
     const existing: { id: number; name: string }[] = projRes.ok ? await projRes.json() : [];
     const duplicate = existing.find(p => p.name.toLowerCase() === name.toLowerCase());
-    if (duplicate) {
-      return NextResponse.json({ project: duplicate, client, existed: true, clientExisted });
-    }
+    if (duplicate) return NextResponse.json({ project: duplicate, client, existed: true, clientExisted });
 
     const res = await fetch(`${BASE}/api/v9/workspaces/${wsId}/projects`, {
       method: 'POST',
-      headers: { Authorization: auth(), 'Content-Type': 'application/json' },
+      headers: { Authorization: authHeader(token), 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, active: true, ...(client ? { client_id: client.id } : {}) }),
     });
     if (!res.ok) throw new Error('Failed to create Toggl project');

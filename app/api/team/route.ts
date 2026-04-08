@@ -16,6 +16,24 @@ export async function GET() {
   return NextResponse.json(data);
 }
 
+export async function PATCH(req: Request) {
+  const session = await auth();
+  if (!session?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const body = await req.json();
+  const supabase = createSupabaseAdmin();
+
+  const { data, error } = await supabase
+    .from('team_members')
+    .update({ toggl_api_token: body.togglApiToken ?? '' })
+    .eq('email', session.user.email)
+    .select()
+    .single();
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json(data);
+}
+
 export async function POST(req: Request) {
   const session = await auth();
   if (!session?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
