@@ -13,6 +13,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       clientSecret: process.env.AUTH_GOOGLE_SECRET,
     }),
   ],
+  session: {
+    strategy: 'jwt',
+    maxAge: 60 * 60 * 24 * 365, // 1 year
+  },
   callbacks: {
     signIn({ account, profile }) {
       if (account?.provider !== "google") return false;
