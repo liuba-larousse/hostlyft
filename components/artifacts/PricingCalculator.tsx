@@ -143,14 +143,34 @@ export default function PricingCalculator() {
         if (!rows || rows.length < 2) { setStatusMsg({ msg: 'Could not parse file.', ok: false }); return; }
 
         const headers = rows[0].map(h => String(h).trim());
-        const idxMRevparCY = colFind(headers, ['market', 'revpar'], ['ly', 'last']);
-        const idxMAdrCY    = colFind(headers, ['market', 'adr'], ['ly', 'last', 'revpar']);
-        const idxRevparCY  = colFind(headers, ['revpar', 'rental'], ['ly', 'last', 'market', 'index']);
-        const idxAdrCY     = colFind(headers, ['adr', 'rental'], ['ly', 'last', 'market', 'index', 'revpar', 'revenue', 'occupancy']);
-        const idxMRevparLY = colFind(headers, ['market', 'revpar', 'ly'], []);
-        const idxMAdrLY    = colFind(headers, ['market', 'adr', 'ly'], ['revpar']);
-        const idxRevparLY  = colFind(headers, ['revpar', 'ly', 'rental'], ['market', 'index']);
-        const idxAdrLY     = colFind(headers, ['adr', 'ly', 'rental'], ['market', 'index', 'revpar', 'revenue', 'occupancy']);
+        const idxMRevparCY = colFind(headers, ['market', 'revpar'], ['ly', 'last', 'stly']);
+        const idxMAdrCY    = colFind(headers, ['market', 'adr'], ['ly', 'last', 'revpar', 'stly']);
+        const idxRevparCY  = colFind(headers, ['revpar'], ['ly', 'last', 'market', 'index', 'stly']);
+        const idxAdrCY     = colFind(headers, ['adr'], ['ly', 'last', 'market', 'index', 'revpar', 'revenue', 'occupancy', 'stly']);
+        const idxMRevparLY = colFind(headers, ['market', 'revpar', 'ly'], ['stly']);
+        const idxMAdrLY    = colFind(headers, ['market', 'adr', 'ly'], ['revpar', 'stly']);
+        const idxRevparLY  = colFind(headers, ['revpar', 'ly'], ['market', 'index', 'stly']);
+        const idxAdrLY     = colFind(headers, ['adr', 'ly'], ['market', 'index', 'revpar', 'revenue', 'occupancy', 'stly']);
+
+        // Log missing required columns
+        const colChecks: [number, string][] = [
+          [idxMRevparCY, 'Market RevPAR'], [idxMAdrCY, 'Market ADR'],
+          [idxRevparCY, 'Rental RevPAR / RevPAR'], [idxAdrCY, 'Rental ADR'],
+          [idxMRevparLY, 'Market RevPAR LY'], [idxMAdrLY, 'Market ADR LY'],
+          [idxRevparLY, 'Rental RevPAR LY / RevPAR LY'], [idxAdrLY, 'Rental ADR LY'],
+        ];
+        const missing = colChecks.filter(([idx]) => idx < 0).map(([, name]) => name);
+        if (missing.length) {
+          console.error('[PricingCalculator] Missing columns:', missing);
+          console.error('[PricingCalculator] Available headers:', headers);
+        } else {
+          console.log('[PricingCalculator] All columns found:', {
+            'Market RevPAR': headers[idxMRevparCY], 'Market ADR': headers[idxMAdrCY],
+            'RevPAR': headers[idxRevparCY], 'ADR': headers[idxAdrCY],
+            'Market RevPAR LY': headers[idxMRevparLY], 'Market ADR LY': headers[idxMAdrLY],
+            'RevPAR LY': headers[idxRevparLY], 'ADR LY': headers[idxAdrLY],
+          });
+        }
         const idxDate      = colFind(headers, ['year', 'month', 'date'], []);
 
         const hn = (i: number) => i >= 0 ? `"${headers[i]}"` : '—';
