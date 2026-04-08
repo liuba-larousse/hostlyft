@@ -281,11 +281,13 @@ export default function ClientsView({
       const totalHrs = Object.values(hours).reduce((s, h) => s + h, 0);
       const matchedClients = Object.keys(clientIds).length;
       const projectsWithClient = (data.projects as TogglProject[]).filter((p: TogglProject) => p.clientId).length;
+      const memberCount = (data.memberBreakdown as { name: string }[])?.length ?? 1;
+      const memberLabel = memberCount === 1 ? '1 member' : `${memberCount} members`;
       setTogglSynced(true);
       setTogglStatus(
         totalHrs > 0
-          ? `Toggl synced — ${data.email} — ${DATE_RANGE_LABELS[range]} — ${totalHrs.toFixed(1)} hrs across ${matchedClients} clients — ${new Date().toLocaleTimeString()}`
-          : `Toggl synced — ${DATE_RANGE_LABELS[range]} — 0 hrs found (${projectsWithClient} projects have a client assigned, ${(data.weekGroups as {projectId:number;seconds:number}[]).length} projects have entries) — try a wider range`
+          ? `Toggl synced — ${memberLabel} — ${DATE_RANGE_LABELS[range]} — ${totalHrs.toFixed(1)} hrs across ${matchedClients} clients — ${new Date().toLocaleTimeString()}`
+          : `Toggl synced — ${memberLabel} — ${DATE_RANGE_LABELS[range]} — 0 hrs found (${projectsWithClient} projects have a client assigned, ${(data.weekGroups as {projectId:number;seconds:number}[]).length} projects have entries) — try a wider range`
       );
 
       // Persist to localStorage so data survives page refresh
@@ -312,7 +314,10 @@ export default function ClientsView({
       if (cache.range) setDateRange(cache.range as DateRange);
       const label = DATE_RANGE_LABELS[cache.range as DateRange] || '';
       const time = cache.timestamp ? new Date(cache.timestamp).toLocaleTimeString() : '';
-      setTogglStatus(`Toggl cached — ${cache.email || ''} — ${label} — synced ${time}`);
+      const cachedMemberCount = Object.keys(cache.memberHours || {}).length > 0
+        ? `${new Set(Object.values(cache.memberHours!).flat().map(m => m.name)).size} members`
+        : cache.email || '';
+      setTogglStatus(`Toggl cached — ${cachedMemberCount} — ${label} — synced ${time}`);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
