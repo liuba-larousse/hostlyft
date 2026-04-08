@@ -10,6 +10,7 @@ interface TeamMember {
   last_name: string;
   toggl_api_token?: string;
   isCurrentUser?: boolean;
+  isAdmin?: boolean;
   avatar_url: string;
   created_at: string;
 }
@@ -43,12 +44,14 @@ export default function TeamPage() {
       .finally(() => setLoading(false));
   }, []);
 
+  const amAdmin = members.some(m => m.isCurrentUser && m.isAdmin);
+
   async function saveTogglToken(memberId: string) {
     setTogglSaving(true);
     const res = await fetch('/api/team', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ togglApiToken: togglInput.trim() }),
+      body: JSON.stringify({ togglApiToken: togglInput.trim(), memberId }),
     });
     if (res.ok) {
       setMembers(prev => prev.map(m => m.id === memberId ? { ...m, toggl_api_token: togglInput.trim() } : m));
@@ -125,7 +128,7 @@ export default function TeamPage() {
                   <p className="font-semibold text-gray-900 text-base">{fullName}</p>
                   <p className="text-sm text-gray-500 truncate">{member.email}</p>
                   {/* Toggl token row */}
-                  {member.isCurrentUser && (
+                  {(member.isCurrentUser || amAdmin) && (
                     <div className="mt-2">
                       {togglEdit === member.id ? (
                         <div className="flex items-center gap-2">
@@ -160,7 +163,7 @@ export default function TeamPage() {
                       )}
                     </div>
                   )}
-                  {!member.isCurrentUser && member.toggl_api_token && (
+                  {!member.isCurrentUser && !amAdmin && member.toggl_api_token && (
                     <div className="mt-1 inline-flex items-center gap-1 text-xs text-emerald-600">
                       <Clock size={11} /> Toggl connected
                     </div>

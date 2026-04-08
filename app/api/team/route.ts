@@ -14,7 +14,11 @@ export async function GET() {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   const myEmail = session.user?.email?.toLowerCase() ?? '';
-  return NextResponse.json(data.map(m => ({ ...m, isCurrentUser: m.email.toLowerCase() === myEmail })));
+  return NextResponse.json(data.map(m => ({
+    ...m,
+    isCurrentUser: m.email.toLowerCase() === myEmail,
+    isAdmin: !!data.find(x => x.email.toLowerCase() === myEmail)?.is_admin,
+  })));
 }
 
 export async function PATCH(req: Request) {
@@ -24,13 +28,24 @@ export async function PATCH(req: Request) {
   const body = await req.json();
   const supabase = createSupabaseAdmin();
 
-  const { data, error } = await supabase
+  // Check if caller is admin
+  const { data: caller } = await supabase
     .from('team_members')
-    .update({ toggl_api_token: body.togglApiToken ?? '' })
+    .select('is_admin')
     .eq('email', session.user.email)
-    .select()
     .single();
 
+  // Admin can update any member by id; otherwise only own record
+  const targetId: string | undefined = body.memberId;
+  let query = supabase.from('team_members').update({ toggl_api_token: body.togglApiToken ?? '' });
+
+  if (targetId && caller?.is_admin) {
+    query = query.eq('id', targetId);
+  } else {
+    query = query.eq('email', session.user.email);
+  }
+
+  const { data, error } = await query.select().single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json(data);
 }
