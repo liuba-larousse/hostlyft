@@ -128,7 +128,7 @@ export default function TeamPage() {
                   <p className="font-semibold text-gray-900 text-base">{fullName}</p>
                   <p className="text-sm text-gray-500 truncate">{member.email}</p>
                   {/* Toggl token row */}
-                  {member.email === myEmail && (
+                  {member.email.toLowerCase() === myEmail.toLowerCase() && (
                     <div className="mt-2">
                       {togglEdit === member.id ? (
                         <div className="flex items-center gap-2">
@@ -163,7 +163,7 @@ export default function TeamPage() {
                       )}
                     </div>
                   )}
-                  {member.email !== myEmail && member.toggl_api_token && (
+                  {member.email.toLowerCase() !== myEmail.toLowerCase() && member.toggl_api_token && (
                     <div className="mt-1 inline-flex items-center gap-1 text-xs text-emerald-600">
                       <Clock size={11} /> Toggl connected
                     </div>
