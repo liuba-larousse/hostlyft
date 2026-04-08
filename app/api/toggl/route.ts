@@ -116,6 +116,7 @@ async function getTeamTokens(): Promise<{ name: string; email: string; token: st
   const { data } = await supabase
     .from('team_members')
     .select('first_name, last_name, email, toggl_api_token')
+    .not('toggl_api_token', 'is', null)
     .neq('toggl_api_token', '');
 
   const members = (data ?? [])
