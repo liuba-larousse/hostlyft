@@ -31,10 +31,12 @@ export interface Contact {
 
 interface TogglProject { id: number; name: string; clientId?: number | null; }
 interface TogglProjectHours { name: string; hours: number; }
+interface TogglMemberHours { name: string; hours: number; }
 interface TogglCache {
   hours: Record<string, number>;
   clientIds: Record<string, number>;
   breakdown: Record<string, TogglProjectHours[]>;
+  memberHours: Record<string, TogglMemberHours[]>;
   range: string;
   email: string;
   timestamp: string;
@@ -165,6 +167,7 @@ export default function ClientsView({
   const [togglHours, setTogglHours] = useState<Record<string, number>>({});
   const [togglClientIds, setTogglClientIds] = useState<Record<string, number>>({}); // contactId → toggl client id
   const [togglBreakdown, setTogglBreakdown] = useState<Record<string, TogglProjectHours[]>>({}); // contactId → projects
+  const [togglMemberHours, setTogglMemberHours] = useState<Record<string, TogglMemberHours[]>>({}); // contactId → per-member hours
   const [expandedToggl, setExpandedToggl] = useState<Record<string, boolean>>({});
   const [togglSynced, setTogglSynced] = useState(false);
   const [togglStatus, setTogglStatus] = useState('Click "Sync now" to load Toggl hours');
@@ -257,9 +260,24 @@ export default function ClientsView({
 
       Object.keys(breakdown).forEach(id => breakdown[id].sort((a, b) => b.hours - a.hours));
 
+      // Build per-member hours per contact using memberBreakdown from API
+      const memberHours: Record<string, TogglMemberHours[]> = {};
+      const apiMemberBreakdown: { name: string; email: string; clientGroups: { clientId: number; seconds: number }[] }[] = data.memberBreakdown || [];
+      allContacts.forEach(c => {
+        const cid = clientIds[c.id];
+        if (!cid) return;
+        const list: TogglMemberHours[] = [];
+        for (const member of apiMemberBreakdown) {
+          const cg = member.clientGroups.find(g => g.clientId === cid);
+          if (cg && cg.seconds > 0) list.push({ name: member.name, hours: cg.seconds / 3600 });
+        }
+        if (list.length > 0) memberHours[c.id] = list.sort((a, b) => b.hours - a.hours);
+      });
+
       setTogglHours(hours);
       setTogglClientIds(clientIds);
       setTogglBreakdown(breakdown);
+      setTogglMemberHours(memberHours);
       const totalHrs = Object.values(hours).reduce((s, h) => s + h, 0);
       const matchedClients = Object.keys(clientIds).length;
       const projectsWithClient = (data.projects as TogglProject[]).filter((p: TogglProject) => p.clientId).length;
@@ -272,7 +290,7 @@ export default function ClientsView({
 
       // Persist to localStorage so data survives page refresh
       lsj<TogglCache>('toggl_cache', {
-        hours, clientIds, breakdown, range,
+        hours, clientIds, breakdown, memberHours, range,
         email: data.email,
         timestamp: new Date().toISOString(),
       });
@@ -289,6 +307,7 @@ export default function ClientsView({
       setTogglHours(cache.hours);
       setTogglClientIds(cache.clientIds || {});
       setTogglBreakdown(cache.breakdown || {});
+      setTogglMemberHours(cache.memberHours || {});
       setTogglSynced(true);
       if (cache.range) setDateRange(cache.range as DateRange);
       const label = DATE_RANGE_LABELS[cache.range as DateRange] || '';
@@ -755,25 +774,41 @@ export default function ClientsView({
                           {synced && <span style={{ fontSize: 6 }}>●</span>}
                           {hrs.toFixed(1)} hrs
                         </span>
-                        {togglBreakdown[c.id]?.length > 0 && (
+                        {(togglBreakdown[c.id]?.length > 0 || togglMemberHours[c.id]?.length > 0) && (
                           <button
                             onClick={() => setExpandedToggl(e => ({ ...e, [c.id]: !e[c.id] }))}
                             className="text-gray-300 hover:text-gray-500 cursor-pointer transition-colors"
                             style={{ fontSize: 10 }}
-                            title="Show project breakdown">
+                            title="Show breakdown">
                             {expandedToggl[c.id] ? '▲' : '▼'}
                           </button>
                         )}
                       </div>
-                      {expandedToggl[c.id] && togglBreakdown[c.id] && (
-                        <div className="mt-1.5 pl-1 border-l-2 border-purple-100 space-y-0.5">
-                          {togglBreakdown[c.id].map(p => (
-                            <div key={p.name} className="flex items-center justify-between gap-3"
-                              style={{ fontSize: 10 }}>
-                              <span className="text-gray-400 truncate max-w-28">{p.name}</span>
-                              <span className="font-medium text-gray-600 flex-shrink-0">{p.hours.toFixed(1)}h</span>
+                      {expandedToggl[c.id] && (
+                        <div className="mt-1.5 space-y-1.5">
+                          {togglBreakdown[c.id]?.length > 0 && (
+                            <div className="pl-1 border-l-2 border-purple-100 space-y-0.5">
+                              {togglBreakdown[c.id].map(p => (
+                                <div key={p.name} className="flex items-center justify-between gap-3"
+                                  style={{ fontSize: 10 }}>
+                                  <span className="text-gray-400 truncate max-w-28">{p.name}</span>
+                                  <span className="font-medium text-gray-600 flex-shrink-0">{p.hours.toFixed(1)}h</span>
+                                </div>
+                              ))}
                             </div>
-                          ))}
+                          )}
+                          {togglMemberHours[c.id]?.length > 0 && (
+                            <div className="pl-1 border-l-2 border-purple-200 space-y-0.5">
+                              <div className="text-gray-300 font-medium uppercase tracking-wide" style={{ fontSize: 9 }}>by member</div>
+                              {togglMemberHours[c.id].map(m => (
+                                <div key={m.name} className="flex items-center justify-between gap-3"
+                                  style={{ fontSize: 10 }}>
+                                  <span className="text-gray-500 truncate max-w-28">{m.name}</span>
+                                  <span className="font-medium text-purple-600 flex-shrink-0">{m.hours.toFixed(1)}h</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       )}
                     </td>
