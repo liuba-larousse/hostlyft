@@ -101,9 +101,16 @@ function parseRowDate(label: string) {
 }
 
 function buildLTMwindow() {
+  const now = new Date();
+  const todayYear = now.getFullYear();
+  const todayMonth = now.getMonth() + 1; // 1-indexed, current month (not yet complete)
+  // Complete months in current year: months before todayMonth
+  // LY slots: remaining months (>= todayMonth) — use LY columns from same row
   const w: { year: number; month: number; cy: boolean }[] = [];
-  for (let m = 1; m <= 3; m++) w.push({ year: 2026, month: m, cy: true });
-  for (let m = 4; m <= 12; m++) w.push({ year: 2025, month: m, cy: false });
+  for (let m = 1; m <= 12; m++) {
+    const cy = m < todayMonth; // complete if strictly before today's month
+    w.push({ year: todayYear, month: m, cy });
+  }
   return w;
 }
 
@@ -300,7 +307,7 @@ export default function PricingCalculator() {
                 { label: 'Portfolio RevPAR', cy: detected.revparCY, ly: detected.revparLY },
                 { label: 'Portfolio ADR',    cy: detected.adrCY,    ly: detected.adrLY },
                 { label: 'Currency',      cy: detected.currency,  ly: '' },
-                { label: 'LTM window',    cy: 'Apr 2025 → Mar 2026', ly: 'CY: Jan–Mar 2026 · LY: Apr–Dec 2025' },
+                { label: 'LTM window', cy: (() => { const n = new Date(); const todayM = n.getMonth()+1; const y = n.getFullYear(); const ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; const ltmStart = todayM === 1 ? `Jan ${y-1}` : `${ABBR[todayM-1]} ${y}`; const ltmEnd = `${ABBR[todayM-2 < 0 ? 11 : todayM-2]} ${todayM === 1 ? y-1 : y}`; return `${ltmStart} → ${ltmEnd}`; })(), ly: (() => { const n = new Date(); const todayM = n.getMonth()+1; const y = n.getFullYear(); const ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; const cyEnd = ABBR[todayM-2 < 0 ? 11 : todayM-2]; return `CY: Jan–${cyEnd} ${y} · LY: ${ABBR[todayM-1]}–Dec ${y}`; })() },
               ].map(col => (
                 <div key={col.label} className="p-2.5 rounded-lg border border-gray-200 bg-gray-50">
                   <div className="text-xs text-gray-400 uppercase tracking-wider">{col.label}</div>
@@ -475,7 +482,7 @@ export default function PricingCalculator() {
       {computed ? (
         <div className="bg-white border border-gray-200 rounded-2xl p-5">
           <div className="text-xs font-medium text-gray-400 uppercase tracking-widest mb-3">
-            12-month seasonality pricing — Jan → Dec (LTM Apr 2025 – Mar 2026)
+            {(() => { const n = new Date(); const todayM = n.getMonth()+1; const y = n.getFullYear(); const ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']; const ltmStart = `${ABBR[todayM-1 > 11 ? 0 : todayM-1]} ${y}`; const ltmEnd = `${ABBR[todayM-2 < 0 ? 11 : todayM-2]} ${y}`; return `12-month seasonality pricing — Jan → Dec (LTM ${ltmStart} – ${ltmEnd})`; })()}
           </div>
 
           {/* LTM summary */}
