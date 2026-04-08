@@ -1,4 +1,4 @@
-import { Package, Plus, BarChart2, TrendingUp } from "lucide-react";
+import { Package, Plus, BarChart2, TrendingUp, Calculator } from "lucide-react";
 import Link from "next/link";
 
 const artifacts = [
@@ -19,6 +19,15 @@ const artifacts = [
     color: "bg-indigo-50 text-indigo-600",
     type: "React Component",
     action: { label: "View", href: "/dashboard/artifacts/seasonality-analytics", external: false },
+  },
+  {
+    id: "pricing-calculator",
+    title: "BASE, MIN, MAX & Seasonality Calculator",
+    description: "Upload a Hostlyft general report to calculate Base, Min, and Max pricing with 12-month seasonality adjustments by hotel tier and market percentile.",
+    icon: Calculator,
+    color: "bg-yellow-50 text-yellow-600",
+    type: "React Component",
+    action: { label: "View", href: "/dashboard/artifacts/pricing-calculator", external: false },
   },
 ];
 
