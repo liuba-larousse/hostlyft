@@ -3,6 +3,8 @@ import { auth } from '@/lib/auth';
 import { createSupabaseAdmin } from '@/lib/supabase';
 import Anthropic from '@anthropic-ai/sdk';
 
+export const maxDuration = 60; // seconds — allows enough time for multiple Claude calls
+
 const FATHOM_BASE = 'https://api.fathom.ai/external/v1';
 
 interface FathomMeeting {
@@ -91,6 +93,13 @@ export async function POST() {
 }
 
 export async function runSync() {
+  if (!process.env.FATHOM_API_TOKEN) {
+    return NextResponse.json({ error: 'FATHOM_API_TOKEN is not set in environment variables' }, { status: 500 });
+  }
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return NextResponse.json({ error: 'ANTHROPIC_API_KEY is not set in environment variables' }, { status: 500 });
+  }
+
   const supabase = createSupabaseAdmin();
 
   // Find the most recent call we already processed to avoid duplicates
@@ -106,7 +115,7 @@ export async function runSync() {
     : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000); // default: last 30 days
 
   const meetings = await fetchRecentMeetings(since);
-  if (!meetings.length) return NextResponse.json({ ok: true, created: 0 });
+  if (!meetings.length) return NextResponse.json({ ok: true, created: 0, debug: `Fetched 0 meetings since ${since.toISOString()}` });
 
   // Skip meetings we've already processed
   const { data: existing } = await supabase

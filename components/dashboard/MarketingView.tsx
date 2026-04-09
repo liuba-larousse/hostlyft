@@ -173,19 +173,25 @@ export default function MarketingView() {
     setSyncing(true);
     setSyncMsg(null);
     try {
-      const res = await fetch('/api/marketing/sync', { method: 'POST' });
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 90000);
+      const res = await fetch('/api/marketing/sync', { method: 'POST', signal: controller.signal });
+      clearTimeout(timeout);
       const data = await res.json();
-      if (data.created > 0) {
+      if (!res.ok) {
+        setSyncMsg({ text: data.error ?? `Error ${res.status}`, ok: false });
+      } else if (data.created > 0) {
         setSyncMsg({ text: `${data.created} new post${data.created > 1 ? 's' : ''} generated`, ok: true });
         await load();
       } else {
         setSyncMsg({ text: 'No new calls found', ok: true });
       }
-    } catch {
-      setSyncMsg({ text: 'Sync failed', ok: false });
+    } catch (err) {
+      const msg = err instanceof Error && err.name === 'AbortError' ? 'Request timed out' : 'Sync failed';
+      setSyncMsg({ text: msg, ok: false });
     } finally {
       setSyncing(false);
-      setTimeout(() => setSyncMsg(null), 4000);
+      setTimeout(() => setSyncMsg(null), 6000);
     }
   }
 
