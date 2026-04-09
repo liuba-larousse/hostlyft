@@ -49,30 +49,72 @@ async function generateContent(meeting: FathomMeeting): Promise<{ post: string; 
     max_tokens: 800,
     messages: [{
       role: 'user',
-      content: `You are writing a LinkedIn post as a woman who runs a short-term rental consulting firm called Hostlyft. She is knowledgeable, direct, and warm — she shares what she knows without lecturing.
+      content: `You are writing a LinkedIn post for Liubov, a female short-term rental revenue manager who works at Hostlyft. She helps STR hosts grow revenue through smart pricing, OTA channel management, and listing optimization.
 
-Based on this client call summary, write a LinkedIn post following these rules:
+VOICE & IDENTITY
+- Warm, conversational, peer-to-peer — like a knowledgeable friend, never an expert lecturing
+- Female voice — natural and grounded, not polished or corporate
+- ~4th–5th grade reading level — simple words, clear sentences
+- She shares from experience and from working with real clients
+- She's learning alongside hosts — she doesn't position herself above them
+- When client outcomes are mentioned, they must come from the source material only. Never invent stats, results, or dialogue.
 
-Voice and tone:
-- Warm, first-person female voice
-- Direct and confident without being preachy or condescending
-- Treat the reader as a peer, not a student
+FORMATTING RULES
+- Bullet points: 🟡 yellow circles only
+- Short paragraphs — 1 to 3 lines max
+- Varied rhythm — mix short punchy lines with slightly longer ones
+- Line breaks between ideas to keep it scannable
+- Bold section headers only when the post is structured with distinct sections
+- NO em dashes — ever
+- NO paired contrast patterns ("it's not X, it's Y")
+- NO "Why [X] matters" as a hook
+- NO corporate or robotic language
+- NO excessive emojis — use sparingly and only when natural
 
-Structure:
-- Open with a single captivating sentence that makes someone stop scrolling — no clickbait, no "Most people don't know..." hooks, just a real and specific observation
-- Write the body as flowing paragraphs, not bullet points or lists
-- Keep whitespace minimal — no double line breaks between every sentence
-- End with a genuine question or reflection that invites conversation
+SENTENCE STRUCTURE
+- Never write two sentences that mirror each other back to back
+- Vary how sentences open — don't start three in a row the same way
+- Conversational filler words are welcome when natural (honestly, okay, thing is, turns out, basically)
 
-Style rules:
-- No em dashes
-- No paired contrasts ("it's X, not Y" constructions)
-- No filler phrases ("In today's world", "At the end of the day", "Game-changer")
-- No excessive hashtags — max 3 at the very end if relevant
-- 150–220 words total
+HOOK RULES
+- The hook (first 1–2 lines) must stop the scroll and create genuine curiosity or relevance
+- It must flow naturally into the body — no bait-and-switch
+- Preferred hook style: scene-setting. Drop the reader into a small moment before you explain anything. A Tuesday morning. A calendar check. A number that surprised her.
+- First-person learning hooks preferred: "Here's what changed for me" / "I started watching something else"
+- These also work well: missed opportunity, surprising observation, direct question, pattern interrupt ("Everyone watches X. I watch Y.")
+- Hooks must NOT summarize the whole post or give the answer away
+
+ATTRIBUTION — NON-NEGOTIABLE
+- If a client or colleague said it, Liubov HEARD it — she did not discover it independently
+- Always use: "He told me" / "She mentioned" / "I heard this from someone I work with" — never "I've seen this pattern" when the insight came from someone else
+- Insights belong to whoever originated them. Liubov learned from them — that's her honest role.
+- Never write from the perspective that Liubov generated an insight that came from the source material she received
+
+FAITHFULNESS — HARD RULE
+- If it is not in the source material, it does not exist
+- Do not invent client quotes, fabricated dialogue, specific numbers, or outcomes — even if they seem plausible
+- Do not expand a single example into a full framework that Liubov claims to have observed herself
+
+CONTENT RULES
+- Posts should teach one clear thing — not try to cover everything
+- End with a light CTA, a question to the audience, or a clean takeaway line — never a hard sell
+- Target length: 150 to 300 words
+- Max 3 hashtags at the very end if relevant
 - Do not reveal the client's name or confidential details
-- Focus the insight on pricing strategy, revenue management, or occupancy — draw the post around whichever of these the call touched on most
+- Focus on whichever of these the call touched on most: dynamic pricing, OTA channel strategy, listing optimization, revenue metrics, booking policies, fee structure, guest experience, or launch strategy
 
+WHAT TO AVOID
+- Em dashes
+- Paired mirroring sentences
+- Summarizing the post in the hook
+- Invented stats, dialogue, or client results not in source material
+- Talking down to the audience
+- Robotic or predictable formatting patterns
+- Hard sell endings
+- Phrases like "game-changer", "unlock", "dive deep", "in today's landscape", "let's be honest"
+- Starting every post the same way
+
+SOURCE MATERIAL (call summary — use only what is here, do not invent):
 Call title: ${title}
 ${attendees ? `Attendees: ${attendees}` : ''}
 Summary:
