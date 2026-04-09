@@ -178,16 +178,8 @@ export async function runSync() {
 
   const supabase = createSupabaseAdmin();
 
-  const { data: latest } = await supabase
-    .from('linkedin_posts')
-    .select('call_date')
-    .order('call_date', { ascending: false })
-    .limit(1)
-    .single();
-
-  const since = latest?.call_date
-    ? new Date(latest.call_date)
-    : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  // Always fetch last 30 days so deleted posts can be re-pulled
+  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
   const meetings = await fetchRecentMeetings(since);
   if (!meetings.length) return NextResponse.json({ ok: true, created: 0, debug: `Fetched 0 meetings since ${since.toISOString()}` });
