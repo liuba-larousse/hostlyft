@@ -3,7 +3,7 @@ import { auth } from '@/lib/auth';
 import { createSupabaseAdmin } from '@/lib/supabase';
 import Anthropic from '@anthropic-ai/sdk';
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 const FATHOM_BASE = 'https://api.fathom.ai/external/v1';
 
@@ -225,8 +225,10 @@ export async function runSync() {
       .map(r => r.fathom_recording_id)
   );
 
-  const newMeetings = meetings.filter(m => !skipIds.has(m.recording_id) && !draftIds.has(m.recording_id) && extractSummaryText(m.default_summary));
-  console.log('[marketing/sync] meetings:', meetings.length, 'skip:', skipIds.size, 'draft:', draftIds.size, 'new:', newMeetings.length);
+  const allNew = meetings.filter(m => !skipIds.has(m.recording_id) && !draftIds.has(m.recording_id) && extractSummaryText(m.default_summary));
+  // Cap at 3 per run to avoid 60s timeout — cron runs daily so the rest get picked up next time
+  const newMeetings = allNew.slice(0, 3);
+  console.log('[marketing/sync] meetings:', meetings.length, 'skip:', skipIds.size, 'draft:', draftIds.size, 'new (total):', allNew.length, 'processing:', newMeetings.length);
   let created = 0;
 
   for (const meeting of newMeetings) {
