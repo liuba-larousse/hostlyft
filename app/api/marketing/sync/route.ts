@@ -68,6 +68,7 @@ Style rules:
 - No excessive hashtags — max 3 at the very end if relevant
 - 150–220 words total
 - Do not reveal the client's name or confidential details
+- Focus the insight on pricing strategy, revenue management, or occupancy — draw the post around whichever of these the call touched on most
 
 Call title: ${title}
 ${attendees ? `Attendees: ${attendees}` : ''}
