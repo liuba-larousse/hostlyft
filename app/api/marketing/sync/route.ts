@@ -3,7 +3,7 @@ import { auth } from '@/lib/auth';
 import { createSupabaseAdmin } from '@/lib/supabase';
 import Anthropic from '@anthropic-ai/sdk';
 
-export const maxDuration = 60; // seconds — allows enough time for multiple Claude calls
+export const maxDuration = 60;
 
 const FATHOM_BASE = 'https://api.fathom.ai/external/v1';
 
@@ -33,7 +33,8 @@ async function fetchRecentMeetings(since: Date): Promise<FathomMeeting[]> {
   return data.items ?? [];
 }
 
-async function generateLinkedInPost(meeting: FathomMeeting): Promise<string> {
+// Returns both the LinkedIn post and a DALL-E image prompt
+async function generateContent(meeting: FathomMeeting): Promise<{ post: string; imagePrompt: string }> {
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
   const title = meeting.meeting_title || meeting.title || 'Client call';
@@ -45,7 +46,7 @@ async function generateLinkedInPost(meeting: FathomMeeting): Promise<string> {
 
   const message = await client.messages.create({
     model: 'claude-opus-4-6',
-    max_tokens: 600,
+    max_tokens: 800,
     messages: [{
       role: 'user',
       content: `You are writing a LinkedIn post as a woman who runs a short-term rental consulting firm called Hostlyft. She is knowledgeable, direct, and warm — she shares what she knows without lecturing.
@@ -77,12 +78,45 @@ ${attendees ? `Attendees: ${attendees}` : ''}
 Summary:
 ${summary}
 
-Write only the LinkedIn post text, nothing else.`,
+After the post, on a new line write exactly: [IMAGE_PROMPT]
+Then write a DALL-E image prompt for a clean, professional LinkedIn header image that visually represents the theme of the post. The image should feel modern and editorial — think high-end travel photography or architectural photography. No text, no people's faces, no logos. Warm and aspirational. 1–2 sentences max.`,
     }],
   });
 
-  const block = message.content[0];
-  return block.type === 'text' ? block.text.trim() : '';
+  const raw = message.content[0].type === 'text' ? message.content[0].text : '';
+  const parts = raw.split('[IMAGE_PROMPT]');
+  const post = parts[0].trim();
+  const imagePrompt = parts[1]?.trim() ?? `A beautifully lit luxury short-term rental interior, warm tones, editorial photography style, no people.`;
+
+  return { post, imagePrompt };
+}
+
+async function generateImage(prompt: string): Promise<string | null> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+
+  const res = await fetch('https://api.openai.com/v1/images/generations', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'dall-e-3',
+      prompt,
+      n: 1,
+      size: '1792x1024', // landscape — ideal for LinkedIn
+      quality: 'standard',
+    }),
+  });
+
+  if (!res.ok) {
+    console.error('[marketing/sync] DALL-E error', await res.text());
+    return null;
+  }
+
+  const data = await res.json();
+  return data.data?.[0]?.url ?? null;
 }
 
 export async function POST() {
@@ -102,7 +136,6 @@ export async function runSync() {
 
   const supabase = createSupabaseAdmin();
 
-  // Find the most recent call we already processed to avoid duplicates
   const { data: latest } = await supabase
     .from('linkedin_posts')
     .select('call_date')
@@ -112,12 +145,11 @@ export async function runSync() {
 
   const since = latest?.call_date
     ? new Date(latest.call_date)
-    : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000); // default: last 30 days
+    : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
   const meetings = await fetchRecentMeetings(since);
   if (!meetings.length) return NextResponse.json({ ok: true, created: 0, debug: `Fetched 0 meetings since ${since.toISOString()}` });
 
-  // Skip meetings we've already processed
   const { data: existing } = await supabase
     .from('linkedin_posts')
     .select('fathom_recording_id');
@@ -128,8 +160,10 @@ export async function runSync() {
 
   for (const meeting of newMeetings) {
     try {
-      const postContent = await generateLinkedInPost(meeting);
-      if (!postContent) continue;
+      const { post, imagePrompt } = await generateContent(meeting);
+      if (!post) continue;
+
+      const imageUrl = await generateImage(imagePrompt);
 
       const title = meeting.meeting_title || meeting.title || 'Call';
       const attendees = (meeting.calendar_invitees ?? [])
@@ -143,7 +177,8 @@ export async function runSync() {
         call_date: meeting.created_at,
         attendees,
         summary: meeting.default_summary ?? '',
-        post_content: postContent,
+        post_content: post,
+        image_url: imageUrl ?? '',
         status: 'draft',
       });
       created++;

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Megaphone, RefreshCw, Copy, Check, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
+import { Megaphone, RefreshCw, Copy, Check, Trash2, ChevronDown, ChevronUp, Download } from 'lucide-react';
 
 interface LinkedInPost {
   id: string;
@@ -11,6 +11,7 @@ interface LinkedInPost {
   attendees: string;
   summary: string;
   post_content: string;
+  image_url: string;
   status: 'draft' | 'approved';
   created_at: string;
 }
@@ -96,6 +97,17 @@ function PostCard({ post, onUpdate, onDelete }: {
               {post.summary}
             </p>
           )}
+        </div>
+      )}
+
+      {/* Generated image */}
+      {post.image_url && (
+        <div className="mb-4 rounded-xl overflow-hidden border border-gray-100 relative group">
+          <img src={post.image_url} alt="Generated visual" className="w-full object-cover max-h-52" />
+          <a href={post.image_url} download target="_blank" rel="noreferrer"
+            className="absolute top-2 right-2 p-1.5 rounded-lg bg-white/80 backdrop-blur-sm text-gray-600 hover:text-gray-900 opacity-0 group-hover:opacity-100 transition-opacity">
+            <Download size={14} />
+          </a>
         </div>
       )}
 
