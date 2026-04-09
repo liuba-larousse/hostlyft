@@ -192,12 +192,24 @@ export async function runSync() {
   const meetings = await fetchRecentMeetings(since);
   if (!meetings.length) return NextResponse.json({ ok: true, created: 0, debug: `Fetched 0 meetings since ${since.toISOString()}` });
 
+  // Skip approved/denied/published — re-pull if deleted (draft posts get regenerated)
   const { data: existing } = await supabase
     .from('linkedin_posts')
-    .select('fathom_recording_id');
-  const existingIds = new Set((existing ?? []).map(r => r.fathom_recording_id));
+    .select('fathom_recording_id, status');
+  const skipIds = new Set(
+    (existing ?? [])
+      .filter(r => ['approved', 'denied', 'published'].includes(r.status))
+      .map(r => r.fathom_recording_id)
+  );
 
-  const newMeetings = meetings.filter(m => !existingIds.has(m.recording_id) && m.default_summary);
+  // Also skip draft posts that already exist (avoid duplicates)
+  const draftIds = new Set(
+    (existing ?? [])
+      .filter(r => r.status === 'draft')
+      .map(r => r.fathom_recording_id)
+  );
+
+  const newMeetings = meetings.filter(m => !skipIds.has(m.recording_id) && !draftIds.has(m.recording_id) && m.default_summary);
   let created = 0;
 
   for (const meeting of newMeetings) {

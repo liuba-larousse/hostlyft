@@ -12,7 +12,7 @@ interface LinkedInPost {
   summary: string;
   post_content: string;
   image_url: string;
-  status: 'draft' | 'approved' | 'published';
+  status: 'draft' | 'approved' | 'denied' | 'published';
   created_at: string;
 }
 
@@ -49,8 +49,12 @@ function PostCard({ post, linkedInConnected, onUpdate, onDelete }: {
   }
 
   async function toggleApprove() {
-    if (post.status === 'published') return;
+    if (post.status === 'published' || post.status === 'denied') return;
     await onUpdate(post.id, { status: post.status === 'approved' ? 'draft' : 'approved' });
+  }
+
+  async function deny() {
+    await onUpdate(post.id, { status: 'denied' });
   }
 
   function copy() {
@@ -84,10 +88,11 @@ function PostCard({ post, linkedInConnected, onUpdate, onDelete }: {
   }
 
   const isPublished = post.status === 'published';
+  const isDenied    = post.status === 'denied';
 
   return (
     <div className={`bg-white border rounded-2xl p-5 transition-all ${
-      isPublished ? 'border-[#0A66C2]/30' : post.status === 'approved' ? 'border-emerald-200' : 'border-gray-200'
+      isPublished ? 'border-[#0A66C2]/30' : post.status === 'approved' ? 'border-emerald-200' : isDenied ? 'border-red-100' : 'border-gray-200'
     }`}>
       {/* Header */}
       <div className="flex items-start justify-between gap-3 mb-3">
@@ -95,11 +100,12 @@ function PostCard({ post, linkedInConnected, onUpdate, onDelete }: {
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-sm font-semibold text-gray-900 truncate">{post.call_title}</span>
             <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-              isPublished        ? 'bg-[#0A66C2]/10 text-[#0A66C2]' :
+              isPublished ? 'bg-[#0A66C2]/10 text-[#0A66C2]' :
               post.status === 'approved' ? 'bg-emerald-50 text-emerald-700' :
+              isDenied ? 'bg-red-50 text-red-500' :
               'bg-gray-100 text-gray-500'
             }`}>
-              {isPublished ? 'Published' : post.status === 'approved' ? 'Approved' : 'Draft'}
+              {isPublished ? 'Published' : post.status === 'approved' ? 'Approved' : isDenied ? 'Denied' : 'Draft'}
             </span>
           </div>
           <div className="text-xs text-gray-400 mt-0.5">
@@ -199,14 +205,26 @@ function PostCard({ post, linkedInConnected, onUpdate, onDelete }: {
         </div>
 
         <div className="flex items-center gap-2">
-          {!isPublished && (
-            <button onClick={toggleApprove}
-              className={`px-3 py-1.5 text-xs font-medium rounded-lg cursor-pointer transition-colors ${
-                post.status === 'approved'
-                  ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                  : 'bg-yellow-50 text-yellow-700 hover:bg-yellow-100'
-              }`}>
-              {post.status === 'approved' ? '✓ Approved' : 'Approve'}
+          {!isPublished && !isDenied && (
+            <>
+              <button onClick={deny}
+                className="px-3 py-1.5 text-xs font-medium rounded-lg cursor-pointer transition-colors bg-red-50 text-red-500 hover:bg-red-100">
+                Deny
+              </button>
+              <button onClick={toggleApprove}
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg cursor-pointer transition-colors ${
+                  post.status === 'approved'
+                    ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                    : 'bg-yellow-50 text-yellow-700 hover:bg-yellow-100'
+                }`}>
+                {post.status === 'approved' ? '✓ Approved' : 'Approve'}
+              </button>
+            </>
+          )}
+          {isDenied && (
+            <button onClick={() => onUpdate(post.id, { status: 'draft' })}
+              className="px-3 py-1.5 text-xs font-medium rounded-lg cursor-pointer transition-colors bg-gray-100 text-gray-500 hover:bg-gray-200">
+              Restore
             </button>
           )}
           {linkedInConnected && !isPublished && (
@@ -233,7 +251,7 @@ export default function MarketingView() {
   const [loading, setLoading]         = useState(true);
   const [syncing, setSyncing]         = useState(false);
   const [syncMsg, setSyncMsg]         = useState<{ text: string; ok: boolean } | null>(null);
-  const [filter, setFilter]           = useState<'all' | 'draft' | 'approved' | 'published'>('all');
+  const [filter, setFilter]           = useState<'all' | 'draft' | 'approved' | 'denied' | 'published'>('all');
   const [liStatus, setLiStatus]       = useState<LinkedInStatus | null>(null);
 
   const load = useCallback(async () => {
@@ -316,6 +334,7 @@ export default function MarketingView() {
   const draftCount     = posts.filter(p => p.status === 'draft').length;
   const approvedCount  = posts.filter(p => p.status === 'approved').length;
   const publishedCount = posts.filter(p => p.status === 'published').length;
+  const deniedCount    = posts.filter(p => p.status === 'denied').length;
 
   return (
     <div className="p-8 max-w-3xl mx-auto">
@@ -385,12 +404,13 @@ export default function MarketingView() {
 
       {/* Stats */}
       {posts.length > 0 && (
-        <div className="grid grid-cols-4 gap-3 mb-5">
+        <div className="grid grid-cols-5 gap-3 mb-5">
           {[
             { label: 'Total', value: posts.length },
             { label: 'Drafts', value: draftCount },
             { label: 'Approved', value: approvedCount },
             { label: 'Published', value: publishedCount },
+            { label: 'Denied', value: deniedCount },
           ].map(s => (
             <div key={s.label} className="bg-white border border-gray-200 rounded-xl p-4">
               <div className="text-xl font-bold text-gray-900">{s.value}</div>
@@ -403,7 +423,7 @@ export default function MarketingView() {
       {/* Filter tabs */}
       {posts.length > 0 && (
         <div className="flex gap-1 mb-5 bg-gray-100 p-1 rounded-xl w-fit">
-          {(['all', 'draft', 'approved', 'published'] as const).map(f => (
+          {(['all', 'draft', 'approved', 'denied', 'published'] as const).map(f => (
             <button key={f} onClick={() => setFilter(f)}
               className={`px-3 py-1.5 text-xs font-medium rounded-lg cursor-pointer transition-colors capitalize ${
                 filter === f ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
