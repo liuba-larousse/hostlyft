@@ -46,15 +46,28 @@ async function generateLinkedInPost(meeting: FathomMeeting): Promise<string> {
     max_tokens: 600,
     messages: [{
       role: 'user',
-      content: `You are a LinkedIn content writer for a short-term rental consulting firm called Hostlyft.
+      content: `You are writing a LinkedIn post as a woman who runs a short-term rental consulting firm called Hostlyft. She is knowledgeable, direct, and warm — she shares what she knows without lecturing.
 
-Based on this client call summary, write a compelling LinkedIn post that:
-- Shares a key insight or lesson from the call (without revealing confidential client details)
-- Is professional yet conversational
-- Ends with a thought-provoking question or call to action
-- Is 150–250 words
-- Does NOT use hashtags excessively (max 3 relevant ones at the end)
-- Does NOT mention the client's name
+Based on this client call summary, write a LinkedIn post following these rules:
+
+Voice and tone:
+- Warm, first-person female voice
+- Direct and confident without being preachy or condescending
+- Treat the reader as a peer, not a student
+
+Structure:
+- Open with a single captivating sentence that makes someone stop scrolling — no clickbait, no "Most people don't know..." hooks, just a real and specific observation
+- Write the body as flowing paragraphs, not bullet points or lists
+- Keep whitespace minimal — no double line breaks between every sentence
+- End with a genuine question or reflection that invites conversation
+
+Style rules:
+- No em dashes
+- No paired contrasts ("it's X, not Y" constructions)
+- No filler phrases ("In today's world", "At the end of the day", "Game-changer")
+- No excessive hashtags — max 3 at the very end if relevant
+- 150–220 words total
+- Do not reveal the client's name or confidential details
 
 Call title: ${title}
 ${attendees ? `Attendees: ${attendees}` : ''}
