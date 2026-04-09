@@ -7,13 +7,37 @@ export const maxDuration = 60;
 
 const FATHOM_BASE = 'https://api.fathom.ai/external/v1';
 
+interface FathomSummary {
+  short_summary?: string;
+  long_summary?: string;
+  keywords?: string[];
+  action_items?: string[];
+  outline?: string;
+  overview?: string;
+  bullet_summary?: string;
+}
+
 interface FathomMeeting {
   recording_id: string;
   title?: string;
   meeting_title?: string;
   created_at: string;
-  default_summary?: string;
+  default_summary?: string | FathomSummary;
   calendar_invitees?: { name?: string; email?: string }[];
+}
+
+function extractSummaryText(s: string | FathomSummary | undefined): string {
+  if (!s) return '';
+  if (typeof s === 'string') return s;
+  // Prefer longer forms; fall back through available fields
+  const parts: string[] = [];
+  if (s.long_summary) parts.push(s.long_summary);
+  else if (s.short_summary) parts.push(s.short_summary);
+  if (s.outline) parts.push(`Outline:\n${s.outline}`);
+  if (s.overview) parts.push(`Overview:\n${s.overview}`);
+  if (s.bullet_summary) parts.push(`Summary:\n${s.bullet_summary}`);
+  if (s.action_items?.length) parts.push(`Action items:\n${s.action_items.join('\n')}`);
+  return parts.join('\n\n') || JSON.stringify(s);
 }
 
 async function fetchRecentMeetings(since: Date): Promise<FathomMeeting[]> {
@@ -38,7 +62,7 @@ async function generateContent(meeting: FathomMeeting): Promise<{ post: string; 
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
   const title = meeting.meeting_title || meeting.title || 'Client call';
-  const summary = meeting.default_summary || 'No summary available';
+  const summary = extractSummaryText(meeting.default_summary) || 'No summary available';
   const attendees = (meeting.calendar_invitees ?? [])
     .map(a => a.name || a.email)
     .filter(Boolean)
@@ -201,7 +225,7 @@ export async function runSync() {
       .map(r => r.fathom_recording_id)
   );
 
-  const newMeetings = meetings.filter(m => !skipIds.has(m.recording_id) && !draftIds.has(m.recording_id) && m.default_summary);
+  const newMeetings = meetings.filter(m => !skipIds.has(m.recording_id) && !draftIds.has(m.recording_id) && extractSummaryText(m.default_summary));
   console.log('[marketing/sync] meetings:', meetings.length, 'skip:', skipIds.size, 'draft:', draftIds.size, 'new:', newMeetings.length);
   let created = 0;
 
@@ -223,7 +247,7 @@ export async function runSync() {
         call_title: title,
         call_date: meeting.created_at,
         attendees,
-        summary: meeting.default_summary ?? '',
+        summary: extractSummaryText(meeting.default_summary),
         post_content: post,
         image_url: imageUrl ?? '',
         status: 'draft',
