@@ -202,6 +202,7 @@ export async function runSync() {
   );
 
   const newMeetings = meetings.filter(m => !skipIds.has(m.recording_id) && !draftIds.has(m.recording_id) && m.default_summary);
+  console.log('[marketing/sync] meetings:', meetings.length, 'skip:', skipIds.size, 'draft:', draftIds.size, 'new:', newMeetings.length);
   let created = 0;
 
   for (const meeting of newMeetings) {
@@ -217,7 +218,7 @@ export async function runSync() {
         .filter(Boolean)
         .join(', ');
 
-      await supabase.from('linkedin_posts').insert({
+      await supabase.from('linkedin_posts').upsert({
         fathom_recording_id: meeting.recording_id,
         call_title: title,
         call_date: meeting.created_at,
@@ -226,7 +227,7 @@ export async function runSync() {
         post_content: post,
         image_url: imageUrl ?? '',
         status: 'draft',
-      });
+      }, { onConflict: 'fathom_recording_id' });
       created++;
     } catch (err) {
       console.error('[marketing/sync] Failed for', meeting.recording_id, err);
