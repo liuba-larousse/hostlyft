@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Bot, Package, Users, Briefcase, LogOut } from "lucide-react";
+import { LayoutDashboard, Bot, Package, Users, Briefcase, Megaphone, LogOut } from "lucide-react";
 import { clsx } from "clsx";
 
 const nav = [
@@ -11,6 +11,7 @@ const nav = [
   { href: "/dashboard/artifacts", label: "Artifacts", icon: Package },
   { href: "/dashboard/team", label: "Team", icon: Users },
   { href: "/dashboard/clients", label: "Clients", icon: Briefcase },
+  { href: "/dashboard/marketing", label: "Marketing", icon: Megaphone },
 ];
 
 interface Props {
