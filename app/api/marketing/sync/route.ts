@@ -157,33 +157,6 @@ Then write a DALL-E image prompt for a clean, professional LinkedIn header image
   return { post, imagePrompt };
 }
 
-async function generateImage(prompt: string): Promise<string | null> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return null;
-
-  const res = await fetch('https://api.openai.com/v1/images/generations', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'dall-e-3',
-      prompt,
-      n: 1,
-      size: '1792x1024', // landscape — ideal for LinkedIn
-      quality: 'standard',
-    }),
-  });
-
-  if (!res.ok) {
-    console.error('[marketing/sync] DALL-E error', await res.text());
-    return null;
-  }
-
-  const data = await res.json();
-  return data.data?.[0]?.url ?? null;
-}
 
 export async function POST() {
   const session = await auth();
@@ -233,10 +206,8 @@ export async function runSync() {
 
   for (const meeting of newMeetings) {
     try {
-      const { post, imagePrompt } = await generateContent(meeting);
+      const { post } = await generateContent(meeting);
       if (!post) continue;
-
-      const imageUrl = await generateImage(imagePrompt);
 
       const title = meeting.meeting_title || meeting.title || 'Call';
       const attendees = (meeting.calendar_invitees ?? [])
@@ -251,7 +222,7 @@ export async function runSync() {
         attendees,
         summary: extractSummaryText(meeting.default_summary),
         post_content: post,
-        image_url: imageUrl ?? '',
+        image_url: '',
         status: 'draft',
       }, { onConflict: 'fathom_recording_id' });
       created++;
