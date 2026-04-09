@@ -196,7 +196,7 @@ export default function PricingCalculator() {
       const seaIdx = ltmRevpar > 0 ? ((d.revpar / ltmRevpar) - 1) * 100 : 0;
       const s = getSeason(seaIdx);
       const isPeak = s.name === 'Peak';
-      const unitAdr = d.unitAdr > 0 ? d.unitAdr : (computed?.ltmUnitAdr ?? 0);
+      const unitAdr = d.unitAdr > 0 ? d.unitAdr : activeLtmUnitAdr;
       const tgtMinPct = tierData.baseMin * s.minAdj;
       const tgtMaxPct = (isPeak ? tierData.peakMax : tierData.stdMax) * s.maxAdj;
       lines.push([
@@ -384,6 +384,7 @@ export default function PricingCalculator() {
     values: ComputedRow[];
     weeklyValues: (ComputedRow & { week: number })[];
     ltmRevpar: number; ltmUnitAdr: number; ltmMktAdr: number;
+    ltmRevparWeekly: number; ltmUnitAdrWeekly: number; ltmMktAdrWeekly: number;
     boardBase: number; boardMin: number; boardMax: number;
   } | null = null;
 
@@ -416,16 +417,19 @@ export default function PricingCalculator() {
       }));
     }
 
-    // LTM averages: base on monthly values if available, else on weekly
+    // LTM averages from monthly values (simple 12-month mean)
     const baseForLtm = values.length ? values : weeklyValues;
-    const nonZeroR = baseForLtm.filter(v => v.revpar > 0).map(v => v.revpar);
-    const nonZeroA = baseForLtm.filter(v => v.unitAdr > 0).map(v => v.unitAdr);
-    const nonZeroM = baseForLtm.filter(v => v.mktAdr > 0).map(v => v.mktAdr);
-    const ltmRevpar  = nonZeroR.length ? nonZeroR.reduce((a, b) => a + b, 0) / nonZeroR.length : 1;
-    const ltmUnitAdr = nonZeroA.length ? nonZeroA.reduce((a, b) => a + b, 0) / nonZeroA.length : 1;
-    const ltmMktAdr  = nonZeroM.length ? nonZeroM.reduce((a, b) => a + b, 0) / nonZeroM.length : 1;
+    const avg = (arr: number[]) => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 1;
+    const ltmRevpar  = avg(baseForLtm.filter(v => v.revpar  > 0).map(v => v.revpar));
+    const ltmUnitAdr = avg(baseForLtm.filter(v => v.unitAdr > 0).map(v => v.unitAdr));
+    const ltmMktAdr  = avg(baseForLtm.filter(v => v.mktAdr  > 0).map(v => v.mktAdr));
+    // Weekly LTM averages: week-weighted (each week counts equally, months with 5 weeks weigh more)
+    const ltmRevparWeekly  = avg(weeklyValues.filter(v => v.revpar  > 0).map(v => v.revpar));
+    const ltmUnitAdrWeekly = avg(weeklyValues.filter(v => v.unitAdr > 0).map(v => v.unitAdr));
+    const ltmMktAdrWeekly  = avg(weeklyValues.filter(v => v.mktAdr  > 0).map(v => v.mktAdr));
     computed = {
       values, weeklyValues, ltmRevpar, ltmUnitAdr, ltmMktAdr,
+      ltmRevparWeekly, ltmUnitAdrWeekly, ltmMktAdrWeekly,
       boardBase: ltmUnitAdr,
       boardMin:  ltmUnitAdr * tierData.baseMin,
       boardMax:  ltmUnitAdr * tierData.stdMax,
@@ -435,9 +439,13 @@ export default function PricingCalculator() {
   // ── Season counts for badge row ───────────────────────────────────────────
   const seasonCounts: Record<string, number> = {};
   const activeRows = computed ? (viewMode === 'weekly' ? computed.weeklyValues : computed.values) : [];
+  const activeLtmRevpar   = computed ? (viewMode === 'weekly' ? computed.ltmRevparWeekly  : computed.ltmRevpar)  : 1;
+  const activeLtmUnitAdr  = computed ? (viewMode === 'weekly' ? computed.ltmUnitAdrWeekly : computed.ltmUnitAdr) : 1;
+  const activeLtmMktAdr   = computed ? (viewMode === 'weekly' ? computed.ltmMktAdrWeekly  : computed.ltmMktAdr)  : 1;
+
   if (computed) {
     activeRows.forEach(d => {
-      const seaIdx = computed!.ltmRevpar > 0 ? ((d.revpar / computed!.ltmRevpar) - 1) * 100 : 0;
+      const seaIdx = activeLtmRevpar > 0 ? ((d.revpar / activeLtmRevpar) - 1) * 100 : 0;
       const s = getSeason(seaIdx);
       seasonCounts[s.name] = (seasonCounts[s.name] || 0) + 1;
     });
@@ -702,7 +710,7 @@ export default function PricingCalculator() {
                 </button>
               ))}
               <button
-                onClick={() => copyTable(activeRows, computed!.ltmRevpar)}
+                onClick={() => copyTable(activeRows, activeLtmRevpar)}
                 className="px-2.5 py-1 rounded-md border text-xs cursor-pointer transition-all"
                 style={copied ? { background: '#f0fdf4', borderColor: '#86efac', color: '#15803d' } : { background: 'transparent', borderColor: '#e5e7eb', color: '#6b7280' }}>
                 {copied ? '✓ Copied' : '⎘ Copy'}
@@ -713,11 +721,11 @@ export default function PricingCalculator() {
           {/* LTM summary */}
           <div className="flex gap-2 flex-wrap mb-3">
             {[
-              `LTM Mkt RevPAR ${fmtC(computed.ltmRevpar, currency)}`,
-              `LTM Mkt ADR ${fmtC(computed.ltmMktAdr, currency)}`,
+              `LTM Mkt RevPAR ${fmtC(activeLtmRevpar, currency)}`,
+              `LTM Mkt ADR ${fmtC(activeLtmMktAdr, currency)}`,
               usePercentile
-                ? `Unit ADR (${ordinal(percentile)} pct) ${fmtC(computed.ltmUnitAdr, currency)} ${fmtPct(premiumPct)}`
-                : `Portfolio ADR ${fmtC(computed.ltmUnitAdr, currency)}`,
+                ? `Unit ADR (${ordinal(percentile)} pct) ${fmtC(activeLtmUnitAdr, currency)} ${fmtPct(premiumPct)}`
+                : `Portfolio ADR ${fmtC(activeLtmUnitAdr, currency)}`,
               'Reference: Apr 8 2026 · Last completed: Mar 2026',
             ].map(tag => (
               <span key={tag} className="text-xs px-2.5 py-1 rounded-full bg-gray-100 text-gray-500">{tag}</span>
@@ -748,10 +756,10 @@ export default function PricingCalculator() {
               </thead>
               <tbody>
                 {activeRows.map(d => {
-                  const seaIdx = computed!.ltmRevpar > 0 ? ((d.revpar / computed!.ltmRevpar) - 1) * 100 : 0;
+                  const seaIdx = activeLtmRevpar > 0 ? ((d.revpar / activeLtmRevpar) - 1) * 100 : 0;
                   const s = getSeason(seaIdx);
                   const isPeak = s.name === 'Peak';
-                  const unitAdr = d.unitAdr > 0 ? d.unitAdr : computed!.ltmUnitAdr;
+                  const unitAdr = d.unitAdr > 0 ? d.unitAdr : activeLtmUnitAdr;
                   const tgtMinPct = tierData.baseMin * s.minAdj;
                   const tgtMaxPct = (isPeak ? tierData.peakMax : tierData.stdMax) * s.maxAdj;
                   const minPrice  = unitAdr * tgtMinPct * chF;
