@@ -149,17 +149,18 @@ export default async function ClientReportsPage({
               <div className="w-14 h-14 rounded-2xl bg-gray-100 flex items-center justify-center mx-auto mb-4">
                 <FileText size={24} className="text-gray-400" strokeWidth={1.8} />
               </div>
-              <p className="text-gray-900 font-semibold text-base mb-1">No report data yet</p>
+              <p className="text-gray-900 font-semibold text-base mb-1">No clients synced yet</p>
               <p className="text-gray-500 text-sm mb-6">
-                The daily sync runs at 8 AM UTC. You can also trigger it manually.
+                Add clients in the Manage Clients tab, then click Sync Now.
               </p>
               <SyncButton />
             </div>
           )}
 
           <div className="space-y-8">
-            {summaries.map(({ clientId, clientName, bookings, totalBookings, totalRevenue }) => (
+            {summaries.map(({ clientId, clientName, bookings, totalBookings, totalRevenue, lastBooking }) => (
               <div key={clientId} className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+                {/* Client header */}
                 <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between gap-4 flex-wrap">
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center shrink-0">
@@ -169,24 +170,63 @@ export default async function ClientReportsPage({
                     </div>
                     <h2 className="font-semibold text-gray-900 text-base">{clientName}</h2>
                   </div>
-                  <div className="flex items-center gap-6">
-                    <div className="text-right">
-                      <p className="text-xs text-gray-400 uppercase tracking-wide font-semibold">Bookings</p>
-                      <p className="text-gray-900 font-bold text-lg">{totalBookings}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-xs text-gray-400 uppercase tracking-wide font-semibold">Total Revenue</p>
-                      <div className="flex items-center gap-1.5">
-                        <TrendingUp size={14} className="text-emerald-500" strokeWidth={2} />
-                        <p className="text-emerald-600 font-bold text-lg">{formatCurrency(totalRevenue, bookings[0]?.currency ?? 'USD')}</p>
+                  {bookings.length > 0 && (
+                    <div className="flex items-center gap-6">
+                      <div className="text-right">
+                        <p className="text-xs text-gray-400 uppercase tracking-wide font-semibold">Bookings</p>
+                        <p className="text-gray-900 font-bold text-lg">{totalBookings}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-gray-400 uppercase tracking-wide font-semibold">Total Revenue</p>
+                        <div className="flex items-center gap-1.5">
+                          <TrendingUp size={14} className="text-emerald-500" strokeWidth={2} />
+                          <p className="text-emerald-600 font-bold text-lg">{formatCurrency(totalRevenue, bookings[0]?.currency ?? 'USD')}</p>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
                 </div>
 
-                {bookings.length === 0 ? (
-                  <div className="px-6 py-8 text-center text-gray-400 text-sm">No bookings for this date</div>
-                ) : (
+                {/* No bookings today */}
+                {bookings.length === 0 && (
+                  <div className="px-6 py-5">
+                    <p className="text-sm font-medium text-gray-500 mb-4">No new bookings today</p>
+                    {lastBooking ? (
+                      <>
+                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">Last booking received</p>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="bg-gray-50 rounded-lg">
+                                <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide rounded-l-lg">Listing</th>
+                                <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Booked</th>
+                                <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Check-in</th>
+                                <th className="text-left px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide">Check-out</th>
+                                <th className="text-right px-4 py-2.5 text-xs font-semibold text-gray-500 uppercase tracking-wide rounded-r-lg">Revenue</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              <tr>
+                                <td className="px-4 py-3 font-medium text-gray-900 max-w-48 truncate">{lastBooking.listing_name || '—'}</td>
+                                <td className="px-4 py-3 text-gray-500 text-sm">{formatDate(lastBooking.booked_date)}</td>
+                                <td className="px-4 py-3 text-gray-600">{formatDate(lastBooking.checkin_date)}</td>
+                                <td className="px-4 py-3 text-gray-600">{formatDate(lastBooking.checkout_date)}</td>
+                                <td className="px-4 py-3 text-gray-900 font-semibold text-right">
+                                  {lastBooking.total_revenue ? formatCurrency(lastBooking.total_revenue, lastBooking.currency ?? 'USD') : '—'}
+                                </td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
+                    ) : (
+                      <p className="text-xs text-gray-400">No historical bookings found for this client.</p>
+                    )}
+                  </div>
+                )}
+
+                {/* Today's bookings table */}
+                {bookings.length > 0 && (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>

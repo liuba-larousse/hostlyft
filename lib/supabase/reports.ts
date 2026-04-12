@@ -57,37 +57,65 @@ export interface ClientSummary {
   bookings: BookingRow[];
   totalBookings: number;
   totalRevenue: number;
+  lastBooking?: BookingRow; // most recent booking from any date, when today has none
 }
 
 export async function getReportsByDate(reportDate: string): Promise<ClientSummary[]> {
   const supabase = createSupabaseAdmin();
 
-  const { data, error } = await supabase
+  // Fetch all active clients
+  const { data: clients } = await supabase
+    .from('pricelabs_clients')
+    .select('id, client_name')
+    .eq('active', true)
+    .order('client_name');
+
+  if (!clients?.length) return [];
+
+  // Fetch today's bookings
+  const { data: todayRows, error } = await supabase
     .from('booking_reports')
-    .select(`
-      *,
-      pricelabs_clients ( client_name )
-    `)
+    .select('*')
     .eq('report_date', reportDate)
     .order('listing_name');
 
   if (error) throw new Error(`Failed to fetch reports: ${error.message}`);
 
-  // Group by client
-  const byClient = new Map<string, { clientName: string; bookings: BookingRow[] }>();
-  for (const row of data ?? []) {
-    const name = (row.pricelabs_clients as { client_name: string } | null)?.client_name ?? 'Unknown';
-    if (!byClient.has(row.client_id)) {
-      byClient.set(row.client_id, { clientName: name, bookings: [] });
-    }
-    byClient.get(row.client_id)!.bookings.push(row as BookingRow);
+  // Group today's bookings by client
+  const byClient = new Map<string, BookingRow[]>();
+  for (const row of todayRows ?? []) {
+    if (!byClient.has(row.client_id)) byClient.set(row.client_id, []);
+    byClient.get(row.client_id)!.push(row as BookingRow);
   }
 
-  return Array.from(byClient.entries()).map(([clientId, { clientName, bookings }]) => ({
-    clientId,
-    clientName,
-    bookings,
-    totalBookings: bookings.length,
-    totalRevenue: bookings.reduce((sum, b) => sum + (b.total_revenue ?? 0), 0),
-  }));
+  // For clients with no bookings today, fetch their last booking
+  const missingIds = clients.filter(c => !byClient.has(c.id)).map(c => c.id);
+  const lastBookingMap = new Map<string, BookingRow>();
+
+  if (missingIds.length) {
+    const { data: allRecent } = await supabase
+      .from('booking_reports')
+      .select('*')
+      .in('client_id', missingIds)
+      .order('booked_date', { ascending: false });
+
+    // Keep only the most recent booking per client
+    for (const row of allRecent ?? []) {
+      if (!lastBookingMap.has(row.client_id)) {
+        lastBookingMap.set(row.client_id, row as BookingRow);
+      }
+    }
+  }
+
+  return clients.map(client => {
+    const bookings = byClient.get(client.id) ?? [];
+    return {
+      clientId: client.id,
+      clientName: client.client_name,
+      bookings,
+      totalBookings: bookings.length,
+      totalRevenue: bookings.reduce((sum, b) => sum + (b.total_revenue ?? 0), 0),
+      lastBooking: bookings.length === 0 ? lastBookingMap.get(client.id) : undefined,
+    };
+  });
 }
