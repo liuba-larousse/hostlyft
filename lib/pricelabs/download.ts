@@ -8,12 +8,12 @@ export async function downloadBookingsCsv(page: Page): Promise<string> {
   // Navigate to bookings page
   await page.goto(BOOKINGS_URL, { waitUntil: 'networkidle', timeout: TIMEOUT });
 
-  // Wait for the download button to appear
-  await page.waitForSelector('#bookings-download-report-button', { timeout: TIMEOUT });
+  // Wait for the download button to appear (PriceLabs uses qa-id, not id)
+  await page.waitForSelector('[qa-id="bookings-download-report-button"]', { timeout: TIMEOUT });
 
   // Click download and capture the file
   const downloadPromise = page.waitForEvent('download', { timeout: TIMEOUT });
-  await page.click('#bookings-download-report-button');
+  await page.click('[qa-id="bookings-download-report-button"]');
   const download = await downloadPromise;
 
   // Wait for download to finish and get path
