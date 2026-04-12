@@ -5,10 +5,8 @@ const TIMEOUT = 60_000;
 
 // Possible bookings page URLs — we'll try each until the button appears
 const BOOKINGS_URLS = [
+  'https://app.pricelabs.co/portfolio_analytics/bookings',
   'https://app.pricelabs.co/portfolio/bookings',
-  'https://app.pricelabs.co/bookings',
-  'https://app.pricelabs.co/reservations',
-  'https://app.pricelabs.co/',
 ];
 
 const BUTTON_SELECTOR = '[qa-id="bookings-download-report-button"]';
