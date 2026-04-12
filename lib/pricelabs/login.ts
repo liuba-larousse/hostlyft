@@ -11,7 +11,6 @@ export async function loginToPriceLabs(
 ): Promise<{ context: BrowserContext; page: Page }> {
   const context = await browser.newContext({
     acceptDownloads: true,
-    downloadsPath: '/tmp',
   });
   const page = await context.newPage();
 
