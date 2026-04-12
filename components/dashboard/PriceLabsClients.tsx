@@ -50,7 +50,10 @@ export default function PriceLabsClients({ contacts, initialClients }: Props) {
   }
 
   function setForm(contactId: string, patch: Partial<ConnectFormState>) {
-    setForms(prev => ({ ...prev, [contactId]: { email: '', password: '', ...prev[contactId], ...patch } }));
+    setForms(prev => ({
+      ...prev,
+      [contactId]: { ...(prev[contactId] ?? { email: '', password: '' }), ...patch },
+    }));
   }
 
   async function handleConnect(contact: HubSpotContact) {
