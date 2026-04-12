@@ -4,8 +4,8 @@ import { getActiveClients } from '@/lib/supabase/clients';
 import { upsertBookings } from '@/lib/supabase/reports';
 import { launchBrowser } from '@/lib/pricelabs/browser';
 import { loginToPriceLabs } from '@/lib/pricelabs/login';
-import { downloadBookingsCsv } from '@/lib/pricelabs/download';
-import { parseBookingsCsv } from '@/lib/pricelabs/parse';
+import { downloadBookingsFile } from '@/lib/pricelabs/download';
+import { parseBookingsXlsx } from '@/lib/pricelabs/parse';
 
 // Allow up to 5 minutes — needed for Playwright across 8 clients
 export const maxDuration = 300;
@@ -51,8 +51,8 @@ export async function GET(req: NextRequest) {
       const { context, page } = await loginToPriceLabs(browser, client.email, client.password);
 
       try {
-        const csv = await downloadBookingsCsv(page);
-        const bookings = parseBookingsCsv(csv);
+        const buffer = await downloadBookingsFile(page);
+        const bookings = parseBookingsXlsx(buffer);
         const reportDate = new Date();
         reportDate.setDate(reportDate.getDate() - 1);
         const reportDateStr = reportDate.toISOString().split('T')[0];
