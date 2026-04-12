@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { RefreshCw, CheckCircle, XCircle } from "lucide-react";
 import { clsx } from "clsx";
 
@@ -9,6 +10,7 @@ type State = "idle" | "loading" | "success" | "error";
 export default function SyncButton() {
   const [state, setState] = useState<State>("idle");
   const [message, setMessage] = useState("");
+  const router = useRouter();
 
   async function handleSync() {
     setState("loading");
@@ -25,6 +27,7 @@ export default function SyncButton() {
           const totalBookings = results?.reduce((sum, r) => sum + ((r as {bookingsFound?: number}).bookingsFound ?? 0), 0) ?? 0;
           setState("success");
           setMessage(total ? `${ok}/${total} synced · ${totalBookings} bookings found` : "Sync complete");
+          router.refresh(); // re-fetch server component data
         } else {
           setState("error");
           const firstError = failed[0]?.error ?? "Unknown error";
