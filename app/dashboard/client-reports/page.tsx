@@ -6,8 +6,8 @@ import { clsx } from 'clsx';
 import SyncButton from '@/components/dashboard/SyncButton';
 import PriceLabsClients from '@/components/dashboard/PriceLabsClients';
 
-function formatCurrency(n: number): string {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
+function formatCurrency(n: number, currency = 'USD'): string {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 }).format(n);
 }
 
 function formatDate(s: string | null): string {
@@ -178,7 +178,7 @@ export default async function ClientReportsPage({
                       <p className="text-xs text-gray-400 uppercase tracking-wide font-semibold">Total Revenue</p>
                       <div className="flex items-center gap-1.5">
                         <TrendingUp size={14} className="text-emerald-500" strokeWidth={2} />
-                        <p className="text-emerald-600 font-bold text-lg">{formatCurrency(totalRevenue)}</p>
+                        <p className="text-emerald-600 font-bold text-lg">{formatCurrency(totalRevenue, bookings[0]?.currency ?? 'USD')}</p>
                       </div>
                     </div>
                   </div>
@@ -209,9 +209,9 @@ export default async function ClientReportsPage({
                             <td className="px-4 py-3.5 text-gray-600">{formatDate(b.checkout_date)}</td>
                             <td className="px-4 py-3.5 text-gray-600 text-right">{b.los ?? '—'}</td>
                             <td className="px-4 py-3.5 text-gray-600 text-right">{b.booking_window ?? '—'}</td>
-                            <td className="px-4 py-3.5 text-gray-600 text-right">{b.adr ? formatCurrency(b.adr) : '—'}</td>
+                            <td className="px-4 py-3.5 text-gray-600 text-right">{b.adr ? formatCurrency(b.adr, b.currency ?? 'USD') : '—'}</td>
                             <td className="px-6 py-3.5 text-gray-900 font-semibold text-right">
-                              {b.total_revenue ? formatCurrency(b.total_revenue) : '—'}
+                              {b.total_revenue ? formatCurrency(b.total_revenue, b.currency ?? 'USD') : '—'}
                             </td>
                             <td className="px-4 py-3.5">
                               {b.booking_source ? (

@@ -12,6 +12,7 @@ export interface ParsedBooking {
   los: number;
   bookingWindow: number;
   bookingSource: string;
+  currency: string;
 }
 
 function yesterday(): string {
@@ -58,6 +59,7 @@ export function parseBookingsXlsx(buffer: Buffer, filterDate?: string): ParsedBo
       los: parseInt(String(row['Length of Stay (Days)'] ?? '')) || 0,
       bookingWindow: parseInt(String(row['Booking Window (Days)'] ?? '')) || 0,
       bookingSource: String(row['Booking Source'] ?? '').trim(),
+      currency: String(row['Currency'] ?? 'USD').trim().toUpperCase() || 'USD',
     });
   }
 

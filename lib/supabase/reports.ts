@@ -23,6 +23,7 @@ export async function upsertBookings(
     los: b.los,
     booking_window: b.bookingWindow,
     booking_source: b.bookingSource,
+    currency: b.currency,
   }));
 
   const { error } = await supabase
@@ -47,6 +48,7 @@ export interface BookingRow {
   los: number | null;
   booking_window: number | null;
   booking_source: string | null;
+  currency: string | null;
 }
 
 export interface ClientSummary {
