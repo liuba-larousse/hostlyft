@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { auth } from '@/lib/auth';
 import { getActiveClients } from '@/lib/supabase/clients';
 import { upsertBookings } from '@/lib/supabase/reports';
 import { launchBrowser } from '@/lib/pricelabs/browser';
@@ -18,11 +19,14 @@ interface ClientResult {
 }
 
 export async function GET(req: NextRequest) {
-  // Protect with CRON_SECRET (same pattern as /api/cron/marketing)
+  // Allow Vercel Cron (Bearer secret) OR logged-in dashboard users
   const secret = process.env.CRON_SECRET;
-  if (secret) {
-    const auth = req.headers.get('authorization');
-    if (auth !== `Bearer ${secret}`) {
+  const authHeader = req.headers.get('authorization');
+  const isCron = secret && authHeader === `Bearer ${secret}`;
+
+  if (!isCron) {
+    const session = await auth();
+    if (!session?.user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
   }
