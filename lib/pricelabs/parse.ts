@@ -20,29 +20,59 @@ function normalise(s: string): string {
 }
 
 const HEADER_MAP: Record<string, keyof ParsedBooking> = {
+  // Reservation ID variants
   reservationid: 'reservationId',
   reservation: 'reservationId',
+  confirmationcode: 'reservationId',
+  confirmation: 'reservationId',
+  bookingid: 'reservationId',
+  id: 'reservationId',
+  // Listing
   listingname: 'listingName',
   listing: 'listingName',
+  property: 'listingName',
+  propertyname: 'listingName',
+  unit: 'listingName',
+  // Check-in
   checkin: 'checkinDate',
   checkindate: 'checkinDate',
   'check-in': 'checkinDate',
+  arrivaldate: 'checkinDate',
+  arrival: 'checkinDate',
+  // Check-out
   checkout: 'checkoutDate',
   checkoutdate: 'checkoutDate',
   'check-out': 'checkoutDate',
+  departuredate: 'checkoutDate',
+  departure: 'checkoutDate',
+  // Booked date
   bookeddate: 'bookedDate',
   bookingdate: 'bookedDate',
+  datebooked: 'bookedDate',
+  created: 'bookedDate',
+  createddate: 'bookedDate',
+  // Revenue
   adr: 'adr',
   averagedailyrate: 'adr',
+  avgdailyrate: 'adr',
   rentalrevenue: 'rentalRevenue',
+  netrevenue: 'rentalRevenue',
   totalrevenue: 'totalRevenue',
+  grossrevenue: 'totalRevenue',
+  revenue: 'totalRevenue',
+  // LOS
   los: 'los',
   lengthofstay: 'los',
+  nights: 'los',
+  // Booking window
   bookingwindow: 'bookingWindow',
   bw: 'bookingWindow',
+  leadtime: 'bookingWindow',
+  // Source
   bookingsource: 'bookingSource',
   source: 'bookingSource',
   channel: 'bookingSource',
+  platform: 'bookingSource',
 };
 
 function parseDate(val: string): string {
@@ -105,7 +135,13 @@ export function parseBookingsCsv(csv: string, filterDate?: string): ParsedBookin
     // Filter to target date
     if (mapped.bookedDate && mapped.bookedDate !== targetDate) continue;
 
-    // Skip rows without a reservation ID
+    // Fallback reservation ID: use first column value if not mapped
+    if (!mapped.reservationId) {
+      const firstVal = Object.values(row)[0]?.trim();
+      if (firstVal) mapped.reservationId = firstVal;
+    }
+
+    // Skip rows without any reservation ID
     if (!mapped.reservationId) continue;
 
     bookings.push({

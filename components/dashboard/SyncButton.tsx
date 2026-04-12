@@ -22,8 +22,9 @@ export default function SyncButton() {
         const total = results?.length ?? 0;
         const failed = results?.filter(r => r.status === "error") ?? [];
         if (ok === total) {
+          const totalBookings = results?.reduce((sum, r) => sum + ((r as {bookingsFound?: number}).bookingsFound ?? 0), 0) ?? 0;
           setState("success");
-          setMessage(total ? `${ok}/${total} clients synced` : "Sync complete");
+          setMessage(total ? `${ok}/${total} synced · ${totalBookings} bookings found` : "Sync complete");
         } else {
           setState("error");
           const firstError = failed[0]?.error ?? "Unknown error";
