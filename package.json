@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.86.1",
-    "@sparticuz/chromium": "^147.0.0",
+    "@sparticuz/chromium-min": "^147.0.0",
     "@supabase/supabase-js": "^2.101.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.7.0",

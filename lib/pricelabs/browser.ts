@@ -1,15 +1,19 @@
 import type { Browser } from 'playwright-core';
 
+// Chromium binary hosted on GitHub releases — downloaded at runtime on Vercel
+const CHROMIUM_URL =
+  'https://github.com/Sparticuz/chromium/releases/download/v147.0.0/chromium-v147.0.0-pack.tar';
+
 export async function launchBrowser(): Promise<Browser> {
   const isVercel = !!process.env.VERCEL || process.env.NODE_ENV === 'production';
 
   if (isVercel) {
-    // On Vercel: use lightweight chromium from @sparticuz/chromium
-    const chromium = (await import('@sparticuz/chromium')).default;
+    // On Vercel: chromium-min downloads the binary at runtime (no bundling needed)
+    const chromium = (await import('@sparticuz/chromium-min')).default;
     const { chromium: playwright } = await import('playwright-core');
     return playwright.launch({
       args: chromium.args,
-      executablePath: await chromium.executablePath(),
+      executablePath: await chromium.executablePath(CHROMIUM_URL),
       headless: true,
     });
   } else {
