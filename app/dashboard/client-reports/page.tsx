@@ -42,16 +42,18 @@ async function getHubSpotContacts() {
   if (!token) return [];
   try {
     const res = await fetch(
-      'https://api.hubapi.com/crm/v3/objects/contacts?properties=firstname,lastname,email,company&limit=100',
+      'https://api.hubapi.com/crm/v3/objects/contacts?properties=firstname,lastname,email,company,lifecyclestage&limit=100',
       { headers: { Authorization: `Bearer ${token}` }, next: { revalidate: 300 } }
     );
     if (!res.ok) return [];
     const data = await res.json();
-    return (data.results ?? []).map((c: { id: string; properties: Record<string, string> }) => {
-      const p = c.properties;
-      const name = [p.firstname, p.lastname].filter(Boolean).join(' ') || 'Unknown';
-      return { id: c.id, name, company: p.company || '', email: p.email || '' };
-    }).sort((a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name));
+    return (data.results ?? [])
+      .filter((c: { properties: Record<string, string> }) => c.properties.lifecyclestage === 'customer')
+      .map((c: { id: string; properties: Record<string, string> }) => {
+        const p = c.properties;
+        const name = [p.firstname, p.lastname].filter(Boolean).join(' ') || 'Unknown';
+        return { id: c.id, name, company: p.company || '', email: p.email || '' };
+      }).sort((a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name));
   } catch { return []; }
 }
 
