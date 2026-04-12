@@ -17,10 +17,18 @@ export default function SyncButton() {
       const res = await fetch("/api/pricelabs/daily-report");
       const data = await res.json();
       if (res.ok || res.status === 207) {
-        const ok = (data.results as Array<{ status: string; clientName: string }> | undefined)?.filter(r => r.status === "ok").length ?? 0;
-        const total = (data.results as unknown[])?.length ?? 0;
-        setState("success");
-        setMessage(total ? `${ok}/${total} clients synced` : "Sync complete");
+        const results = data.results as Array<{ status: string; clientName: string; error?: string }> | undefined;
+        const ok = results?.filter(r => r.status === "ok").length ?? 0;
+        const total = results?.length ?? 0;
+        const failed = results?.filter(r => r.status === "error") ?? [];
+        if (ok === total) {
+          setState("success");
+          setMessage(total ? `${ok}/${total} clients synced` : "Sync complete");
+        } else {
+          setState("error");
+          const firstError = failed[0]?.error ?? "Unknown error";
+          setMessage(`${ok}/${total} synced — ${failed[0]?.clientName}: ${firstError}`);
+        }
       } else {
         setState("error");
         setMessage(data.error ?? "Sync failed");
@@ -29,7 +37,7 @@ export default function SyncButton() {
       setState("error");
       setMessage("Network error");
     }
-    setTimeout(() => setState("idle"), 5000);
+    setTimeout(() => setState("idle"), 15000);
   }
 
   return (
