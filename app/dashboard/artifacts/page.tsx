@@ -1,7 +1,10 @@
-import { Package, Plus, BarChart2, TrendingUp, Calculator } from "lucide-react";
+import { BarChart2, TrendingUp, Calculator, Package, FileCode, Trash2 } from "lucide-react";
 import Link from "next/link";
+import { createSupabaseAdmin } from "@/lib/supabase";
+import UploadArtifactButton from "@/components/dashboard/UploadArtifactButton";
+import DeleteArtifactButton from "@/components/dashboard/DeleteArtifactButton";
 
-const artifacts = [
+const builtIn = [
   {
     id: "revpar-analytics",
     title: "Revenue Forecast",
@@ -9,7 +12,7 @@ const artifacts = [
     icon: BarChart2,
     color: "bg-violet-50 text-violet-600",
     type: "React Component",
-    action: { label: "View", href: "/dashboard/artifacts/revpar-analytics", external: false },
+    href: "/dashboard/artifacts/revpar-analytics",
   },
   {
     id: "seasonality-analytics",
@@ -18,7 +21,7 @@ const artifacts = [
     icon: TrendingUp,
     color: "bg-indigo-50 text-indigo-600",
     type: "React Component",
-    action: { label: "View", href: "/dashboard/artifacts/seasonality-analytics", external: false },
+    href: "/dashboard/artifacts/seasonality-analytics",
   },
   {
     id: "pricing-calculator",
@@ -27,11 +30,22 @@ const artifacts = [
     icon: Calculator,
     color: "bg-yellow-50 text-yellow-600",
     type: "React Component",
-    action: { label: "View", href: "/dashboard/artifacts/pricing-calculator", external: false },
+    href: "/dashboard/artifacts/pricing-calculator",
   },
 ];
 
-export default function ArtifactsPage() {
+async function getUploadedArtifacts() {
+  const supabase = createSupabaseAdmin();
+  const { data } = await supabase
+    .from("artifacts")
+    .select("id, title, description, file_name, created_at")
+    .order("created_at", { ascending: false });
+  return data ?? [];
+}
+
+export default async function ArtifactsPage() {
+  const uploaded = await getUploadedArtifacts();
+
   return (
     <div className="p-8 max-w-5xl mx-auto">
       <div className="flex items-center justify-between mb-10">
@@ -39,14 +53,53 @@ export default function ArtifactsPage() {
           <h1 className="text-3xl font-bold text-gray-900">Artifacts</h1>
           <p className="text-gray-500 mt-2 text-base">Files, outputs, and deliverables from agents and team.</p>
         </div>
-        <button className="flex items-center gap-2 px-5 py-2.5 bg-yellow-400 text-gray-900 rounded-xl text-base font-semibold hover:bg-yellow-500 transition-colors cursor-pointer">
-          <Plus size={16} />
-          Upload
-        </button>
+        <UploadArtifactButton />
       </div>
 
+      {/* Uploaded HTML artifacts */}
+      {uploaded.length > 0 && (
+        <div className="mb-8">
+          <h2 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">Uploaded</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {uploaded.map(artifact => (
+              <div
+                key={artifact.id}
+                className="flex flex-col gap-4 p-6 bg-white border border-gray-200 rounded-2xl hover:border-gray-300 hover:shadow-sm transition-all"
+              >
+                <div className="flex items-start gap-4">
+                  <div className="p-3 rounded-xl bg-orange-50 shrink-0">
+                    <FileCode size={22} strokeWidth={1.8} className="text-orange-500" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <p className="font-semibold text-base text-gray-900 truncate">{artifact.title}</p>
+                      <span className="text-xs font-medium text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full shrink-0">HTML</span>
+                    </div>
+                    <p className="text-sm text-gray-400">
+                      {new Date(artifact.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between">
+                  <DeleteArtifactButton id={artifact.id} />
+                  <Link
+                    href={`/dashboard/artifacts/view/${artifact.id}`}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-gray-900 text-white text-sm font-semibold rounded-lg hover:bg-gray-700 transition-colors"
+                  >
+                    <Package size={14} />
+                    View
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Built-in components */}
+      <h2 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">Components</h2>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {artifacts.map(({ id, title, description, icon: Icon, color, type, action }) => (
+        {builtIn.map(({ id, title, description, icon: Icon, color, type, href }) => (
           <div
             key={id}
             className="flex flex-col gap-4 p-6 bg-white border border-gray-200 rounded-2xl hover:border-gray-300 hover:shadow-sm transition-all"
@@ -65,11 +118,11 @@ export default function ArtifactsPage() {
             </div>
             <div className="flex justify-end">
               <Link
-                href={action.href}
+                href={href}
                 className="flex items-center gap-1.5 px-4 py-2 bg-gray-900 text-white text-sm font-semibold rounded-lg hover:bg-gray-700 transition-colors"
               >
                 <Package size={14} />
-                {action.label}
+                View
               </Link>
             </div>
           </div>
