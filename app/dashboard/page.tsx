@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { Bot, Package, Users, Briefcase, ArrowRight } from "lucide-react";
 import Link from "next/link";
 import TaskBoard from "@/components/dashboard/TaskBoard";
+import SendTasksEmailButton from "@/components/dashboard/SendTasksEmailButton";
 
 const quickLinks = [
   { href: "/dashboard/agents", icon: Bot, label: "Cloud Agents", description: "Manage and monitor AI agents", color: "bg-violet-50 text-violet-600" },
@@ -38,6 +39,10 @@ export default async function DashboardPage() {
             <ArrowRight size={18} className="text-gray-400 group-hover:text-yellow-500 transition-colors shrink-0" />
           </Link>
         ))}
+      </div>
+      <div className="flex items-center justify-between mt-10 mb-5">
+        <h2 className="text-sm font-bold text-gray-400 uppercase tracking-widest">Task Board</h2>
+        <SendTasksEmailButton />
       </div>
       <TaskBoard />
     </div>
