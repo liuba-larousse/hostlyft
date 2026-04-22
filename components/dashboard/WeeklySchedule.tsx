@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Upload, Calendar, ChevronRight, X, AlertCircle, Check, Save, Eye, ListChecks } from "lucide-react";
+import { Upload, Calendar, ChevronRight, X, AlertCircle, Check, Save, Eye, ListChecks, Clock, GripVertical } from "lucide-react";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -35,6 +35,20 @@ interface TeamMember {
 }
 
 type Priority = "low" | "medium" | "high";
+type TaskStatus = "todo" | "inprogress" | "done";
+
+interface ViewTask {
+  id: string;
+  name: string;
+  time: string;
+  type: string;
+  client: string | null;
+  dep: string | null;
+  delegate: string | null;
+  day: string;
+  status: TaskStatus;
+  personKey: string;
+}
 
 interface ImportRow {
   id: string;
@@ -57,17 +71,38 @@ const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const DAY_OFFSET: Record<string, number> = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6 };
 const KNOWN_META = new Set(["week", "invoices", "carry_over_next_week"]);
 
-const TYPE_STYLES: Record<string, string> = {
-  internal: "bg-gray-100 text-gray-700 border-gray-200",
-  cloud9:   "bg-blue-50 text-blue-700 border-blue-200",
-  ai:       "bg-violet-50 text-violet-700 border-violet-200",
-  client:   "bg-emerald-50 text-emerald-700 border-emerald-200",
+// Solid card colors per status — multiple shades for visual variety
+const STATUS_COLORS: Record<TaskStatus, string[]> = {
+  todo: [
+    "bg-blue-200/80",
+    "bg-indigo-200/80",
+    "bg-sky-200/80",
+    "bg-slate-200/80",
+  ],
+  inprogress: [
+    "bg-amber-300/80",
+    "bg-yellow-200/80",
+    "bg-orange-200/80",
+    "bg-rose-200/80",
+  ],
+  done: [
+    "bg-emerald-200/80",
+    "bg-green-200/80",
+    "bg-teal-200/80",
+    "bg-lime-200/80",
+  ],
 };
-const TYPE_DOT: Record<string, string> = {
-  internal: "bg-gray-400",
-  cloud9:   "bg-blue-500",
-  ai:       "bg-violet-500",
-  client:   "bg-emerald-500",
+
+const STATUS_LABEL: Record<TaskStatus, { label: string; color: string; dot: string }> = {
+  todo:       { label: "To Do",       color: "text-blue-700",    dot: "bg-blue-500" },
+  inprogress: { label: "In Progress", color: "text-amber-700",   dot: "bg-amber-500" },
+  done:       { label: "Done",        color: "text-emerald-700", dot: "bg-emerald-500" },
+};
+
+const STATUS_CYCLE: Record<TaskStatus, TaskStatus> = {
+  todo: "inprogress",
+  inprogress: "done",
+  done: "todo",
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -96,6 +131,15 @@ function datePlusDays(base: Date, days: number): string {
   const d = new Date(base);
   d.setDate(d.getDate() + days);
   return d.toISOString().slice(0, 10);
+}
+
+function getDayDate(weekStr: string, day: string): number | null {
+  const ws = parseWeekStart(weekStr);
+  if (!ws) return null;
+  const offset = DAY_OFFSET[day] ?? 0;
+  const d = new Date(ws);
+  d.setDate(d.getDate() + offset);
+  return d.getDate();
 }
 
 function findTeamMember(personKey: string, members: TeamMember[]): string {
@@ -133,6 +177,38 @@ function buildDescription(task: ScheduleTask, day: string): string {
 
 let rowIdCounter = 0;
 
+function buildViewTasks(schedule: WeekSchedule): Record<string, ViewTask[]> {
+  const people = getPeople(schedule);
+  const result: Record<string, ViewTask[]> = {};
+
+  for (const personKey of people) {
+    const personData = schedule[personKey] as PersonSchedule;
+    if (!personData?.tasks) continue;
+    const tasks: ViewTask[] = [];
+
+    for (const day of Object.keys(personData.tasks)) {
+      for (const task of personData.tasks[day]) {
+        tasks.push({
+          id: `vt-${rowIdCounter++}`,
+          name: task.name,
+          time: task.time,
+          type: task.type,
+          client: task.client,
+          dep: task.dep,
+          delegate: task.delegate,
+          day,
+          status: "todo",
+          personKey,
+        });
+      }
+    }
+
+    result[personKey] = tasks;
+  }
+
+  return result;
+}
+
 function buildImportRows(schedule: WeekSchedule, members: TeamMember[], contacts: string[]): ImportRow[] {
   const weekStart = parseWeekStart(schedule.week);
   const people = getPeople(schedule);
@@ -169,6 +245,11 @@ function buildImportRows(schedule: WeekSchedule, members: TeamMember[], contacts
   return rows;
 }
 
+function getCardColor(status: TaskStatus, index: number): string {
+  const colors = STATUS_COLORS[status];
+  return colors[index % colors.length];
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function WeeklySchedule() {
@@ -177,11 +258,14 @@ export default function WeeklySchedule() {
   const [error, setError] = useState("");
   const [activePerson, setActivePerson] = useState("");
   const [mode, setMode] = useState<"view" | "import">("view");
+  const [viewTasks, setViewTasks] = useState<Record<string, ViewTask[]>>({});
   const [importRows, setImportRows] = useState<ImportRow[]>([]);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [contactNames, setContactNames] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [saveResult, setSaveResult] = useState<{ ok: number; fail: number } | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverDay, setDragOverDay] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // Fetch team members + contacts on mount
@@ -206,7 +290,7 @@ export default function WeeklySchedule() {
       setError("");
       setMode("view");
       setSaveResult(null);
-      // Build import rows
+      setViewTasks(buildViewTasks(parsed));
       const rows = buildImportRows(parsed, teamMembers, contactNames);
       setImportRows(rows);
     } catch {
@@ -223,6 +307,59 @@ export default function WeeklySchedule() {
     };
     reader.readAsText(file);
   }
+
+  // ── View task actions ──────────────────────────────────────────────────────
+
+  function cycleStatus(taskId: string) {
+    setViewTasks((prev) => {
+      const updated = { ...prev };
+      for (const key of Object.keys(updated)) {
+        updated[key] = updated[key].map((t) =>
+          t.id === taskId ? { ...t, status: STATUS_CYCLE[t.status] } : t
+        );
+      }
+      return updated;
+    });
+  }
+
+  function moveTaskToDay(taskId: string, newDay: string) {
+    setViewTasks((prev) => {
+      const updated = { ...prev };
+      for (const key of Object.keys(updated)) {
+        updated[key] = updated[key].map((t) =>
+          t.id === taskId ? { ...t, day: newDay } : t
+        );
+      }
+      return updated;
+    });
+  }
+
+  // ── Drag handlers ─────────────────────────────────────────────────────────
+
+  function onDragStart(e: React.DragEvent, taskId: string) {
+    setDraggingId(taskId);
+    e.dataTransfer.effectAllowed = "move";
+  }
+
+  function onDragOver(e: React.DragEvent, day: string) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDragOverDay(day);
+  }
+
+  function onDrop(e: React.DragEvent, day: string) {
+    e.preventDefault();
+    if (draggingId) moveTaskToDay(draggingId, day);
+    setDraggingId(null);
+    setDragOverDay(null);
+  }
+
+  function onDragEnd() {
+    setDraggingId(null);
+    setDragOverDay(null);
+  }
+
+  // ── Import actions ─────────────────────────────────────────────────────────
 
   function toggleRow(id: string) {
     setImportRows((prev) => prev.map((r) => (r.id === id ? { ...r, selected: !r.selected } : r)));
@@ -272,7 +409,6 @@ export default function WeeklySchedule() {
 
     setSaving(false);
     setSaveResult({ ok, fail });
-    // Deselect saved tasks
     if (ok > 0) {
       setImportRows((prev) => prev.map((r) => (r.selected ? { ...r, selected: false } : r)));
     }
@@ -327,9 +463,9 @@ export default function WeeklySchedule() {
     );
   }
 
-  // ── Schedule view + Import ─────────────────────────────────────────────────
+  // ── Schedule + Import view ─────────────────────────────────────────────────
   const people = getPeople(schedule);
-  const personData = schedule[activePerson] as PersonSchedule | undefined;
+  const personTasks = viewTasks[activePerson] ?? [];
 
   return (
     <div className="p-10 max-w-7xl mx-auto">
@@ -342,15 +478,13 @@ export default function WeeklySchedule() {
           </div>
           <h1 className="text-3xl font-bold text-gray-900">Weekly Schedule</h1>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => { setSchedule(null); setJsonInput(""); setSaveResult(null); }}
-            className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900 border border-gray-200 rounded-lg px-3 py-2 transition-colors cursor-pointer"
-          >
-            <X size={14} />
-            New
-          </button>
-        </div>
+        <button
+          onClick={() => { setSchedule(null); setJsonInput(""); setSaveResult(null); }}
+          className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900 border border-gray-200 rounded-lg px-3 py-2 transition-colors cursor-pointer"
+        >
+          <X size={14} />
+          New
+        </button>
       </div>
 
       {/* Mode tabs */}
@@ -435,49 +569,121 @@ export default function WeeklySchedule() {
             })}
           </div>
 
-          {/* Day grid */}
-          {personData && (
-            <div className="grid grid-cols-5 gap-3">
-              {DAYS.map((day) => {
-                const tasks = personData.tasks[day] ?? [];
-                return (
-                  <div key={day}>
-                    <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2 px-1">{day}</p>
-                    <div className="space-y-2">
-                      {tasks.length === 0 ? (
-                        <div className="h-10 border border-dashed border-gray-200 rounded-xl" />
-                      ) : (
-                        tasks.map((task, i) => (
-                          <div
-                            key={i}
-                            className={`border rounded-xl p-2.5 ${TYPE_STYLES[task.type] ?? "bg-gray-50 border-gray-200"}`}
-                          >
-                            <div className="flex items-start gap-1.5 mb-1">
-                              <span className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${TYPE_DOT[task.type] ?? "bg-gray-400"}`} />
-                              <p className="text-xs font-semibold leading-snug">{task.name}</p>
-                            </div>
-                            <p className="text-xs opacity-60 ml-3">{task.time}</p>
-                            {task.client && <p className="text-xs opacity-60 ml-3 mt-0.5 truncate">{task.client}</p>}
-                            {task.delegate && <p className="text-xs ml-3 mt-1 opacity-80">{task.delegate}</p>}
-                            {task.dep && <p className="text-xs ml-3 mt-0.5 italic opacity-50 truncate">{task.dep}</p>}
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+          {/* Status legend */}
+          <div className="flex items-center gap-4 mb-5">
+            {(["todo", "inprogress", "done"] as TaskStatus[]).map((s) => {
+              const info = STATUS_LABEL[s];
+              const count = personTasks.filter((t) => t.status === s).length;
+              return (
+                <div key={s} className="flex items-center gap-1.5 text-xs text-gray-500">
+                  <span className={`w-2.5 h-2.5 rounded-full ${info.dot}`} />
+                  <span className={`font-semibold ${info.color}`}>{info.label}</span>
+                  <span className="text-gray-400">{count}</span>
+                </div>
+              );
+            })}
+            <span className="text-xs text-gray-300 ml-2">Click card to change status · Drag to move day</span>
+          </div>
 
-          {/* Legend */}
-          <div className="flex items-center gap-5 mt-8 pt-6 border-t border-gray-100">
-            {Object.entries(TYPE_DOT).map(([type, dot]) => (
-              <div key={type} className="flex items-center gap-1.5 text-xs text-gray-500 capitalize">
-                <span className={`w-2 h-2 rounded-full ${dot}`} />
-                {type}
-              </div>
-            ))}
+          {/* Day grid */}
+          <div className="grid grid-cols-5 gap-4">
+            {DAYS.map((day) => {
+              const dayDate = getDayDate(schedule.week, day);
+              const dayTasks = personTasks.filter((t) => t.day === day);
+              const isOver = dragOverDay === day;
+
+              return (
+                <div
+                  key={day}
+                  onDragOver={(e) => onDragOver(e, day)}
+                  onDrop={(e) => onDrop(e, day)}
+                  onDragLeave={() => setDragOverDay(null)}
+                  className={`min-h-32 rounded-2xl transition-all ${
+                    isOver ? "bg-yellow-50 ring-2 ring-yellow-300" : ""
+                  }`}
+                >
+                  {/* Day header */}
+                  <div className="flex items-baseline gap-1.5 mb-3 px-1">
+                    <span className="text-2xl font-bold text-gray-900">{dayDate ?? ""}</span>
+                    <span className="text-sm text-gray-400 font-medium">/ {day}</span>
+                  </div>
+
+                  {/* Task cards */}
+                  <div className="space-y-3">
+                    {dayTasks.length === 0 && (
+                      <div className="h-20 border-2 border-dashed border-gray-200 rounded-2xl flex items-center justify-center">
+                        <p className="text-xs text-gray-300">Drop here</p>
+                      </div>
+                    )}
+                    {dayTasks.map((task, i) => {
+                      const cardBg = getCardColor(task.status, i);
+                      const statusInfo = STATUS_LABEL[task.status];
+                      const isDragging = draggingId === task.id;
+
+                      return (
+                        <div
+                          key={task.id}
+                          draggable
+                          onDragStart={(e) => onDragStart(e, task.id)}
+                          onDragEnd={onDragEnd}
+                          onClick={() => cycleStatus(task.id)}
+                          className={`${cardBg} rounded-2xl p-3.5 cursor-pointer transition-all hover:scale-[1.02] hover:shadow-md active:scale-[0.98] select-none ${
+                            isDragging ? "opacity-40 scale-95" : "opacity-100"
+                          }`}
+                        >
+                          {/* Drag handle + time */}
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-1.5 text-gray-600/70">
+                              <GripVertical size={12} className="cursor-grab" />
+                              <Clock size={11} />
+                              <span className="text-xs font-medium">{task.time}</span>
+                            </div>
+                          </div>
+
+                          {/* Task name */}
+                          <p className="text-sm font-bold text-gray-900 leading-snug mb-2">
+                            {task.name}
+                          </p>
+
+                          {/* Bottom row: client + status */}
+                          <div className="flex items-center justify-between gap-2">
+                            {task.client ? (
+                              <span className="text-xs font-medium text-gray-700/70 truncate">
+                                {task.client}
+                              </span>
+                            ) : (
+                              <span />
+                            )}
+                            <div className="flex items-center gap-1 shrink-0">
+                              <span className={`w-1.5 h-1.5 rounded-full ${statusInfo.dot}`} />
+                              <span className={`text-xs font-semibold ${statusInfo.color}`}>
+                                {statusInfo.label}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Delegate / dep tags */}
+                          {(task.delegate || task.dep) && (
+                            <div className="flex flex-wrap gap-1 mt-2">
+                              {task.delegate && (
+                                <span className="text-xs bg-white/50 rounded-lg px-1.5 py-0.5 text-gray-600">
+                                  {task.delegate}
+                                </span>
+                              )}
+                              {task.dep && (
+                                <span className="text-xs bg-white/50 rounded-lg px-1.5 py-0.5 text-gray-500 italic">
+                                  {task.dep}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </>
       )}
@@ -485,7 +691,6 @@ export default function WeeklySchedule() {
       {/* ── IMPORT VIEW ── */}
       {mode === "import" && (
         <div>
-          {/* Save result banner */}
           {saveResult && (
             <div className={`mb-4 px-4 py-3 rounded-xl text-sm font-medium flex items-center gap-2 ${
               saveResult.fail === 0
@@ -498,7 +703,6 @@ export default function WeeklySchedule() {
             </div>
           )}
 
-          {/* Toolbar */}
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
               <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
@@ -510,9 +714,7 @@ export default function WeeklySchedule() {
                 />
                 Select all ({importRows.length})
               </label>
-              <span className="text-xs text-gray-400">
-                {selectedCount} selected
-              </span>
+              <span className="text-xs text-gray-400">{selectedCount} selected</span>
             </div>
             <button
               onClick={saveToTaskBoard}
@@ -524,7 +726,6 @@ export default function WeeklySchedule() {
             </button>
           </div>
 
-          {/* Task list grouped by person */}
           {people.map((personKey) => {
             const personRows = importRows.filter((r) => r.personKey === personKey);
             if (personRows.length === 0) return null;
@@ -564,11 +765,8 @@ export default function WeeklySchedule() {
                             />
                           </td>
                           <td className="py-2 px-2">
-                            <div className="flex items-center gap-1.5">
-                              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${TYPE_DOT[row.taskType] ?? "bg-gray-400"}`} />
-                              <span className="text-gray-800 font-medium text-xs leading-snug">{row.title}</span>
-                            </div>
-                            <p className="text-xs text-gray-400 mt-0.5 ml-3">{row.time}</p>
+                            <span className="text-gray-800 font-medium text-xs leading-snug">{row.title}</span>
+                            <p className="text-xs text-gray-400 mt-0.5">{row.time}</p>
                           </td>
                           <td className="py-2 px-2 text-xs text-gray-500">{row.day}</td>
                           <td className="py-2 px-2">
@@ -623,7 +821,6 @@ export default function WeeklySchedule() {
             );
           })}
 
-          {/* Bottom save bar */}
           {selectedCount > 0 && (
             <div className="sticky bottom-4 mt-4">
               <div className="bg-gray-900 text-white rounded-2xl px-6 py-4 flex items-center justify-between shadow-lg">
