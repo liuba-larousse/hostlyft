@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Bot, Package, Users, Briefcase, Megaphone, LogOut, FileText } from "lucide-react";
+import { LayoutDashboard, Bot, Package, Users, Briefcase, Megaphone, LogOut, FileText, CalendarDays } from "lucide-react";
 import { clsx } from "clsx";
 
 const nav = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
   { href: "/dashboard/agents", label: "Cloud Agents", icon: Bot },
   { href: "/dashboard/artifacts", label: "Artifacts", icon: Package },
+  { href: "/dashboard/schedule", label: "Schedule", icon: CalendarDays },
   { href: "/dashboard/team", label: "Team", icon: Users },
   { href: "/dashboard/clients", label: "Clients", icon: Briefcase },
   { href: "/dashboard/marketing", label: "Marketing", icon: Megaphone },

@@ -1,5 +1,5 @@
 import { auth } from "@/lib/auth";
-import { Bot, Package, Users, Briefcase, ArrowRight } from "lucide-react";
+import { Bot, Package, Users, Briefcase, ArrowRight, CalendarDays } from "lucide-react";
 import Link from "next/link";
 import TaskBoard from "@/components/dashboard/TaskBoard";
 import SendTasksEmailButton from "@/components/dashboard/SendTasksEmailButton";
@@ -7,6 +7,7 @@ import SendTasksEmailButton from "@/components/dashboard/SendTasksEmailButton";
 const quickLinks = [
   { href: "/dashboard/agents", icon: Bot, label: "Cloud Agents", description: "Manage and monitor AI agents", color: "bg-violet-50 text-violet-600" },
   { href: "/dashboard/artifacts", icon: Package, label: "Artifacts", description: "Files, outputs, and deliverables", color: "bg-blue-50 text-blue-600" },
+  { href: "/dashboard/schedule", icon: CalendarDays, label: "Schedule", description: "Weekly team schedule from JSON", color: "bg-yellow-50 text-yellow-600" },
   { href: "/dashboard/team", icon: Users, label: "Team", description: "Team members and roles", color: "bg-emerald-50 text-emerald-600" },
   { href: "/dashboard/clients", icon: Briefcase, label: "Clients", description: "Client accounts and projects", color: "bg-amber-50 text-amber-600" },
 ];
