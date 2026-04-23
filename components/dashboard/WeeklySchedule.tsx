@@ -726,13 +726,59 @@ export default function WeeklySchedule() {
                   </div>
                 </div>
 
-                <div className="text-sm text-gray-600">
-                  <p><strong>People:</strong> {getPeople(parsedSchedule).join(", ")}</p>
-                  <p><strong>Tasks:</strong> {getPeople(parsedSchedule).reduce((sum, p) => {
-                    const pd = parsedSchedule[p] as PersonSchedule;
-                    return sum + Object.values(pd?.tasks ?? {}).flat().length;
-                  }, 0)}</p>
-                  {parsedSchedule.invoices?.length ? <p><strong>Invoices:</strong> {parsedSchedule.invoices.length}</p> : null}
+                {/* Summary stats */}
+                <div className="flex items-center gap-6 text-sm text-gray-600">
+                  <span><strong>{getPeople(parsedSchedule).length}</strong> people</span>
+                  <span><strong>{getPeople(parsedSchedule).reduce((sum, p) => { const pd = parsedSchedule[p] as PersonSchedule; return sum + Object.values(pd?.tasks ?? {}).flat().length; }, 0)}</strong> tasks</span>
+                  {parsedSchedule.invoices?.length ? <span><strong>{parsedSchedule.invoices.length}</strong> invoices</span> : null}
+                </div>
+
+                {/* Task preview by person */}
+                <div className="space-y-4 max-h-[60vh] overflow-y-auto">
+                  {getPeople(parsedSchedule).map((personKey) => {
+                    const pd = parsedSchedule![personKey] as PersonSchedule;
+                    if (!pd?.tasks) return null;
+                    const allTasks = Object.entries(pd.tasks).flatMap(([day, tasks]) => tasks.map((t) => ({ ...t, day })));
+                    return (
+                      <div key={personKey}>
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-xs font-bold text-gray-400 uppercase tracking-widest capitalize">{personKey}</span>
+                          <span className="text-xs text-gray-400">{pd.hours}h · {allTasks.length} tasks</span>
+                        </div>
+                        <div className="bg-gray-50 rounded-xl overflow-hidden">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="text-xs text-gray-400 uppercase tracking-wider border-b border-gray-200">
+                                <th className="text-left py-2 px-3 font-semibold w-14">Day</th>
+                                <th className="text-left py-2 px-3 font-semibold">Task</th>
+                                <th className="text-left py-2 px-3 font-semibold w-16">Block</th>
+                                <th className="text-left py-2 px-3 font-semibold w-24">Client</th>
+                                <th className="text-left py-2 px-3 font-semibold w-20">Type</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {allTasks.map((task, i) => (
+                                <tr key={i} className="border-b border-gray-100 last:border-0">
+                                  <td className="py-1.5 px-3 text-xs text-gray-500">{task.day}</td>
+                                  <td className="py-1.5 px-3 text-xs text-gray-800 font-medium">{task.name}</td>
+                                  <td className="py-1.5 px-3 text-xs text-gray-500">{getDisplayDuration(task)}</td>
+                                  <td className="py-1.5 px-3 text-xs text-gray-500 truncate">{task.client || "—"}</td>
+                                  <td className="py-1.5 px-3">
+                                    <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                                      task.type === "client" ? "bg-emerald-50 text-emerald-600" :
+                                      task.type === "cloud9" ? "bg-blue-50 text-blue-600" :
+                                      task.type === "ai" ? "bg-violet-50 text-violet-600" :
+                                      "bg-gray-100 text-gray-500"
+                                    }`}>{task.type}</span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
 
                 <button
