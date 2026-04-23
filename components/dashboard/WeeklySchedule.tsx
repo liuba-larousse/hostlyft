@@ -292,6 +292,7 @@ export default function WeeklySchedule() {
   const [dragOverDay, setDragOverDay] = useState<string | null>(null);
   const [modalTask, setModalTask] = useState<ViewTask | null>(null);
   const [draft, setDraft] = useState<ViewTask | null>(null);
+  const [activeDay, setActiveDay] = useState("Mon");
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -457,8 +458,8 @@ export default function WeeklySchedule() {
   // ── Input screen ───────────────────────────────────────────────────────────
   if (!schedule) {
     return (
-      <div className="p-10 max-w-3xl mx-auto">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Weekly Schedule</h1>
+      <div className="p-5 md:p-10 max-w-3xl mx-auto">
+        <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">Weekly Schedule</h1>
         <p className="text-gray-500 mb-8">Paste your schedule JSON to generate the weekly view.</p>
 
         <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
@@ -506,7 +507,7 @@ export default function WeeklySchedule() {
   const personTasks = viewTasks[activePerson] ?? [];
 
   return (
-    <div className="p-10 max-w-7xl mx-auto">
+    <div className="p-5 md:p-10 max-w-7xl mx-auto">
       {/* Header */}
       <div className="flex items-start justify-between mb-6">
         <div>
@@ -514,7 +515,7 @@ export default function WeeklySchedule() {
             <Calendar size={14} />
             <span>{schedule.week}</span>
           </div>
-          <h1 className="text-3xl font-bold text-gray-900">Weekly Schedule</h1>
+          <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Weekly Schedule</h1>
         </div>
         <button
           onClick={() => { setSchedule(null); setJsonInput(""); setSaveResult(null); }}
@@ -608,7 +609,7 @@ export default function WeeklySchedule() {
           </div>
 
           {/* Status legend */}
-          <div className="flex items-center gap-4 mb-5">
+          <div className="flex items-center gap-3 md:gap-4 mb-5 flex-wrap">
             {(["todo", "inprogress", "done"] as TaskStatus[]).map((s) => {
               const info = STATUS_LABEL[s];
               const count = personTasks.filter((t) => t.status === s).length;
@@ -620,11 +621,91 @@ export default function WeeklySchedule() {
                 </div>
               );
             })}
-            <span className="text-xs text-gray-300 ml-2">Click card to change status · Drag to move day</span>
+            <span className="hidden md:inline text-xs text-gray-300 ml-2">Click card to change status · Drag to move day</span>
           </div>
 
-          {/* Day grid */}
-          <div className="grid grid-cols-5 gap-4">
+          {/* ── Mobile: day tabs + stacked cards ── */}
+          <div className="md:hidden">
+            {/* Day tabs */}
+            <div className="flex gap-1 mb-4 bg-gray-100 rounded-xl p-1 overflow-x-auto">
+              {DAYS.map((day) => {
+                const dayDate = getDayDate(schedule.week, day);
+                const count = personTasks.filter((t) => t.day === day).length;
+                return (
+                  <button
+                    key={day}
+                    onClick={() => setActiveDay(day)}
+                    className={`flex-1 min-w-0 py-2.5 px-1 rounded-lg text-center transition-colors cursor-pointer ${
+                      activeDay === day
+                        ? "bg-white text-gray-900 shadow-sm"
+                        : "text-gray-500"
+                    }`}
+                  >
+                    <span className="text-lg font-bold block">{dayDate ?? ""}</span>
+                    <span className="text-xs text-gray-400">{day}</span>
+                    {count > 0 && (
+                      <span className={`block text-xs mt-0.5 ${activeDay === day ? "text-yellow-600" : "text-gray-400"}`}>
+                        {count}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Stacked cards for active day */}
+            <div className="space-y-3">
+              {personTasks.filter((t) => t.day === activeDay).length === 0 && (
+                <div className="h-20 border-2 border-dashed border-gray-200 rounded-2xl flex items-center justify-center">
+                  <p className="text-sm text-gray-300">No tasks</p>
+                </div>
+              )}
+              {personTasks.filter((t) => t.day === activeDay).map((task, i) => {
+                const cardBg = getCardColor(task.status, i);
+                const statusInfo = STATUS_LABEL[task.status];
+                return (
+                  <div
+                    key={task.id}
+                    onClick={() => openTaskModal(task)}
+                    className={`${cardBg} rounded-2xl p-4 cursor-pointer transition-all active:scale-[0.98] select-none`}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-1.5 text-gray-600/70">
+                        <Clock size={12} />
+                        <span className="text-sm font-medium">{task.duration || "—"}</span>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span className={`w-2 h-2 rounded-full ${statusInfo.dot}`} />
+                        <span className={`text-xs font-semibold ${statusInfo.color}`}>{statusInfo.label}</span>
+                      </div>
+                    </div>
+                    <p className="text-base font-bold text-gray-900 leading-snug mb-1">{task.name}</p>
+                    {task.tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mb-1.5">
+                        {task.tags.map((tag, ti) => (
+                          <span key={ti} className="text-xs bg-white/60 rounded-md px-1.5 py-0.5 font-medium text-gray-700/80 flex items-center gap-1">
+                            <Tag size={9} />{tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {task.client && (
+                      <p className="text-xs font-medium text-gray-700/70">{task.client}</p>
+                    )}
+                    {(task.delegate || task.dep) && (
+                      <div className="flex flex-wrap gap-1 mt-2">
+                        {task.delegate && <span className="text-xs bg-white/50 rounded-lg px-1.5 py-0.5 text-gray-600">{task.delegate}</span>}
+                        {task.dep && <span className="text-xs bg-white/50 rounded-lg px-1.5 py-0.5 text-gray-500 italic">{task.dep}</span>}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* ── Desktop: 5-column grid ── */}
+          <div className="hidden md:grid grid-cols-5 gap-4">
             {DAYS.map((day) => {
               const dayDate = getDayDate(schedule.week, day);
               const dayTasks = personTasks.filter((t) => t.day === day);
@@ -667,7 +748,6 @@ export default function WeeklySchedule() {
                             isDragging ? "opacity-40 scale-95" : "opacity-100"
                           }`}
                         >
-                          {/* Drag handle + duration */}
                           <div className="flex items-center justify-between mb-2">
                             <div className="flex items-center gap-1.5 text-gray-600/70">
                               <GripVertical size={12} className="cursor-grab" />
@@ -678,54 +758,29 @@ export default function WeeklySchedule() {
                               <span className="text-xs text-gray-500/60 font-medium">{task.time}</span>
                             )}
                           </div>
-
-                          {/* Task name */}
-                          <p className="text-sm font-bold text-gray-900 leading-snug mb-2">
-                            {task.name}
-                          </p>
-
-                          {/* Tags */}
+                          <p className="text-sm font-bold text-gray-900 leading-snug mb-2">{task.name}</p>
                           {task.tags.length > 0 && (
                             <div className="flex flex-wrap gap-1 mb-2">
                               {task.tags.map((tag, ti) => (
                                 <span key={ti} className="text-xs bg-white/60 rounded-md px-1.5 py-0.5 font-medium text-gray-700/80 flex items-center gap-1">
-                                  <Tag size={9} />
-                                  {tag}
+                                  <Tag size={9} />{tag}
                                 </span>
                               ))}
                             </div>
                           )}
-
-                          {/* Bottom row: client + status */}
                           <div className="flex items-center justify-between gap-2">
                             {task.client ? (
-                              <span className="text-xs font-medium text-gray-700/70 truncate">
-                                {task.client}
-                              </span>
-                            ) : (
-                              <span />
-                            )}
+                              <span className="text-xs font-medium text-gray-700/70 truncate">{task.client}</span>
+                            ) : <span />}
                             <div className="flex items-center gap-1 shrink-0">
                               <span className={`w-1.5 h-1.5 rounded-full ${statusInfo.dot}`} />
-                              <span className={`text-xs font-semibold ${statusInfo.color}`}>
-                                {statusInfo.label}
-                              </span>
+                              <span className={`text-xs font-semibold ${statusInfo.color}`}>{statusInfo.label}</span>
                             </div>
                           </div>
-
-                          {/* Delegate / dep */}
                           {(task.delegate || task.dep) && (
                             <div className="flex flex-wrap gap-1 mt-2">
-                              {task.delegate && (
-                                <span className="text-xs bg-white/50 rounded-lg px-1.5 py-0.5 text-gray-600">
-                                  {task.delegate}
-                                </span>
-                              )}
-                              {task.dep && (
-                                <span className="text-xs bg-white/50 rounded-lg px-1.5 py-0.5 text-gray-500 italic">
-                                  {task.dep}
-                                </span>
-                              )}
+                              {task.delegate && <span className="text-xs bg-white/50 rounded-lg px-1.5 py-0.5 text-gray-600">{task.delegate}</span>}
+                              {task.dep && <span className="text-xs bg-white/50 rounded-lg px-1.5 py-0.5 text-gray-500 italic">{task.dep}</span>}
                             </div>
                           )}
                         </div>
