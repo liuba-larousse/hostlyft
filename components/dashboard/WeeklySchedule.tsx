@@ -290,6 +290,8 @@ export default function WeeklySchedule() {
   const [saveResult, setSaveResult] = useState<{ ok: number; fail: number } | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverDay, setDragOverDay] = useState<string | null>(null);
+  const [modalTask, setModalTask] = useState<ViewTask | null>(null);
+  const [draft, setDraft] = useState<ViewTask | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -333,16 +335,34 @@ export default function WeeklySchedule() {
 
   // ── View task actions ──────────────────────────────────────────────────────
 
-  function cycleStatus(taskId: string) {
+  function openTaskModal(task: ViewTask) {
+    setModalTask(task);
+    setDraft({ ...task });
+  }
+
+  function saveModal() {
+    if (!draft) return;
     setViewTasks((prev) => {
       const updated = { ...prev };
       for (const key of Object.keys(updated)) {
-        updated[key] = updated[key].map((t) =>
-          t.id === taskId ? { ...t, status: STATUS_CYCLE[t.status] } : t
-        );
+        updated[key] = updated[key].map((t) => (t.id === draft.id ? { ...draft } : t));
       }
       return updated;
     });
+    setModalTask(null);
+    setDraft(null);
+  }
+
+  function deleteViewTask(taskId: string) {
+    setViewTasks((prev) => {
+      const updated = { ...prev };
+      for (const key of Object.keys(updated)) {
+        updated[key] = updated[key].filter((t) => t.id !== taskId);
+      }
+      return updated;
+    });
+    setModalTask(null);
+    setDraft(null);
   }
 
   function moveTaskToDay(taskId: string, newDay: string) {
@@ -642,7 +662,7 @@ export default function WeeklySchedule() {
                           draggable
                           onDragStart={(e) => onDragStart(e, task.id)}
                           onDragEnd={onDragEnd}
-                          onClick={() => cycleStatus(task.id)}
+                          onClick={() => openTaskModal(task)}
                           className={`${cardBg} rounded-2xl p-3.5 cursor-pointer transition-all hover:scale-[1.02] hover:shadow-md active:scale-[0.98] select-none ${
                             isDragging ? "opacity-40 scale-95" : "opacity-100"
                           }`}
@@ -717,6 +737,174 @@ export default function WeeklySchedule() {
             })}
           </div>
         </>
+      )}
+
+      {/* ── TASK DETAIL MODAL ── */}
+      {modalTask && draft && (
+        <div
+          className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) { setModalTask(null); setDraft(null); } }}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <span className={`w-2 h-2 rounded-full ${STATUS_LABEL[draft.status].dot}`} />
+                <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Task detail</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => deleteViewTask(draft.id)}
+                  className="text-xs px-3 py-1.5 rounded-lg border border-red-200 text-red-500 hover:bg-red-50 cursor-pointer transition-colors"
+                >
+                  Delete
+                </button>
+                <button
+                  onClick={() => { setModalTask(null); setDraft(null); }}
+                  className="text-gray-400 hover:text-gray-600 cursor-pointer text-lg leading-none"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            <div className="px-6 py-5 space-y-4">
+              {/* Title */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Title</label>
+                <input
+                  value={draft.name}
+                  onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+                  className="w-full text-base font-medium px-3 py-2 border border-gray-200 rounded-lg outline-none focus:border-yellow-400 text-gray-900"
+                />
+              </div>
+
+              {/* Details (dep / delegate as editable text) */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Details</label>
+                <textarea
+                  value={[draft.delegate, draft.dep].filter(Boolean).join("\n")}
+                  onChange={(e) => {
+                    const lines = e.target.value.split("\n");
+                    setDraft({ ...draft, delegate: lines[0] || null, dep: lines.slice(1).join("\n") || null });
+                  }}
+                  placeholder="Add notes, links, context..."
+                  rows={3}
+                  className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg outline-none focus:border-yellow-400 text-gray-700 placeholder-gray-400 resize-none"
+                />
+              </div>
+
+              {/* Status + Priority */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Status</label>
+                  <select
+                    value={draft.status}
+                    onChange={(e) => setDraft({ ...draft, status: e.target.value as TaskStatus })}
+                    className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg outline-none focus:border-yellow-400 bg-white text-gray-700 cursor-pointer"
+                  >
+                    <option value="todo">To Do</option>
+                    <option value="inprogress">In Progress</option>
+                    <option value="done">Done</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Day</label>
+                  <select
+                    value={draft.day}
+                    onChange={(e) => setDraft({ ...draft, day: e.target.value })}
+                    className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg outline-none focus:border-yellow-400 bg-white text-gray-700 cursor-pointer"
+                  >
+                    {DAYS.map((d) => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Assignee + Client */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Assignee</label>
+                  <select
+                    value={findTeamMember(draft.personKey, teamMembers)}
+                    onChange={(e) => {
+                      const selected = e.target.value;
+                      const member = teamMembers.find((m) => `${m.first_name} ${m.last_name}` === selected);
+                      if (member) {
+                        setDraft({ ...draft, personKey: member.first_name.toLowerCase() });
+                      }
+                    }}
+                    className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg outline-none focus:border-yellow-400 bg-white text-gray-700 cursor-pointer"
+                  >
+                    <option value="">Unassigned</option>
+                    {memberNames.map((n) => (
+                      <option key={n} value={n}>{n}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Client</label>
+                  <select
+                    value={draft.client ?? ""}
+                    onChange={(e) => setDraft({ ...draft, client: e.target.value || null })}
+                    className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg outline-none focus:border-yellow-400 bg-white text-gray-700 cursor-pointer"
+                  >
+                    <option value="">— No client —</option>
+                    {[...new Set([...contactNames, ...(draft.client && !contactNames.includes(draft.client) ? [draft.client] : [])])].sort().map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Duration + Type */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Duration</label>
+                  <input
+                    value={draft.duration}
+                    onChange={(e) => setDraft({ ...draft, duration: e.target.value })}
+                    placeholder="e.g. 1h, 30min"
+                    className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg outline-none focus:border-yellow-400 text-gray-700"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Type</label>
+                  <select
+                    value={draft.type}
+                    onChange={(e) => setDraft({ ...draft, type: e.target.value })}
+                    className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg outline-none focus:border-yellow-400 bg-white text-gray-700 cursor-pointer"
+                  >
+                    <option value="client">Client</option>
+                    <option value="cloud9">Cloud 9</option>
+                    <option value="internal">Internal</option>
+                    <option value="ai">AI</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Tags */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Tags</label>
+                <input
+                  value={draft.tags.join(", ")}
+                  onChange={(e) => setDraft({ ...draft, tags: e.target.value.split(",").map((t) => t.trim()).filter(Boolean) })}
+                  placeholder="Comma-separated, e.g. Admin, Automation"
+                  className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg outline-none focus:border-yellow-400 text-gray-700 placeholder-gray-400"
+                />
+              </div>
+
+              {/* Save */}
+              <button
+                onClick={saveModal}
+                className="w-full py-2.5 bg-gray-900 text-white text-sm font-semibold rounded-xl hover:bg-gray-700 transition-colors cursor-pointer"
+              >
+                Save changes
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ── IMPORT VIEW ── */}
