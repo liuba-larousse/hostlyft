@@ -237,14 +237,13 @@ export default function WeeklySchedule() {
       const data = await res.json();
       setWeekData(data.week ?? null);
       setTasks(data.tasks ?? []);
-      // Set active person from first assignee found
       const assigneeList = [...new Set((data.tasks ?? []).map((t: DBTask) => t.assignee).filter(Boolean))] as string[];
-      if (assigneeList.length > 0 && !assigneeList.includes(activePerson)) {
-        setActivePerson(assigneeList[0]);
+      if (assigneeList.length > 0) {
+        setActivePerson((prev) => assigneeList.includes(prev) ? prev : assigneeList[0]);
       }
-    } catch { setTasks([]); setWeekData(null); }
+    } catch (e) { console.error("Failed to load week:", e); setTasks([]); setWeekData(null); }
     setLoading(false);
-  }, [activePerson]);
+  }, []);
 
   const loadBacklog = useCallback(async () => {
     try {
@@ -419,12 +418,20 @@ export default function WeeklySchedule() {
         }),
       });
       const data = await res.json();
-      setImportResult(data.imported ?? 0);
-      window.dispatchEvent(new Event("cat:schedule-import"));
-      // Navigate to imported week
-      setWeekStart(importWeek);
-      setTimeout(() => setTab("week"), 1500);
-    } catch { setImportError("Import failed"); }
+      if (data.error) {
+        setImportError(`Import failed: ${data.error}`);
+      } else {
+        setImportResult(data.imported ?? 0);
+        window.dispatchEvent(new Event("cat:schedule-import"));
+        // Navigate to imported week — force reload even if same week
+        if (weekStart === importWeek) {
+          await loadWeek(importWeek);
+        } else {
+          setWeekStart(importWeek);
+        }
+        setTimeout(() => setTab("week"), 1500);
+      }
+    } catch (e) { setImportError("Import failed — check console"); console.error(e); }
     setImporting(false);
   }
 
