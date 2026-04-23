@@ -51,6 +51,7 @@ interface ViewTask {
   delegate: string | null;
   day: string;
   status: TaskStatus;
+  priority: Priority;
   personKey: string;
 }
 
@@ -107,6 +108,18 @@ const STATUS_CYCLE: Record<TaskStatus, TaskStatus> = {
   todo: "inprogress",
   inprogress: "done",
   done: "todo",
+};
+
+const PRIORITY_DOT: Record<Priority, string> = {
+  low:    "bg-gray-400",
+  medium: "bg-amber-400",
+  high:   "bg-red-500",
+};
+
+const PRIORITY_LABEL: Record<Priority, string> = {
+  low:    "Low",
+  medium: "Medium",
+  high:   "High",
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -221,6 +234,7 @@ function buildViewTasks(schedule: WeekSchedule): Record<string, ViewTask[]> {
           delegate: task.delegate,
           day,
           status: "todo",
+          priority: typeToPriority(task.type, task.dep),
           personKey,
         });
       }
@@ -754,7 +768,10 @@ export default function WeeklySchedule() {
                         <span className={`text-xs font-semibold ${statusInfo.color}`}>{statusInfo.label}</span>
                       </div>
                     </div>
-                    <p className="text-base font-bold text-gray-900 leading-snug mb-1">{task.name}</p>
+                    <div className="flex items-start gap-2 mb-1">
+                      <span className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${PRIORITY_DOT[task.priority]}`} title={PRIORITY_LABEL[task.priority]} />
+                      <p className="text-base font-bold text-gray-900 leading-snug">{task.name}</p>
+                    </div>
                     {task.tags.length > 0 && (
                       <div className="flex flex-wrap gap-1 mb-1.5">
                         {task.tags.map((tag, ti) => (
@@ -833,7 +850,10 @@ export default function WeeklySchedule() {
                               <span className="text-xs text-gray-500/60 font-medium">{task.time}</span>
                             )}
                           </div>
-                          <p className="text-sm font-bold text-gray-900 leading-snug mb-2">{task.name}</p>
+                          <div className="flex items-start gap-1.5 mb-2">
+                            <span className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${PRIORITY_DOT[task.priority]}`} title={PRIORITY_LABEL[task.priority]} />
+                            <p className="text-sm font-bold text-gray-900 leading-snug">{task.name}</p>
+                          </div>
                           {task.tags.length > 0 && (
                             <div className="flex flex-wrap gap-1 mb-2">
                               {task.tags.map((tag, ti) => (
@@ -988,8 +1008,8 @@ export default function WeeklySchedule() {
                 </div>
               </div>
 
-              {/* Duration + Type */}
-              <div className="grid grid-cols-2 gap-3">
+              {/* Duration + Priority + Type */}
+              <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Duration</label>
                   <input
@@ -998,6 +1018,18 @@ export default function WeeklySchedule() {
                     placeholder="e.g. 1h, 30min"
                     className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg outline-none focus:border-yellow-400 text-gray-700"
                   />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Priority</label>
+                  <select
+                    value={draft.priority}
+                    onChange={(e) => setDraft({ ...draft, priority: e.target.value as Priority })}
+                    className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg outline-none focus:border-yellow-400 bg-white text-gray-700 cursor-pointer"
+                  >
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                  </select>
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-1.5">Type</label>
