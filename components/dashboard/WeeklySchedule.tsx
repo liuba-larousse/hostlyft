@@ -133,6 +133,21 @@ function datePlusDays(base: Date, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+function timeToBlock(time: string): string {
+  if (!time || time === "All day") return "All day";
+  const m = time.match(/(\d{1,2}):(\d{2})\s*[–\-—]\s*(\d{1,2}):(\d{2})/);
+  if (!m) return time;
+  const startMin = parseInt(m[1]) * 60 + parseInt(m[2]);
+  const endMin = parseInt(m[3]) * 60 + parseInt(m[4]);
+  const diff = endMin - startMin;
+  if (diff <= 0) return time;
+  const h = Math.floor(diff / 60);
+  const min = diff % 60;
+  if (h > 0 && min > 0) return `${h}h ${min}m`;
+  if (h > 0) return `${h}h`;
+  return `${min}m`;
+}
+
 function getDayDate(weekStr: string, day: string): number | null {
   const ws = parseWeekStart(weekStr);
   if (!ws) return null;
@@ -167,7 +182,7 @@ function typeToPriority(type: string, dep: string | null): Priority {
 
 function buildDescription(task: ScheduleTask, day: string): string {
   const parts: string[] = [];
-  if (task.time && task.time !== "All day") parts.push(`Time: ${task.time}`);
+  if (task.time && task.time !== "All day") parts.push(`Block: ${timeToBlock(task.time)}`);
   parts.push(`Day: ${day}`);
   parts.push(`Type: ${task.type}`);
   if (task.delegate) parts.push(`Delegate: ${task.delegate}`);
@@ -636,7 +651,7 @@ export default function WeeklySchedule() {
                             <div className="flex items-center gap-1.5 text-gray-600/70">
                               <GripVertical size={12} className="cursor-grab" />
                               <Clock size={11} />
-                              <span className="text-xs font-medium">{task.time}</span>
+                              <span className="text-xs font-medium">{timeToBlock(task.time)}</span>
                             </div>
                           </div>
 
@@ -766,7 +781,7 @@ export default function WeeklySchedule() {
                           </td>
                           <td className="py-2 px-2">
                             <span className="text-gray-800 font-medium text-xs leading-snug">{row.title}</span>
-                            <p className="text-xs text-gray-400 mt-0.5">{row.time}</p>
+                            <p className="text-xs text-gray-400 mt-0.5">{timeToBlock(row.time)}</p>
                           </td>
                           <td className="py-2 px-2 text-xs text-gray-500">{row.day}</td>
                           <td className="py-2 px-2">
