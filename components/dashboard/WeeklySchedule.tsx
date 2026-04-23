@@ -36,7 +36,7 @@ interface TeamMember {
   avatar_url: string;
 }
 
-type Priority = "low" | "medium" | "high";
+type Priority = "low" | "medium" | "high" | "critical";
 type TaskStatus = "todo" | "inprogress" | "done";
 
 interface ViewTask {
@@ -110,19 +110,52 @@ const STATUS_CYCLE: Record<TaskStatus, TaskStatus> = {
   done: "todo",
 };
 
-const PRIORITY_EMOJI: Record<Priority, string> = {
-  low:    "🟢",
-  medium: "🟡",
-  high:   "🔴",
-};
+function PriorityIcon({ priority, size = 16 }: { priority: Priority; size?: number }) {
+  const r = size / 2;
+  const s = size;
+  if (priority === "critical") {
+    return (
+      <svg width={s} height={s} viewBox="0 0 20 20" className="shrink-0">
+        <circle cx="10" cy="10" r="9" fill="#dc2626" />
+        <path d="M10 5 L14 11 H6 Z" fill="white" />
+      </svg>
+    );
+  }
+  if (priority === "high") {
+    return (
+      <svg width={s} height={s} viewBox="0 0 20 20" className="shrink-0">
+        <circle cx="10" cy="10" r="9" fill="#f59e0b" />
+        <path d="M8 13 L13 10 L8 7 Z" fill="white" />
+      </svg>
+    );
+  }
+  if (priority === "medium") {
+    return (
+      <svg width={s} height={s} viewBox="0 0 20 20" className="shrink-0">
+        <circle cx="10" cy="10" r="9" fill="#22c55e" />
+        <circle cx="6.5" cy="10" r="1.3" fill="white" />
+        <circle cx="10" cy="10" r="1.3" fill="white" />
+        <circle cx="13.5" cy="10" r="1.3" fill="white" />
+      </svg>
+    );
+  }
+  // low
+  return (
+    <svg width={s} height={s} viewBox="0 0 20 20" className="shrink-0">
+      <circle cx="10" cy="10" r="9" fill="#5b9aad" />
+      <path d="M10 15 L6 9 H14 Z" fill="white" />
+    </svg>
+  );
+}
 
 const PRIORITY_LABEL: Record<Priority, string> = {
-  low:    "Low",
-  medium: "Medium",
-  high:   "High",
+  critical: "Critical",
+  high:     "High",
+  medium:   "Medium",
+  low:      "Low",
 };
 
-const PRIORITY_ORDER: Record<Priority, number> = { high: 0, medium: 1, low: 2 };
+const PRIORITY_ORDER: Record<Priority, number> = { critical: 0, high: 1, medium: 2, low: 3 };
 
 function sortByPriority<T extends { priority: Priority }>(tasks: T[]): T[] {
   return [...tasks].sort((a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]);
@@ -803,7 +836,7 @@ export default function WeeklySchedule() {
                       </div>
                     </div>
                     <div className="flex items-start gap-1.5 mb-1">
-                      <span className="text-sm shrink-0" title={PRIORITY_LABEL[task.priority]}>{PRIORITY_EMOJI[task.priority]}</span>
+                      <PriorityIcon priority={task.priority} size={16} />
                       <p className="text-base font-bold text-gray-900 leading-snug">{task.name}</p>
                     </div>
                     {task.tags.length > 0 && (
@@ -890,7 +923,7 @@ export default function WeeklySchedule() {
                             </div>
                           </div>
                           <div className="flex items-start gap-1 mb-2">
-                            <span className="text-xs shrink-0" title={PRIORITY_LABEL[task.priority]}>{PRIORITY_EMOJI[task.priority]}</span>
+                            <PriorityIcon priority={task.priority} size={14} />
                             <p className="text-sm font-bold text-gray-900 leading-snug">{task.name}</p>
                           </div>
                           {task.tags.length > 0 && (
@@ -1068,6 +1101,7 @@ export default function WeeklySchedule() {
                     <option value="low">Low</option>
                     <option value="medium">Medium</option>
                     <option value="high">High</option>
+                    <option value="critical">Critical</option>
                   </select>
                 </div>
                 <div>
@@ -1230,6 +1264,7 @@ export default function WeeklySchedule() {
                               <option value="low">Low</option>
                               <option value="medium">Medium</option>
                               <option value="high">High</option>
+                              <option value="critical">Critical</option>
                             </select>
                           </td>
                           <td className="py-2 px-2">
