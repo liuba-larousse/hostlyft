@@ -198,6 +198,7 @@ export default function WeeklySchedule() {
   const [tasks, setTasks] = useState<DBTask[]>([]);
   const [backlog, setBacklog] = useState<DBTask[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [contactNames, setContactNames] = useState<string[]>([]);
   const [activePerson, setActivePerson] = useState("");
@@ -232,16 +233,22 @@ export default function WeeklySchedule() {
 
   const loadWeek = useCallback(async (ws: string) => {
     setLoading(true);
+    setLoadError("");
     try {
       const res = await fetch(`/api/weeks/${ws}`);
       const data = await res.json();
-      setWeekData(data.week ?? null);
-      setTasks(data.tasks ?? []);
-      const assigneeList = [...new Set((data.tasks ?? []).map((t: DBTask) => t.assignee).filter(Boolean))] as string[];
-      if (assigneeList.length > 0) {
-        setActivePerson((prev) => assigneeList.includes(prev) ? prev : assigneeList[0]);
+      if (data.error) {
+        setLoadError(data.error);
+        setTasks([]); setWeekData(null);
+      } else {
+        setWeekData(data.week ?? null);
+        setTasks(data.tasks ?? []);
+        const assigneeList = [...new Set((data.tasks ?? []).map((t: DBTask) => t.assignee).filter(Boolean))] as string[];
+        if (assigneeList.length > 0) {
+          setActivePerson((prev) => assigneeList.includes(prev) ? prev : assigneeList[0]);
+        }
       }
-    } catch (e) { console.error("Failed to load week:", e); setTasks([]); setWeekData(null); }
+    } catch (e) { console.error("Failed to load week:", e); setLoadError(String(e)); setTasks([]); setWeekData(null); }
     setLoading(false);
   }, []);
 
@@ -558,6 +565,12 @@ export default function WeeklySchedule() {
           </div>
 
           {loading && <div className="text-sm text-gray-400 py-10 text-center">Loading...</div>}
+
+          {loadError && (
+            <div className="mb-4 px-4 py-3 rounded-xl text-sm font-medium flex items-center gap-2 bg-red-50 text-red-700 border border-red-200">
+              <AlertCircle size={16} /> {loadError}
+            </div>
+          )}
 
           {!loading && tasks.length === 0 && (
             <div className="text-center py-16 text-gray-400">
