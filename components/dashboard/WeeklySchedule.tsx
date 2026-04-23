@@ -213,6 +213,7 @@ export default function WeeklySchedule() {
   const [importWeek, setImportWeek] = useState("");
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<number | null>(null);
+  const [excludedTasks, setExcludedTasks] = useState<Set<string>>(new Set());
   const fileRef = useRef<HTMLInputElement>(null);
 
   const memberNames = teamMembers.map((m) => `${m.first_name} ${m.last_name}`);
@@ -356,6 +357,7 @@ export default function WeeklySchedule() {
       const parsed: WeekSchedule = JSON.parse(text);
       setParsedSchedule(parsed);
       setImportError("");
+      setExcludedTasks(new Set());
       const ws = parseWeekStart(parsed.week);
       setImportWeek(ws ? formatDateISO(ws) : formatDateISO(getMonday(new Date())));
     } catch { setImportError("Invalid JSON"); }
@@ -382,6 +384,8 @@ export default function WeeklySchedule() {
         const dueDate = formatDateISO(ws);
 
         for (const [i, task] of pd.tasks[day].entries()) {
+          const taskKey = `${personKey}-${day}-${i}`;
+          if (excludedTasks.has(taskKey)) continue;
           allTasks.push({
             title: task.name,
             description: "",
@@ -727,18 +731,24 @@ export default function WeeklySchedule() {
                 </div>
 
                 {/* Summary stats */}
-                <div className="flex items-center gap-6 text-sm text-gray-600">
-                  <span><strong>{getPeople(parsedSchedule).length}</strong> people</span>
-                  <span><strong>{getPeople(parsedSchedule).reduce((sum, p) => { const pd = parsedSchedule[p] as PersonSchedule; return sum + Object.values(pd?.tasks ?? {}).flat().length; }, 0)}</strong> tasks</span>
-                  {parsedSchedule.invoices?.length ? <span><strong>{parsedSchedule.invoices.length}</strong> invoices</span> : null}
-                </div>
+                {(() => {
+                  const totalImportTasks = getPeople(parsedSchedule).reduce((sum, p) => { const pd = parsedSchedule![p] as PersonSchedule; return sum + Object.values(pd?.tasks ?? {}).flat().length; }, 0);
+                  const selectedCount = totalImportTasks - excludedTasks.size;
+                  return (
+                    <div className="flex items-center gap-6 text-sm text-gray-600">
+                      <span><strong>{getPeople(parsedSchedule).length}</strong> people</span>
+                      <span><strong>{selectedCount}</strong> / {totalImportTasks} tasks selected</span>
+                      {parsedSchedule.invoices?.length ? <span><strong>{parsedSchedule.invoices.length}</strong> invoices</span> : null}
+                    </div>
+                  );
+                })()}
 
                 {/* Task preview by person */}
                 <div className="space-y-4 max-h-[60vh] overflow-y-auto">
                   {getPeople(parsedSchedule).map((personKey) => {
                     const pd = parsedSchedule![personKey] as PersonSchedule;
                     if (!pd?.tasks) return null;
-                    const allTasks = Object.entries(pd.tasks).flatMap(([day, tasks]) => tasks.map((t) => ({ ...t, day })));
+                    const allTasks = Object.entries(pd.tasks).flatMap(([day, tasks]) => tasks.map((t, ti) => ({ ...t, day, _key: `${personKey}-${day}-${ti}` })));
                     return (
                       <div key={personKey}>
                         <div className="flex items-center gap-2 mb-2">
@@ -749,6 +759,21 @@ export default function WeeklySchedule() {
                           <table className="w-full text-sm">
                             <thead>
                               <tr className="text-xs text-gray-400 uppercase tracking-wider border-b border-gray-200">
+                                <th className="w-8 py-2 px-2">
+                                  <input
+                                    type="checkbox"
+                                    checked={allTasks.every((t) => !excludedTasks.has(t._key))}
+                                    onChange={() => {
+                                      const allSelected = allTasks.every((t) => !excludedTasks.has(t._key));
+                                      setExcludedTasks((prev) => {
+                                        const next = new Set(prev);
+                                        allTasks.forEach((t) => allSelected ? next.add(t._key) : next.delete(t._key));
+                                        return next;
+                                      });
+                                    }}
+                                    className="w-3.5 h-3.5 rounded border-gray-300 accent-yellow-500 cursor-pointer"
+                                  />
+                                </th>
                                 <th className="text-left py-2 px-3 font-semibold w-14">Day</th>
                                 <th className="text-left py-2 px-3 font-semibold">Task</th>
                                 <th className="text-left py-2 px-3 font-semibold w-16">Block</th>
@@ -757,8 +782,22 @@ export default function WeeklySchedule() {
                               </tr>
                             </thead>
                             <tbody>
-                              {allTasks.map((task, i) => (
-                                <tr key={i} className="border-b border-gray-100 last:border-0">
+                              {allTasks.map((task, i) => {
+                                const checked = !excludedTasks.has(task._key);
+                                return (
+                                <tr key={i} className={`border-b border-gray-100 last:border-0 transition-opacity ${checked ? "" : "opacity-40"}`}>
+                                  <td className="py-1.5 px-2 text-center">
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={() => setExcludedTasks((prev) => {
+                                        const next = new Set(prev);
+                                        checked ? next.add(task._key) : next.delete(task._key);
+                                        return next;
+                                      })}
+                                      className="w-3.5 h-3.5 rounded border-gray-300 accent-yellow-500 cursor-pointer"
+                                    />
+                                  </td>
                                   <td className="py-1.5 px-3 text-xs text-gray-500">{task.day}</td>
                                   <td className="py-1.5 px-3 text-xs text-gray-800 font-medium">{task.name}</td>
                                   <td className="py-1.5 px-3 text-xs text-gray-500">{getDisplayDuration(task)}</td>
@@ -772,7 +811,7 @@ export default function WeeklySchedule() {
                                     }`}>{task.type}</span>
                                   </td>
                                 </tr>
-                              ))}
+                              ); })}
                             </tbody>
                           </table>
                         </div>
