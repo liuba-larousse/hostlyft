@@ -79,16 +79,16 @@ const KNOWN_META = new Set(["week", "invoices", "carry_over_next_week"]);
 
 const STATUS_COLORS: Record<TaskStatus, string[]> = {
   todo: [
-    "bg-blue-200/80",
-    "bg-indigo-200/80",
-    "bg-sky-200/80",
+    "bg-gray-200/80",
     "bg-slate-200/80",
+    "bg-stone-200/80",
+    "bg-neutral-200/80",
   ],
   inprogress: [
-    "bg-amber-300/80",
     "bg-yellow-200/80",
+    "bg-amber-300/80",
     "bg-orange-200/80",
-    "bg-rose-200/80",
+    "bg-yellow-300/80",
   ],
   done: [
     "bg-emerald-200/80",
@@ -99,7 +99,7 @@ const STATUS_COLORS: Record<TaskStatus, string[]> = {
 };
 
 const STATUS_LABEL: Record<TaskStatus, { label: string; color: string; dot: string }> = {
-  todo:       { label: "To Do",       color: "text-blue-700",    dot: "bg-blue-500" },
+  todo:       { label: "To Do",       color: "text-gray-600",    dot: "bg-gray-400" },
   inprogress: { label: "In Progress", color: "text-amber-700",   dot: "bg-amber-500" },
   done:       { label: "Done",        color: "text-emerald-700", dot: "bg-emerald-500" },
 };
@@ -667,7 +667,7 @@ export default function WeeklySchedule() {
                     )}
                     {/* Todo */}
                     {todo > 0 && (
-                      <circle cx="64" cy="64" r={R} fill="none" stroke="#fcd34d" strokeWidth="16"
+                      <circle cx="64" cy="64" r={R} fill="none" stroke="#d1d5db" strokeWidth="16"
                         strokeDasharray={`${seg3} ${C - seg3}`} strokeDashoffset={-off3} strokeLinecap="round" />
                     )}
                   </svg>
@@ -695,7 +695,7 @@ export default function WeeklySchedule() {
                     </div>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <span className="w-3 h-3 rounded-full bg-yellow-300" />
+                        <span className="w-3 h-3 rounded-full bg-gray-300" />
                         <span className="text-sm text-gray-700">To Do</span>
                       </div>
                       <span className="text-sm font-semibold text-gray-900">{todo}/{total} · {pTodo}%</span>
