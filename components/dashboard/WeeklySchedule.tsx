@@ -339,6 +339,7 @@ export default function WeeklySchedule() {
       setViewTasks(buildViewTasks(parsed));
       const rows = buildImportRows(parsed, teamMembers, contactNames);
       setImportRows(rows);
+      window.dispatchEvent(new Event("cat:schedule-import"));
     } catch {
       setError("Invalid JSON — please check the format and try again.");
     }
@@ -363,6 +364,7 @@ export default function WeeklySchedule() {
 
   function saveModal() {
     if (!draft) return;
+    const wasDone = modalTask?.status !== "done" && draft.status === "done";
     setViewTasks((prev) => {
       const updated = { ...prev };
       for (const key of Object.keys(updated)) {
@@ -370,6 +372,7 @@ export default function WeeklySchedule() {
       }
       return updated;
     });
+    if (wasDone) window.dispatchEvent(new Event("cat:task-done"));
     setModalTask(null);
     setDraft(null);
   }

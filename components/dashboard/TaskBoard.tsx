@@ -220,6 +220,7 @@ export default function TaskBoard() {
 
   async function saveModal() {
     if (!draft) return;
+    const wasDone = modalTask?.status !== 'done' && draft.status === 'done';
     setSaving(true);
     const res = await fetch(`/api/tasks/${draft.id}`, {
       method: 'PATCH',
@@ -229,6 +230,7 @@ export default function TaskBoard() {
     if (res.ok) {
       const updated = await res.json();
       setTasks(prev => prev.map(t => t.id === updated.id ? updated : t));
+      if (wasDone) window.dispatchEvent(new Event('cat:task-done'));
     }
     setSaving(false);
     setModalTask(null); setDraft(null);
@@ -242,6 +244,7 @@ export default function TaskBoard() {
 
   function moveTask(id: string, status: Status) {
     setTasks(prev => prev.map(t => t.id === id ? { ...t, status } : t));
+    if (status === 'done') window.dispatchEvent(new Event('cat:task-done'));
     fetch(`/api/tasks/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
