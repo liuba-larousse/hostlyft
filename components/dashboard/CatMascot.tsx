@@ -41,13 +41,6 @@ const CAT_BODY = "#2d2d2d";
 const CAT_HEAD = "#333";
 
 function pick<T>(arr: T[]): T { return arr[Math.floor(Math.random() * arr.length)]; }
-function getSeason(): "winter" | "spring" | "summer" | "fall" {
-  const m = new Date().getMonth();
-  if (m >= 2 && m <= 4) return "spring";
-  if (m >= 5 && m <= 7) return "summer";
-  if (m >= 8 && m <= 10) return "fall";
-  return "winter";
-}
 
 // ── Component ───────────────────────────────────────────────────────────────
 
@@ -73,7 +66,7 @@ export default function CatMascot() {
   const petTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const msgTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const season = getSeason();
+
   // ── Show message ────────────────────────────────────────────────────────
 
   const showMsg = useCallback((msg: string, m: CatMood, duration = 4000) => {
@@ -402,41 +395,6 @@ export default function CatMascot() {
           <polygon points="19.5,17 16.5,8 23,14" fill="#ffb6c1" opacity="0.5" />
           <polygon points="40.5,17 43.5,8 37,14" fill="#ffb6c1" opacity="0.5" />
 
-          {/* Seasonal outfit */}
-          {season === "winter" && (
-            <>
-              {/* Santa hat */}
-              <polygon points="22,14 30,0 38,14" fill="#e53e3e" />
-              <ellipse cx="30" cy="14" rx="9" ry="2.5" fill="white" />
-              <circle cx="30" cy="1" r="2.5" fill="white" />
-            </>
-          )}
-          {season === "summer" && (
-            <>
-              {/* Sunglasses */}
-              <rect x="18" y="21" width="8" height="5" rx="2" fill="#1a1a1a" opacity="0.85" />
-              <rect x="34" y="21" width="8" height="5" rx="2" fill="#1a1a1a" opacity="0.85" />
-              <line x1="26" y1="23" x2="34" y2="23" stroke="#1a1a1a" strokeWidth="1" />
-            </>
-          )}
-          {season === "spring" && (
-            <>
-              {/* Flower */}
-              <circle cx="19" cy="12" r="2" fill="#f472b6" />
-              <circle cx="17" cy="10" r="1.5" fill="#fb923c" />
-              <circle cx="21" cy="10" r="1.5" fill="#a78bfa" />
-              <circle cx="19" cy="8.5" r="1.5" fill="#fbbf24" />
-              <circle cx="19" cy="11" r="1" fill="#fde047" />
-            </>
-          )}
-          {season === "fall" && (
-            <>
-              {/* Scarf */}
-              <path d="M18 32 Q30 36 42 32" stroke="#f97316" strokeWidth="3" fill="none" strokeLinecap="round" />
-              <path d="M18 32 L16 40" stroke="#f97316" strokeWidth="2.5" fill="none" strokeLinecap="round" />
-            </>
-          )}
-
           {/* Eyes */}
           {isSleeping || isPetting ? (
             <>
@@ -458,7 +416,7 @@ export default function CatMascot() {
               <line x1="20" y1="20" x2="25" y2="21" stroke={"white"} strokeWidth="1" strokeLinecap="round" />
               <line x1="40" y1="20" x2="35" y2="21" stroke={"white"} strokeWidth="1" strokeLinecap="round" />
             </>
-          ) : season !== "summer" ? (
+          ) : (
             <>
               <circle cx="23" cy="24" r="2.5" fill="white" />
               <circle cx="37" cy="24" r="2.5" fill="white" />
@@ -467,7 +425,7 @@ export default function CatMascot() {
               <circle cx={22.5 + eyeX * 0.3} cy={23} r="0.6" fill="white" opacity="0.8" />
               <circle cx={36.5 + eyeX * 0.3} cy={23} r="0.6" fill="white" opacity="0.8" />
             </>
-          ) : null}
+          )}
 
           {/* Nose */}
           <ellipse cx="30" cy="29" rx="1.2" ry="0.8" fill="#ffb6c1" />
