@@ -14,6 +14,12 @@ function toTask(row: Record<string, unknown>) {
     dueDate: row.due_date ?? '',
     duration: row.duration ?? '',
     tags: row.tags ?? [],
+    weekId: row.week_id ?? null,
+    dayOfWeek: row.day_of_week ?? '',
+    taskType: row.task_type ?? 'client',
+    dependency: row.dependency ?? '',
+    delegate: row.delegate ?? '',
+    sortOrder: row.sort_order ?? 0,
     createdAt: row.created_at,
   };
 }
@@ -39,6 +45,12 @@ export async function PATCH(
   if ('dueDate' in body)     update.due_date    = body.dueDate;
   if ('duration' in body)    update.duration    = body.duration;
   if ('tags' in body)        update.tags        = body.tags;
+  if ('weekId' in body)      update.week_id     = body.weekId;
+  if ('dayOfWeek' in body)   update.day_of_week = body.dayOfWeek;
+  if ('taskType' in body)    update.task_type   = body.taskType;
+  if ('dependency' in body)  update.dependency  = body.dependency;
+  if ('delegate' in body)    update.delegate    = body.delegate;
+  if ('sortOrder' in body)   update.sort_order  = body.sortOrder;
 
   const { data, error } = await supabase
     .from('tasks')
