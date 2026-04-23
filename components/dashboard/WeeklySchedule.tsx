@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Upload, Calendar, ChevronRight, X, AlertCircle, Check, Save, Eye, ListChecks, Clock, GripVertical, Tag } from "lucide-react";
+import { Upload, Calendar, ChevronRight, X, AlertCircle, Check, Save, Eye, ListChecks, Clock, GripVertical, Tag, Pencil } from "lucide-react";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -79,10 +79,10 @@ const KNOWN_META = new Set(["week", "invoices", "carry_over_next_week"]);
 
 const STATUS_COLORS: Record<TaskStatus, string[]> = {
   todo: [
-    "bg-gray-200/80",
-    "bg-slate-200/80",
+    "bg-amber-100/80",
+    "bg-orange-100/80",
+    "bg-yellow-100/80",
     "bg-stone-200/80",
-    "bg-neutral-200/80",
   ],
   inprogress: [
     "bg-yellow-200/80",
@@ -99,7 +99,7 @@ const STATUS_COLORS: Record<TaskStatus, string[]> = {
 };
 
 const STATUS_LABEL: Record<TaskStatus, { label: string; color: string; dot: string }> = {
-  todo:       { label: "To Do",       color: "text-gray-600",    dot: "bg-gray-400" },
+  todo:       { label: "To Do",       color: "text-stone-600",   dot: "bg-stone-400" },
   inprogress: { label: "In Progress", color: "text-amber-700",   dot: "bg-amber-500" },
   done:       { label: "Done",        color: "text-emerald-700", dot: "bg-emerald-500" },
 };
@@ -110,10 +110,10 @@ const STATUS_CYCLE: Record<TaskStatus, TaskStatus> = {
   done: "todo",
 };
 
-const PRIORITY_DOT: Record<Priority, string> = {
-  low:    "bg-gray-400",
-  medium: "bg-amber-400",
-  high:   "bg-red-500",
+const PRIORITY_EMOJI: Record<Priority, string> = {
+  low:    "🟢",
+  medium: "🟡",
+  high:   "🔴",
 };
 
 const PRIORITY_LABEL: Record<Priority, string> = {
@@ -356,6 +356,23 @@ export default function WeeklySchedule() {
   }
 
   // ── View task actions ──────────────────────────────────────────────────────
+
+  function cycleStatus(taskId: string) {
+    setViewTasks((prev) => {
+      const updated = { ...prev };
+      for (const key of Object.keys(updated)) {
+        const before = updated[key].find((t) => t.id === taskId);
+        updated[key] = updated[key].map((t) =>
+          t.id === taskId ? { ...t, status: STATUS_CYCLE[t.status] } : t
+        );
+        const after = updated[key].find((t) => t.id === taskId);
+        if (before && after && before.status !== "done" && after.status === "done") {
+          window.dispatchEvent(new Event("cat:task-done"));
+        }
+      }
+      return updated;
+    });
+  }
 
   function openTaskModal(task: ViewTask) {
     setModalTask(task);
@@ -667,7 +684,7 @@ export default function WeeklySchedule() {
                     )}
                     {/* Todo */}
                     {todo > 0 && (
-                      <circle cx="64" cy="64" r={R} fill="none" stroke="#d1d5db" strokeWidth="16"
+                      <circle cx="64" cy="64" r={R} fill="none" stroke="#e8d5b7" strokeWidth="16"
                         strokeDasharray={`${seg3} ${C - seg3}`} strokeDashoffset={-off3} strokeLinecap="round" />
                     )}
                   </svg>
@@ -695,7 +712,7 @@ export default function WeeklySchedule() {
                     </div>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <span className="w-3 h-3 rounded-full bg-gray-300" />
+                        <span className="w-3 h-3 rounded-full bg-amber-200" />
                         <span className="text-sm text-gray-700">To Do</span>
                       </div>
                       <span className="text-sm font-semibold text-gray-900">{todo}/{total} · {pTodo}%</span>
@@ -764,21 +781,29 @@ export default function WeeklySchedule() {
                 return (
                   <div
                     key={task.id}
-                    onClick={() => openTaskModal(task)}
-                    className={`${cardBg} rounded-2xl p-4 cursor-pointer transition-all active:scale-[0.98] select-none`}
+                    onClick={() => cycleStatus(task.id)}
+                    className={`${cardBg} rounded-2xl p-4 cursor-pointer transition-all active:scale-[0.98] select-none relative group`}
                   >
+                    {/* Edit button */}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); openTaskModal(task); }}
+                      className="absolute top-3 right-3 w-7 h-7 rounded-lg bg-white/60 hover:bg-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                      title="Edit details"
+                    >
+                      <Pencil size={13} className="text-gray-600" />
+                    </button>
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-1.5 text-gray-600/70">
                         <Clock size={12} />
                         <span className="text-sm font-medium">{task.duration || "—"}</span>
                       </div>
-                      <div className="flex items-center gap-1 shrink-0">
+                      <div className="flex items-center gap-1 shrink-0 mr-8">
                         <span className={`w-2 h-2 rounded-full ${statusInfo.dot}`} />
                         <span className={`text-xs font-semibold ${statusInfo.color}`}>{statusInfo.label}</span>
                       </div>
                     </div>
-                    <div className="flex items-start gap-2 mb-1">
-                      <span className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${PRIORITY_DOT[task.priority]}`} title={PRIORITY_LABEL[task.priority]} />
+                    <div className="flex items-start gap-1.5 mb-1">
+                      <span className="text-sm shrink-0" title={PRIORITY_LABEL[task.priority]}>{PRIORITY_EMOJI[task.priority]}</span>
                       <p className="text-base font-bold text-gray-900 leading-snug">{task.name}</p>
                     </div>
                     {task.tags.length > 0 && (
@@ -844,23 +869,28 @@ export default function WeeklySchedule() {
                           draggable
                           onDragStart={(e) => onDragStart(e, task.id)}
                           onDragEnd={onDragEnd}
-                          onClick={() => openTaskModal(task)}
-                          className={`${cardBg} rounded-2xl p-3.5 cursor-pointer transition-all hover:scale-[1.02] hover:shadow-md active:scale-[0.98] select-none ${
+                          onClick={() => cycleStatus(task.id)}
+                          className={`${cardBg} rounded-2xl p-3.5 cursor-pointer transition-all hover:scale-[1.02] hover:shadow-md active:scale-[0.98] select-none relative group ${
                             isDragging ? "opacity-40 scale-95" : "opacity-100"
                           }`}
                         >
+                          {/* Edit button */}
+                          <button
+                            onClick={(e) => { e.stopPropagation(); openTaskModal(task); }}
+                            className="absolute top-2.5 right-2.5 w-6 h-6 rounded-lg bg-white/60 hover:bg-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer z-10"
+                            title="Edit details"
+                          >
+                            <Pencil size={11} className="text-gray-600" />
+                          </button>
                           <div className="flex items-center justify-between mb-2">
                             <div className="flex items-center gap-1.5 text-gray-600/70">
                               <GripVertical size={12} className="cursor-grab" />
                               <Clock size={11} />
                               <span className="text-xs font-medium">{task.duration || "—"}</span>
                             </div>
-                            {task.time && (
-                              <span className="text-xs text-gray-500/60 font-medium">{task.time}</span>
-                            )}
                           </div>
-                          <div className="flex items-start gap-1.5 mb-2">
-                            <span className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${PRIORITY_DOT[task.priority]}`} title={PRIORITY_LABEL[task.priority]} />
+                          <div className="flex items-start gap-1 mb-2">
+                            <span className="text-xs shrink-0" title={PRIORITY_LABEL[task.priority]}>{PRIORITY_EMOJI[task.priority]}</span>
                             <p className="text-sm font-bold text-gray-900 leading-snug">{task.name}</p>
                           </div>
                           {task.tags.length > 0 && (
