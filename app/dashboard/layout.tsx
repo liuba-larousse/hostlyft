@@ -25,7 +25,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         userEmail={session.user.email}
         userImage={session.user.image ?? null}
       />
-      <main className="flex-1 overflow-auto">{children}</main>
+      <main className="flex-1 overflow-auto pt-[57px] md:pt-0">{children}</main>
     </div>
   );
 }
