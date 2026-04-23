@@ -35,15 +35,10 @@ const PET_MSG = ["Purrrr...", "Mrrrrp!", "So cozy...", "*happy purring*", "More 
 // ── Types ───────────────────────────────────────────────────────────────────
 
 type CatMood = "happy" | "sleepy" | "playful" | "love" | "celebrate" | "sad" | "excited" | "petting";
-type CatChar = "black" | "orange" | "gray" | "white";
 type PomoState = "idle" | "work" | "break";
 
-const CAT_COLORS: Record<CatChar, { body: string; head: string; paw: string }> = {
-  black:  { body: "#2d2d2d", head: "#333", paw: "#333" },
-  orange: { body: "#e8923e", head: "#f0a050", paw: "#f0a050" },
-  gray:   { body: "#8a8a8a", head: "#999", paw: "#999" },
-  white:  { body: "#e8e8e8", head: "#f0f0f0", paw: "#f0f0f0" },
-};
+const CAT_BODY = "#2d2d2d";
+const CAT_HEAD = "#333";
 
 function pick<T>(arr: T[]): T { return arr[Math.floor(Math.random() * arr.length)]; }
 function getSeason(): "winter" | "spring" | "summer" | "fall" {
@@ -62,8 +57,6 @@ export default function CatMascot() {
   const [mood, setMood] = useState<CatMood>("happy");
   const [minimized, setMinimized] = useState(false);
   const [bounce, setBounce] = useState(false);
-  const [catChar, setCatChar] = useState<CatChar>("black");
-  const [showPicker, setShowPicker] = useState(false);
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [eyeOffset, setEyeOffset] = useState({ x: 0, y: 0 });
@@ -81,8 +74,6 @@ export default function CatMascot() {
   const msgTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const season = getSeason();
-  const colors = CAT_COLORS[catChar];
-
   // ── Show message ────────────────────────────────────────────────────────
 
   const showMsg = useCallback((msg: string, m: CatMood, duration = 4000) => {
@@ -361,28 +352,6 @@ export default function CatMascot() {
           {pomoState === "idle" ? "🍅" : `${pomoState === "work" ? "🔥" : "💤"} ${fmtPomo(pomoTime)}`}
         </button>
 
-        {/* Cat picker */}
-        <div className="relative">
-          <button
-            onClick={() => setShowPicker((v) => !v)}
-            className="w-5 h-5 rounded-full border border-gray-200 cursor-pointer hover:scale-110 transition-transform"
-            style={{ background: colors.body }}
-            title="Change cat"
-          />
-          {showPicker && (
-            <div className="absolute bottom-7 right-0 bg-white border border-gray-200 rounded-xl shadow-lg p-1.5 flex gap-1">
-              {(Object.keys(CAT_COLORS) as CatChar[]).map((c) => (
-                <button
-                  key={c}
-                  onClick={() => { setCatChar(c); setShowPicker(false); }}
-                  className={`w-6 h-6 rounded-full cursor-pointer transition-transform hover:scale-110 ${catChar === c ? "ring-2 ring-yellow-400" : ""}`}
-                  style={{ background: CAT_COLORS[c].body }}
-                  title={c}
-                />
-              ))}
-            </div>
-          )}
-        </div>
       </div>
 
       {/* Cat SVG */}
@@ -418,18 +387,18 @@ export default function CatMascot() {
 
           {/* Tail */}
           <g className={tailAnim} style={{ transformOrigin: "46px 38px" }}>
-            <path d="M46 38 Q54 30 50 20 Q48 16 52 14" stroke={colors.body} strokeWidth="3" fill="none" strokeLinecap="round" />
+            <path d="M46 38 Q54 30 50 20 Q48 16 52 14" stroke={CAT_BODY} strokeWidth="3" fill="none" strokeLinecap="round" />
           </g>
 
           {/* Body */}
-          <ellipse cx="30" cy="42" rx="16" ry="10" fill={colors.body} />
+          <ellipse cx="30" cy="42" rx="16" ry="10" fill={CAT_BODY} />
 
           {/* Head */}
-          <circle cx="30" cy="26" r="13" fill={colors.head} />
+          <circle cx="30" cy="26" r="13" fill={CAT_HEAD} />
 
           {/* Ears */}
-          <polygon points="19,18 15,6 24,14" fill={colors.head} />
-          <polygon points="41,18 45,6 36,14" fill={colors.head} />
+          <polygon points="19,18 15,6 24,14" fill={CAT_HEAD} />
+          <polygon points="41,18 45,6 36,14" fill={CAT_HEAD} />
           <polygon points="19.5,17 16.5,8 23,14" fill="#ffb6c1" opacity="0.5" />
           <polygon points="40.5,17 43.5,8 37,14" fill="#ffb6c1" opacity="0.5" />
 
@@ -471,8 +440,8 @@ export default function CatMascot() {
           {/* Eyes */}
           {isSleeping || isPetting ? (
             <>
-              <path d="M21 24 Q23 22 25 24" stroke={catChar === "white" ? "#666" : "white"} strokeWidth="1.5" fill="none" strokeLinecap="round" />
-              <path d="M35 24 Q33 22 31 24" stroke={catChar === "white" ? "#666" : "white"} strokeWidth="1.5" fill="none" strokeLinecap="round" />
+              <path d="M21 24 Q23 22 25 24" stroke={"white"} strokeWidth="1.5" fill="none" strokeLinecap="round" />
+              <path d="M35 24 Q33 22 31 24" stroke={"white"} strokeWidth="1.5" fill="none" strokeLinecap="round" />
             </>
           ) : mood === "love" || mood === "celebrate" ? (
             <>
@@ -486,8 +455,8 @@ export default function CatMascot() {
               <circle cx={23 + eyeX} cy={24 + eyeY} r="1.2" fill="#2d2d2d" />
               <circle cx={37 + eyeX} cy={24 + eyeY} r="1.2" fill="#2d2d2d" />
               {/* Sad eyebrows */}
-              <line x1="20" y1="20" x2="25" y2="21" stroke={catChar === "white" ? "#666" : "white"} strokeWidth="1" strokeLinecap="round" />
-              <line x1="40" y1="20" x2="35" y2="21" stroke={catChar === "white" ? "#666" : "white"} strokeWidth="1" strokeLinecap="round" />
+              <line x1="20" y1="20" x2="25" y2="21" stroke={"white"} strokeWidth="1" strokeLinecap="round" />
+              <line x1="40" y1="20" x2="35" y2="21" stroke={"white"} strokeWidth="1" strokeLinecap="round" />
             </>
           ) : season !== "summer" ? (
             <>
@@ -505,34 +474,27 @@ export default function CatMascot() {
 
           {/* Mouth */}
           {mood === "happy" || mood === "love" || mood === "celebrate" || mood === "excited" ? (
-            <path d="M27 31 Q30 34 33 31" stroke={catChar === "white" ? "#666" : "white"} strokeWidth="1" fill="none" strokeLinecap="round" />
+            <path d="M27 31 Q30 34 33 31" stroke={"white"} strokeWidth="1" fill="none" strokeLinecap="round" />
           ) : mood === "sad" ? (
-            <path d="M27 32 Q30 30 33 32" stroke={catChar === "white" ? "#666" : "white"} strokeWidth="1" fill="none" strokeLinecap="round" />
+            <path d="M27 32 Q30 30 33 32" stroke={"white"} strokeWidth="1" fill="none" strokeLinecap="round" />
           ) : mood === "playful" || mood === "petting" ? (
             <>
-              <path d="M27 31 Q30 33 33 31" stroke={catChar === "white" ? "#666" : "white"} strokeWidth="1" fill="none" strokeLinecap="round" />
-              <line x1="30" y1="29.5" x2="30" y2="31" stroke={catChar === "white" ? "#666" : "white"} strokeWidth="0.8" />
+              <path d="M27 31 Q30 33 33 31" stroke={"white"} strokeWidth="1" fill="none" strokeLinecap="round" />
+              <line x1="30" y1="29.5" x2="30" y2="31" stroke={"white"} strokeWidth="0.8" />
             </>
           ) : null}
 
           {/* Whiskers */}
-          {["white", "#ccc"].map((c, wi) => {
-            const wc = catChar === "white" ? "#aaa" : c;
-            const op = catChar === "white" ? 0.6 : (wi === 0 ? 0.5 : 0);
-            if (op === 0) return null;
-            return (
-              <g key={wi} opacity={op}>
-                <line x1="12" y1="26" x2="21" y2="28" stroke={wc} strokeWidth="0.5" />
-                <line x1="12" y1="30" x2="21" y2="30" stroke={wc} strokeWidth="0.5" />
-                <line x1="48" y1="26" x2="39" y2="28" stroke={wc} strokeWidth="0.5" />
-                <line x1="48" y1="30" x2="39" y2="30" stroke={wc} strokeWidth="0.5" />
-              </g>
-            );
-          })}
+          <g opacity={0.5}>
+            <line x1="12" y1="26" x2="21" y2="28" stroke="white" strokeWidth="0.5" />
+            <line x1="12" y1="30" x2="21" y2="30" stroke="white" strokeWidth="0.5" />
+            <line x1="48" y1="26" x2="39" y2="28" stroke="white" strokeWidth="0.5" />
+            <line x1="48" y1="30" x2="39" y2="30" stroke="white" strokeWidth="0.5" />
+          </g>
 
           {/* Paws */}
-          <ellipse cx="22" cy="50" rx="4" ry="2.5" fill={colors.paw} />
-          <ellipse cx="38" cy="50" rx="4" ry="2.5" fill={colors.paw} />
+          <ellipse cx="22" cy="50" rx="4" ry="2.5" fill={CAT_HEAD} />
+          <ellipse cx="38" cy="50" rx="4" ry="2.5" fill={CAT_HEAD} />
 
           {/* Pet sparkles */}
           {isPetting && (
