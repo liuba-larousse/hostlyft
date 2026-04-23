@@ -15,6 +15,8 @@ interface Task {
   assignee: string;
   client: string;
   dueDate: string;
+  duration: string;
+  tags: string[];
   createdAt: string;
 }
 
@@ -63,6 +65,7 @@ function formatDue(dueDate: string) {
 const BLANK: Omit<Task, 'id' | 'createdAt'> = {
   title: '', description: '', status: 'todo',
   priority: 'medium', assignee: '', client: '', dueDate: '',
+  duration: '', tags: [],
 };
 
 // ── Assignee toggle popover ────────────────────────────────────────────────────
@@ -401,6 +404,22 @@ export default function TaskBoard() {
                           <span className={`mt-1.5 w-1.5 h-1.5 rounded-full flex-shrink-0 ${PRIORITY_STYLE[task.priority].dot}`} />
                           <p className="text-sm text-gray-800 leading-snug flex-1 font-medium">{task.title}</p>
                         </div>
+
+                        {/* Duration + tags */}
+                        {(task.duration || (task.tags && task.tags.length > 0)) && (
+                          <div className="flex items-center gap-1.5 flex-wrap mb-2 pl-3.5">
+                            {task.duration && (
+                              <span className="text-xs px-1.5 py-0.5 bg-blue-50 text-blue-600 rounded-md font-medium">
+                                {task.duration}
+                              </span>
+                            )}
+                            {task.tags?.map((tag, ti) => (
+                              <span key={ti} className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded-md">
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        )}
 
                         {/* Description preview */}
                         {task.description && (

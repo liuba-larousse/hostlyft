@@ -12,6 +12,8 @@ function toTask(row: Record<string, unknown>) {
     assignee: row.assignee ?? '',
     client: row.client ?? '',
     dueDate: row.due_date ?? '',
+    duration: row.duration ?? '',
+    tags: row.tags ?? [],
     createdAt: row.created_at,
   };
 }
@@ -35,6 +37,8 @@ export async function PATCH(
   if ('assignee' in body)    update.assignee    = body.assignee;
   if ('client' in body)      update.client      = body.client;
   if ('dueDate' in body)     update.due_date    = body.dueDate;
+  if ('duration' in body)    update.duration    = body.duration;
+  if ('tags' in body)        update.tags        = body.tags;
 
   const { data, error } = await supabase
     .from('tasks')

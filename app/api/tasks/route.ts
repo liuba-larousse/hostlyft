@@ -12,6 +12,8 @@ function toTask(row: Record<string, unknown>) {
     assignee: row.assignee ?? '',
     client: row.client ?? '',
     dueDate: row.due_date ?? '',
+    duration: row.duration ?? '',
+    tags: row.tags ?? [],
     createdAt: row.created_at,
   };
 }
@@ -48,6 +50,8 @@ export async function POST(req: Request) {
       assignee: body.assignee ?? '',
       client: body.client ?? '',
       due_date: body.dueDate ?? '',
+      duration: body.duration ?? '',
+      tags: body.tags ?? [],
     })
     .select()
     .single();

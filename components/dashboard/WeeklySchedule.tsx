@@ -1,15 +1,17 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Upload, Calendar, ChevronRight, X, AlertCircle, Check, Save, Eye, ListChecks, Clock, GripVertical } from "lucide-react";
+import { Upload, Calendar, ChevronRight, X, AlertCircle, Check, Save, Eye, ListChecks, Clock, GripVertical, Tag } from "lucide-react";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
 interface ScheduleTask {
   name: string;
-  time: string;
+  duration?: string;
+  time?: string | null;
   type: "internal" | "cloud9" | "ai" | "client";
   client: string | null;
+  tags?: string[];
   dep: string | null;
   delegate: string | null;
 }
@@ -40,9 +42,11 @@ type TaskStatus = "todo" | "inprogress" | "done";
 interface ViewTask {
   id: string;
   name: string;
+  duration: string;
   time: string;
   type: string;
   client: string | null;
+  tags: string[];
   dep: string | null;
   delegate: string | null;
   day: string;
@@ -60,7 +64,8 @@ interface ImportRow {
   priority: Priority;
   dueDate: string;
   day: string;
-  time: string;
+  duration: string;
+  tags: string[];
   taskType: string;
   personKey: string;
 }
@@ -71,7 +76,6 @@ const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const DAY_OFFSET: Record<string, number> = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6 };
 const KNOWN_META = new Set(["week", "invoices", "carry_over_next_week"]);
 
-// Solid card colors per status — multiple shades for visual variety
 const STATUS_COLORS: Record<TaskStatus, string[]> = {
   todo: [
     "bg-blue-200/80",
@@ -133,14 +137,14 @@ function datePlusDays(base: Date, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-function timeToBlock(time: string): string {
-  if (!time || time === "All day") return "All day";
-  const m = time.match(/(\d{1,2}):(\d{2})\s*[–\-—]\s*(\d{1,2}):(\d{2})/);
-  if (!m) return time;
-  const startMin = parseInt(m[1]) * 60 + parseInt(m[2]);
-  const endMin = parseInt(m[3]) * 60 + parseInt(m[4]);
-  const diff = endMin - startMin;
-  if (diff <= 0) return time;
+/** Extract a display duration from the task — prefers `duration` field, falls back to computing from time range */
+function getDisplayDuration(task: ScheduleTask): string {
+  if (task.duration) return task.duration;
+  if (!task.time || task.time === "All day") return task.time || "";
+  const m = task.time.match(/(\d{1,2}):(\d{2})\s*[–\-—]\s*(\d{1,2}):(\d{2})/);
+  if (!m) return task.time;
+  const diff = (parseInt(m[3]) * 60 + parseInt(m[4])) - (parseInt(m[1]) * 60 + parseInt(m[2]));
+  if (diff <= 0) return task.time;
   const h = Math.floor(diff / 60);
   const min = diff % 60;
   if (h > 0 && min > 0) return `${h}h ${min}m`;
@@ -182,7 +186,9 @@ function typeToPriority(type: string, dep: string | null): Priority {
 
 function buildDescription(task: ScheduleTask, day: string): string {
   const parts: string[] = [];
-  if (task.time && task.time !== "All day") parts.push(`Block: ${timeToBlock(task.time)}`);
+  const dur = getDisplayDuration(task);
+  if (dur) parts.push(`Block: ${dur}`);
+  if (task.time) parts.push(`Time: ${task.time}`);
   parts.push(`Day: ${day}`);
   parts.push(`Type: ${task.type}`);
   if (task.delegate) parts.push(`Delegate: ${task.delegate}`);
@@ -206,9 +212,11 @@ function buildViewTasks(schedule: WeekSchedule): Record<string, ViewTask[]> {
         tasks.push({
           id: `vt-${rowIdCounter++}`,
           name: task.name,
-          time: task.time,
+          duration: getDisplayDuration(task),
+          time: task.time ?? "",
           type: task.type,
           client: task.client,
+          tags: task.tags ?? [],
           dep: task.dep,
           delegate: task.delegate,
           day,
@@ -249,7 +257,8 @@ function buildImportRows(schedule: WeekSchedule, members: TeamMember[], contacts
           priority: typeToPriority(task.type, task.dep),
           dueDate,
           day,
-          time: task.time,
+          duration: getDisplayDuration(task),
+          tags: task.tags ?? [],
           taskType: task.type,
           personKey,
         });
@@ -283,7 +292,6 @@ export default function WeeklySchedule() {
   const [dragOverDay, setDragOverDay] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // Fetch team members + contacts on mount
   useEffect(() => {
     Promise.all([
       fetch("/api/team").then((r) => r.json()),
@@ -349,26 +357,21 @@ export default function WeeklySchedule() {
     });
   }
 
-  // ── Drag handlers ─────────────────────────────────────────────────────────
-
   function onDragStart(e: React.DragEvent, taskId: string) {
     setDraggingId(taskId);
     e.dataTransfer.effectAllowed = "move";
   }
-
   function onDragOver(e: React.DragEvent, day: string) {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
     setDragOverDay(day);
   }
-
   function onDrop(e: React.DragEvent, day: string) {
     e.preventDefault();
     if (draggingId) moveTaskToDay(draggingId, day);
     setDraggingId(null);
     setDragOverDay(null);
   }
-
   function onDragEnd() {
     setDraggingId(null);
     setDragOverDay(null);
@@ -379,12 +382,10 @@ export default function WeeklySchedule() {
   function toggleRow(id: string) {
     setImportRows((prev) => prev.map((r) => (r.id === id ? { ...r, selected: !r.selected } : r)));
   }
-
   function toggleAll() {
     const allSelected = importRows.every((r) => r.selected);
     setImportRows((prev) => prev.map((r) => ({ ...r, selected: !allSelected })));
   }
-
   function updateRow(id: string, field: keyof ImportRow, value: string) {
     setImportRows((prev) =>
       prev.map((r) => (r.id === id ? { ...r, [field]: value } : r))
@@ -413,6 +414,8 @@ export default function WeeklySchedule() {
             assignee: row.assignee,
             client: row.client,
             dueDate: row.dueDate,
+            duration: row.duration,
+            tags: row.tags,
           }),
         });
         if (res.ok) ok++;
@@ -441,7 +444,7 @@ export default function WeeklySchedule() {
         <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm">
           <textarea
             className="w-full h-64 font-mono text-sm border border-gray-200 rounded-xl p-4 focus:outline-none focus:ring-2 focus:ring-yellow-400 resize-none"
-            placeholder='{ "week": "20 Apr – 26 Apr", "liuba": { "hours": 33, "tasks": { "Mon": [...] } }, ... }'
+            placeholder='{ "week": "28 Apr – 02 May", "liuba": { "hours": 22, "tasks": { "Mon": [...] } }, ... }'
             value={jsonInput}
             onChange={(e) => setJsonInput(e.target.value)}
           />
@@ -617,13 +620,11 @@ export default function WeeklySchedule() {
                     isOver ? "bg-yellow-50 ring-2 ring-yellow-300" : ""
                   }`}
                 >
-                  {/* Day header */}
                   <div className="flex items-baseline gap-1.5 mb-3 px-1">
                     <span className="text-2xl font-bold text-gray-900">{dayDate ?? ""}</span>
                     <span className="text-sm text-gray-400 font-medium">/ {day}</span>
                   </div>
 
-                  {/* Task cards */}
                   <div className="space-y-3">
                     {dayTasks.length === 0 && (
                       <div className="h-20 border-2 border-dashed border-gray-200 rounded-2xl flex items-center justify-center">
@@ -646,19 +647,34 @@ export default function WeeklySchedule() {
                             isDragging ? "opacity-40 scale-95" : "opacity-100"
                           }`}
                         >
-                          {/* Drag handle + time */}
+                          {/* Drag handle + duration */}
                           <div className="flex items-center justify-between mb-2">
                             <div className="flex items-center gap-1.5 text-gray-600/70">
                               <GripVertical size={12} className="cursor-grab" />
                               <Clock size={11} />
-                              <span className="text-xs font-medium">{timeToBlock(task.time)}</span>
+                              <span className="text-xs font-medium">{task.duration || "—"}</span>
                             </div>
+                            {task.time && (
+                              <span className="text-xs text-gray-500/60 font-medium">{task.time}</span>
+                            )}
                           </div>
 
                           {/* Task name */}
                           <p className="text-sm font-bold text-gray-900 leading-snug mb-2">
                             {task.name}
                           </p>
+
+                          {/* Tags */}
+                          {task.tags.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mb-2">
+                              {task.tags.map((tag, ti) => (
+                                <span key={ti} className="text-xs bg-white/60 rounded-md px-1.5 py-0.5 font-medium text-gray-700/80 flex items-center gap-1">
+                                  <Tag size={9} />
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          )}
 
                           {/* Bottom row: client + status */}
                           <div className="flex items-center justify-between gap-2">
@@ -677,7 +693,7 @@ export default function WeeklySchedule() {
                             </div>
                           </div>
 
-                          {/* Delegate / dep tags */}
+                          {/* Delegate / dep */}
                           {(task.delegate || task.dep) && (
                             <div className="flex flex-wrap gap-1 mt-2">
                               {task.delegate && (
@@ -757,6 +773,7 @@ export default function WeeklySchedule() {
                         <th className="w-10 py-2.5 px-3"></th>
                         <th className="text-left py-2.5 px-2 font-semibold">Task</th>
                         <th className="text-left py-2.5 px-2 font-semibold w-16">Day</th>
+                        <th className="text-left py-2.5 px-2 font-semibold w-20">Block</th>
                         <th className="text-left py-2.5 px-2 font-semibold w-40">Assignee</th>
                         <th className="text-left py-2.5 px-2 font-semibold w-40">Client</th>
                         <th className="text-left py-2.5 px-2 font-semibold w-24">Priority</th>
@@ -781,9 +798,16 @@ export default function WeeklySchedule() {
                           </td>
                           <td className="py-2 px-2">
                             <span className="text-gray-800 font-medium text-xs leading-snug">{row.title}</span>
-                            <p className="text-xs text-gray-400 mt-0.5">{timeToBlock(row.time)}</p>
+                            {row.tags.length > 0 && (
+                              <div className="flex gap-1 mt-0.5">
+                                {row.tags.map((t, i) => (
+                                  <span key={i} className="text-xs bg-gray-100 text-gray-500 rounded px-1 py-0.5">{t}</span>
+                                ))}
+                              </div>
+                            )}
                           </td>
                           <td className="py-2 px-2 text-xs text-gray-500">{row.day}</td>
+                          <td className="py-2 px-2 text-xs text-gray-500">{row.duration}</td>
                           <td className="py-2 px-2">
                             <select
                               value={row.assignee}
