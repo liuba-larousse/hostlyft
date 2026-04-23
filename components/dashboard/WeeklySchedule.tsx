@@ -122,6 +122,12 @@ const PRIORITY_LABEL: Record<Priority, string> = {
   high:   "High",
 };
 
+const PRIORITY_ORDER: Record<Priority, number> = { high: 0, medium: 1, low: 2 };
+
+function sortByPriority<T extends { priority: Priority }>(tasks: T[]): T[] {
+  return [...tasks].sort((a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]);
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function getPeople(schedule: WeekSchedule): string[] {
@@ -744,12 +750,12 @@ export default function WeeklySchedule() {
 
             {/* Stacked cards for active day */}
             <div className="space-y-3">
-              {personTasks.filter((t) => t.day === activeDay).length === 0 && (
+              {sortByPriority(personTasks.filter((t) => t.day === activeDay)).length === 0 && (
                 <div className="h-20 border-2 border-dashed border-gray-200 rounded-2xl flex items-center justify-center">
                   <p className="text-sm text-gray-300">No tasks</p>
                 </div>
               )}
-              {personTasks.filter((t) => t.day === activeDay).map((task, i) => {
+              {sortByPriority(personTasks.filter((t) => t.day === activeDay)).map((task, i) => {
                 const cardBg = getCardColor(task.status, i);
                 const statusInfo = STATUS_LABEL[task.status];
                 return (
@@ -800,7 +806,7 @@ export default function WeeklySchedule() {
           <div className="hidden md:grid grid-cols-5 gap-4">
             {DAYS.map((day) => {
               const dayDate = getDayDate(schedule.week, day);
-              const dayTasks = personTasks.filter((t) => t.day === day);
+              const dayTasks = sortByPriority(personTasks.filter((t) => t.day === day));
               const isOver = dragOverDay === day;
 
               return (
