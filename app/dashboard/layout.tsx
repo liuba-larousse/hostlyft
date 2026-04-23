@@ -2,6 +2,7 @@ import { auth } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 import { createSupabaseAdmin } from '@/lib/supabase';
 import { Sidebar } from '@/components/dashboard/sidebar';
+import CatMascot from '@/components/dashboard/CatMascot';
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
@@ -26,6 +27,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         userImage={session.user.image ?? null}
       />
       <main className="flex-1 overflow-auto pt-[57px] md:pt-0">{children}</main>
+      <CatMascot />
     </div>
   );
 }
