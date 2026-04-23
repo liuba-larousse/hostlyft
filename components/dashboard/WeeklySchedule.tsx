@@ -608,6 +608,81 @@ export default function WeeklySchedule() {
             })}
           </div>
 
+          {/* Team progress donut */}
+          {(() => {
+            const allTasks = Object.values(viewTasks).flat();
+            const total = allTasks.length;
+            const done = allTasks.filter((t) => t.status === "done").length;
+            const inprog = allTasks.filter((t) => t.status === "inprogress").length;
+            const todo = allTasks.filter((t) => t.status === "todo").length;
+            if (total === 0) return null;
+            const pDone = Math.round((done / total) * 100);
+            const pInprog = Math.round((inprog / total) * 100);
+            const pTodo = Math.round((todo / total) * 100);
+
+            // SVG donut segments
+            const R = 54;
+            const C = 2 * Math.PI * R;
+            const seg1 = (done / total) * C;
+            const seg2 = (inprog / total) * C;
+            const seg3 = (todo / total) * C;
+            const off1 = 0;
+            const off2 = seg1;
+            const off3 = seg1 + seg2;
+
+            return (
+              <div className="bg-white border border-gray-200 rounded-2xl p-5 mb-6 flex flex-col sm:flex-row items-center gap-5">
+                <div className="relative w-32 h-32 shrink-0">
+                  <svg viewBox="0 0 128 128" className="w-full h-full -rotate-90">
+                    {/* Done */}
+                    <circle cx="64" cy="64" r={R} fill="none" stroke="#86efac" strokeWidth="16"
+                      strokeDasharray={`${seg1} ${C - seg1}`} strokeDashoffset={-off1} strokeLinecap="round" />
+                    {/* In Progress */}
+                    {inprog > 0 && (
+                      <circle cx="64" cy="64" r={R} fill="none" stroke="#93c5fd" strokeWidth="16"
+                        strokeDasharray={`${seg2} ${C - seg2}`} strokeDashoffset={-off2} strokeLinecap="round" />
+                    )}
+                    {/* Todo */}
+                    {todo > 0 && (
+                      <circle cx="64" cy="64" r={R} fill="none" stroke="#fcd34d" strokeWidth="16"
+                        strokeDasharray={`${seg3} ${C - seg3}`} strokeDashoffset={-off3} strokeLinecap="round" />
+                    )}
+                  </svg>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    <span className="text-2xl font-bold text-gray-900">{pDone}%</span>
+                    <span className="text-xs text-gray-400">done</span>
+                  </div>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-sm font-bold text-gray-900 mb-3">Team Progress</h3>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="w-3 h-3 rounded-full bg-emerald-300" />
+                        <span className="text-sm text-gray-700">Completed</span>
+                      </div>
+                      <span className="text-sm font-semibold text-gray-900">{done}/{total} · {pDone}%</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="w-3 h-3 rounded-full bg-blue-300" />
+                        <span className="text-sm text-gray-700">In Progress</span>
+                      </div>
+                      <span className="text-sm font-semibold text-gray-900">{inprog}/{total} · {pInprog}%</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="w-3 h-3 rounded-full bg-yellow-300" />
+                        <span className="text-sm text-gray-700">To Do</span>
+                      </div>
+                      <span className="text-sm font-semibold text-gray-900">{todo}/{total} · {pTodo}%</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Status legend */}
           <div className="flex items-center gap-3 md:gap-4 mb-5 flex-wrap">
             {(["todo", "inprogress", "done"] as TaskStatus[]).map((s) => {
