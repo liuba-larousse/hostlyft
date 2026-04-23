@@ -77,13 +77,9 @@ const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
 const DAY_OFFSET: Record<string, number> = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6 };
 const KNOWN_META = new Set(["week", "invoices", "carry_over_next_week"]);
 
+const TODO_COLORS = ["#f5efe6", "#e8dfd4", "#ddd0c0", "#d3c1ad"];
 const STATUS_COLORS: Record<TaskStatus, string[]> = {
-  todo: [
-    "bg-amber-100/80",
-    "bg-orange-100/80",
-    "bg-yellow-100/80",
-    "bg-stone-200/80",
-  ],
+  todo: TODO_COLORS.map(() => ""),
   inprogress: [
     "bg-yellow-200/80",
     "bg-amber-300/80",
@@ -99,7 +95,7 @@ const STATUS_COLORS: Record<TaskStatus, string[]> = {
 };
 
 const STATUS_LABEL: Record<TaskStatus, { label: string; color: string; dot: string }> = {
-  todo:       { label: "To Do",       color: "text-stone-600",   dot: "bg-stone-400" },
+  todo:       { label: "To Do",       color: "text-stone-600",   dot: "bg-[#d3c1ad]" },
   inprogress: { label: "In Progress", color: "text-amber-700",   dot: "bg-amber-500" },
   done:       { label: "Done",        color: "text-emerald-700", dot: "bg-emerald-500" },
 };
@@ -322,9 +318,12 @@ function buildImportRows(schedule: WeekSchedule, members: TeamMember[], contacts
   return rows;
 }
 
-function getCardColor(status: TaskStatus, index: number): string {
+function getCardColor(status: TaskStatus, index: number): { className: string; style?: React.CSSProperties } {
+  if (status === "todo") {
+    return { className: "", style: { backgroundColor: TODO_COLORS[index % TODO_COLORS.length] } };
+  }
   const colors = STATUS_COLORS[status];
-  return colors[index % colors.length];
+  return { className: colors[index % colors.length] };
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -717,7 +716,7 @@ export default function WeeklySchedule() {
                     )}
                     {/* Todo */}
                     {todo > 0 && (
-                      <circle cx="64" cy="64" r={R} fill="none" stroke="#e8d5b7" strokeWidth="16"
+                      <circle cx="64" cy="64" r={R} fill="none" stroke="#d3c1ad" strokeWidth="16"
                         strokeDasharray={`${seg3} ${C - seg3}`} strokeDashoffset={-off3} strokeLinecap="round" />
                     )}
                   </svg>
@@ -745,7 +744,7 @@ export default function WeeklySchedule() {
                     </div>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <span className="w-3 h-3 rounded-full bg-amber-200" />
+                        <span className="w-3 h-3 rounded-full" style={{ backgroundColor: "#d3c1ad" }} />
                         <span className="text-sm text-gray-700">To Do</span>
                       </div>
                       <span className="text-sm font-semibold text-gray-900">{todo}/{total} · {pTodo}%</span>
@@ -809,13 +808,14 @@ export default function WeeklySchedule() {
                 </div>
               )}
               {sortByPriority(personTasks.filter((t) => t.day === activeDay)).map((task, i) => {
-                const cardBg = getCardColor(task.status, i);
+                const card = getCardColor(task.status, i);
                 const statusInfo = STATUS_LABEL[task.status];
                 return (
                   <div
                     key={task.id}
                     onClick={() => cycleStatus(task.id)}
-                    className={`${cardBg} rounded-2xl p-4 cursor-pointer transition-all active:scale-[0.98] select-none relative group`}
+                    className={`${card.className} rounded-2xl p-4 cursor-pointer transition-all active:scale-[0.98] select-none relative group`}
+                    style={card.style}
                   >
                     {/* Edit button */}
                     <button
@@ -892,7 +892,7 @@ export default function WeeklySchedule() {
                       </div>
                     )}
                     {dayTasks.map((task, i) => {
-                      const cardBg = getCardColor(task.status, i);
+                      const card = getCardColor(task.status, i);
                       const statusInfo = STATUS_LABEL[task.status];
                       const isDragging = draggingId === task.id;
 
@@ -903,7 +903,8 @@ export default function WeeklySchedule() {
                           onDragStart={(e) => onDragStart(e, task.id)}
                           onDragEnd={onDragEnd}
                           onClick={() => cycleStatus(task.id)}
-                          className={`${cardBg} rounded-2xl p-3.5 cursor-pointer transition-all hover:scale-[1.02] hover:shadow-md active:scale-[0.98] select-none relative group ${
+                          style={card.style}
+                          className={`${card.className} rounded-2xl p-3.5 cursor-pointer transition-all hover:scale-[1.02] hover:shadow-md active:scale-[0.98] select-none relative group ${
                             isDragging ? "opacity-40 scale-95" : "opacity-100"
                           }`}
                         >
