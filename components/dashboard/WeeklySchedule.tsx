@@ -167,11 +167,23 @@ function getDisplayDuration(task: ScheduleTask): string {
   return `${min}m`;
 }
 
+// Name aliases: different names that refer to the same team member
+const NAME_ALIASES: Record<string, string[]> = {
+  olaniyan: ["ayoka", "yetunde"],
+  ayoka: ["olaniyan", "yetunde"],
+  yetunde: ["olaniyan", "ayoka"],
+};
+
 function findTeamMember(personKey: string, members: TeamMember[]): string {
   const key = personKey.toLowerCase();
+  const aliases = [key, ...(NAME_ALIASES[key] ?? [])];
   const match = members.find((m) => {
     const first = m.first_name.toLowerCase();
-    return first.startsWith(key.slice(0, 3)) || key.startsWith(first.slice(0, 3));
+    const last = m.last_name.toLowerCase();
+    return aliases.some((a) =>
+      first.startsWith(a.slice(0, 3)) || a.startsWith(first.slice(0, 3)) ||
+      last.startsWith(a.slice(0, 3)) || a.startsWith(last.slice(0, 3))
+    );
   });
   return match ? `${match.first_name} ${match.last_name}` : "";
 }
