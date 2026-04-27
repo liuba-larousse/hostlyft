@@ -224,6 +224,9 @@ export default function WeeklySchedule() {
   const [draft, setDraft] = useState<DBTask | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverDay, setDragOverDay] = useState<string | null>(null);
+  const [addingToDay, setAddingToDay] = useState<string | null>(null);
+  const [newTaskTitle, setNewTaskTitle] = useState("");
+  const addInputRef = useRef<HTMLInputElement>(null);
   // Import state
   const [jsonInput, setJsonInput] = useState("");
   const [importError, setImportError] = useState("");
@@ -361,6 +364,36 @@ export default function WeeklySchedule() {
     setTasks((prev) => [...prev, { ...task, weekId: weekData.id, dayOfWeek: day }]);
     await patchTask(id, { weekId: weekData.id, dayOfWeek: day } as Partial<DBTask>);
   }
+
+  // ── Add task ────────────────────────────────────────────────────────────────
+
+  async function addTask(day: string) {
+    if (!newTaskTitle.trim() || !weekData) return;
+    const body = {
+      title: newTaskTitle.trim(),
+      status: "todo",
+      priority: "medium",
+      assignee: activePerson,
+      weekId: weekData.id,
+      dayOfWeek: day,
+      taskType: "client",
+    };
+    setNewTaskTitle("");
+    setAddingToDay(null);
+    try {
+      const res = await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        const task = await res.json();
+        setTasks((prev) => [...prev, task]);
+      }
+    } catch {}
+  }
+
+  useEffect(() => { if (addingToDay && addInputRef.current) addInputRef.current.focus(); }, [addingToDay]);
 
   // ── Drag & drop ────────────────────────────────────────────────────────────
 
@@ -690,7 +723,10 @@ export default function WeeklySchedule() {
                     const count = personTasks.filter((t) => t.dayOfWeek === day).length;
                     return (
                       <button key={day} onClick={() => setActiveDay(day)}
-                        className={`flex-1 min-w-0 py-2.5 px-1 rounded-lg text-center transition-colors cursor-pointer ${activeDay === day ? "bg-white text-gray-900 shadow-sm" : "text-gray-500"}`}>
+                        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOverDay(day); }}
+                        onDrop={(e) => { e.preventDefault(); e.stopPropagation(); if (draggingId) { patchTask(draggingId, { dayOfWeek: day }); setActiveDay(day); } setDraggingId(null); setDragOverDay(null); }}
+                        onDragLeave={() => setDragOverDay(null)}
+                        className={`flex-1 min-w-0 py-2.5 px-1 rounded-lg text-center transition-colors cursor-pointer ${activeDay === day ? "bg-white text-gray-900 shadow-sm" : "text-gray-500"} ${dragOverDay === day ? "ring-2 ring-yellow-300 bg-yellow-50" : ""}`}>
                         <span className="text-lg font-bold block">{dayDate ?? ""}</span>
                         <span className="text-xs text-gray-400">{day}</span>
                         {count > 0 && <span className={`block text-xs mt-0.5 ${activeDay === day ? "text-yellow-600" : "text-gray-400"}`}>{count}</span>}
@@ -698,11 +734,30 @@ export default function WeeklySchedule() {
                     );
                   })}
                 </div>
+                {/* Add task button (mobile) */}
+                {addingToDay === activeDay ? (
+                  <div className="mb-3">
+                    <input ref={addInputRef} value={newTaskTitle} onChange={(e) => setNewTaskTitle(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === "Enter") addTask(activeDay); if (e.key === "Escape") setAddingToDay(null); }}
+                      placeholder="Task title..."
+                      className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg outline-none focus:border-yellow-400 bg-gray-50 text-gray-900 placeholder-gray-400" />
+                    <div className="flex items-center gap-2 mt-2">
+                      <button onClick={() => addTask(activeDay)} className="px-4 py-1.5 text-sm font-semibold bg-gray-900 text-white rounded-lg hover:bg-gray-700 cursor-pointer">Add</button>
+                      <button onClick={() => setAddingToDay(null)} className="text-sm text-gray-400 hover:text-gray-600 cursor-pointer">Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <button onClick={() => { setAddingToDay(activeDay); setNewTaskTitle(""); }}
+                    className="w-full mb-3 py-2 border-2 border-dashed border-gray-200 rounded-xl text-sm text-gray-400 hover:text-gray-600 hover:border-gray-300 transition-colors cursor-pointer flex items-center justify-center gap-1.5">
+                    <Plus size={14} /> Add task
+                  </button>
+                )}
+
                 <div className="space-y-3">
                   {sortByPriority(personTasks.filter((t) => t.dayOfWeek === activeDay)).map((task, i) => (
-                    <TaskCard key={task.id} task={task} index={i} />
+                    <TaskCard key={task.id} task={task} index={i} draggable />
                   ))}
-                  {personTasks.filter((t) => t.dayOfWeek === activeDay).length === 0 && (
+                  {personTasks.filter((t) => t.dayOfWeek === activeDay).length === 0 && !addingToDay && (
                     <div className="h-20 border-2 border-dashed border-gray-200 rounded-2xl flex items-center justify-center"><p className="text-sm text-gray-300">No tasks</p></div>
                   )}
                 </div>
@@ -717,12 +772,30 @@ export default function WeeklySchedule() {
                   return (
                     <div key={day} onDragOver={(e) => onDragOver(e, day)} onDrop={(e) => onDrop(e, day)} onDragLeave={() => setDragOverDay(null)}
                       className={`min-h-32 rounded-2xl transition-all ${isOver ? "bg-yellow-50 ring-2 ring-yellow-300" : ""}`}>
-                      <div className="flex items-baseline gap-1.5 mb-3 px-1">
-                        <span className="text-2xl font-bold text-gray-900">{dayDate ?? ""}</span>
-                        <span className="text-sm text-gray-400 font-medium">/ {day}</span>
+                      <div className="flex items-center justify-between mb-3 px-1">
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="text-2xl font-bold text-gray-900">{dayDate ?? ""}</span>
+                          <span className="text-sm text-gray-400 font-medium">/ {day}</span>
+                        </div>
+                        <button onClick={() => { setAddingToDay(addingToDay === day ? null : day); setNewTaskTitle(""); }}
+                          className="w-6 h-6 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors cursor-pointer" title="Add task">
+                          <Plus size={14} />
+                        </button>
                       </div>
+                      {addingToDay === day && (
+                        <div className="mb-3 px-1">
+                          <input ref={addInputRef} value={newTaskTitle} onChange={(e) => setNewTaskTitle(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === "Enter") addTask(day); if (e.key === "Escape") setAddingToDay(null); }}
+                            placeholder="Task title..."
+                            className="w-full text-sm px-2.5 py-1.5 border border-gray-200 rounded-lg outline-none focus:border-yellow-400 bg-gray-50 text-gray-900 placeholder-gray-400" />
+                          <div className="flex items-center gap-2 mt-1.5">
+                            <button onClick={() => addTask(day)} className="px-3 py-1 text-xs font-semibold bg-gray-900 text-white rounded-lg hover:bg-gray-700 cursor-pointer">Add</button>
+                            <button onClick={() => setAddingToDay(null)} className="text-xs text-gray-400 hover:text-gray-600 cursor-pointer">Cancel</button>
+                          </div>
+                        </div>
+                      )}
                       <div className="space-y-3">
-                        {dayTasks.length === 0 && <div className="h-20 border-2 border-dashed border-gray-200 rounded-2xl flex items-center justify-center"><p className="text-xs text-gray-300">Drop here</p></div>}
+                        {dayTasks.length === 0 && addingToDay !== day && <div className="h-20 border-2 border-dashed border-gray-200 rounded-2xl flex items-center justify-center"><p className="text-xs text-gray-300">Drop here</p></div>}
                         {dayTasks.map((task, i) => <TaskCard key={task.id} task={task} index={i} draggable />)}
                       </div>
                     </div>
