@@ -97,6 +97,10 @@ function sortByPriority<T extends { priority: Priority }>(tasks: T[]): T[] {
   return [...tasks].sort((a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]);
 }
 
+function sortBySortOrder(tasks: DBTask[]): DBTask[] {
+  return [...tasks].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function PriorityIcon({ priority, size = 16 }: { priority: Priority; size?: number }) {
@@ -397,14 +401,70 @@ export default function WeeklySchedule() {
 
   // ── Drag & drop ────────────────────────────────────────────────────────────
 
-  function onDragStart(e: React.DragEvent, id: string) { setDraggingId(id); e.dataTransfer.effectAllowed = "move"; }
-  function onDragOver(e: React.DragEvent, day: string) { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setDragOverDay(day); }
-  function onDrop(e: React.DragEvent, day: string) {
-    e.preventDefault();
-    if (draggingId) patchTask(draggingId, { dayOfWeek: day });
-    setDraggingId(null); setDragOverDay(null);
+  const [dropTarget, setDropTarget] = useState<{ day: string; index: number } | null>(null);
+
+  function onDragStart(e: React.DragEvent, id: string) {
+    setDraggingId(id);
+    e.dataTransfer.effectAllowed = "move";
+    // Required for Firefox
+    e.dataTransfer.setData("text/plain", id);
   }
-  function onDragEnd() { setDraggingId(null); setDragOverDay(null); }
+
+  function onColumnDragOver(e: React.DragEvent, day: string) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDragOverDay(day);
+  }
+
+  function onCardDragOver(e: React.DragEvent, day: string, index: number) {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "move";
+    setDragOverDay(day);
+    setDropTarget({ day, index });
+  }
+
+  function onColumnDrop(e: React.DragEvent, day: string) {
+    e.preventDefault();
+    if (!draggingId) { setDraggingId(null); setDragOverDay(null); setDropTarget(null); return; }
+
+    const targetIndex = dropTarget?.day === day ? dropTarget.index : undefined;
+    const task = tasks.find((t) => t.id === draggingId);
+    if (!task) { setDraggingId(null); setDragOverDay(null); setDropTarget(null); return; }
+
+    const sameDay = task.dayOfWeek === day;
+    const dayTasks = sortBySortOrder(tasks.filter((t) => t.dayOfWeek === day && t.assignee === task.assignee && t.id !== draggingId));
+
+    // Insert at target index or end
+    const insertAt = targetIndex !== undefined ? targetIndex : dayTasks.length;
+    dayTasks.splice(insertAt, 0, task);
+
+    // Update sort orders for all tasks in this day
+    const updates: { id: string; sortOrder: number; dayOfWeek: string }[] = dayTasks.map((t, i) => ({
+      id: t.id, sortOrder: i, dayOfWeek: day,
+    }));
+
+    // Optimistic update
+    setTasks((prev) => {
+      const next = prev.map((t) => {
+        const u = updates.find((up) => up.id === t.id);
+        if (u) return { ...t, sortOrder: u.sortOrder, dayOfWeek: u.dayOfWeek };
+        return t;
+      });
+      return next;
+    });
+
+    // Persist changes
+    for (const u of updates) {
+      patchTask(u.id, { sortOrder: u.sortOrder, dayOfWeek: u.dayOfWeek } as Partial<DBTask>);
+    }
+
+    setDraggingId(null);
+    setDragOverDay(null);
+    setDropTarget(null);
+  }
+
+  function onDragEnd() { setDraggingId(null); setDragOverDay(null); setDropTarget(null); }
 
   // ── Import logic ───────────────────────────────────────────────────────────
 
@@ -439,10 +499,11 @@ export default function WeeklySchedule() {
         ws.setDate(ws.getDate() + offset);
         const dueDate = formatDateISO(ws);
 
-        for (const [i, task] of pd.tasks[day].entries()) {
-          const taskKey = `${personKey}-${day}-${i}`;
-          if (excludedTasks.has(taskKey)) continue;
-          allTasks.push({
+        // Build day tasks, sort by priority, then assign sort order
+        const dayItems = pd.tasks[day]
+          .map((task, i) => ({ task, origIndex: i }))
+          .filter(({ origIndex }) => !excludedTasks.has(`${personKey}-${day}-${origIndex}`))
+          .map(({ task }) => ({
             title: task.name,
             description: "",
             status: "todo",
@@ -456,9 +517,12 @@ export default function WeeklySchedule() {
             taskType: task.type,
             dependency: task.dep ?? "",
             delegate: task.delegate ?? "",
-            sortOrder: i,
-          });
-        }
+            sortOrder: 0,
+          }))
+          .sort((a, b) => PRIORITY_ORDER[a.priority as Priority] - PRIORITY_ORDER[b.priority as Priority]);
+
+        dayItems.forEach((item, idx) => { item.sortOrder = idx; });
+        allTasks.push(...dayItems);
       }
     }
 
@@ -507,20 +571,26 @@ export default function WeeklySchedule() {
 
   // ── Render: Task Card (shared between week view and backlog) ───────────────
 
-  function TaskCard({ task, index, showDay, draggable: isDraggable }: { task: DBTask; index: number; showDay?: boolean; draggable?: boolean }) {
+  function TaskCard({ task, index, showDay, draggable: isDraggable, dayForDrop }: { task: DBTask; index: number; showDay?: boolean; draggable?: boolean; dayForDrop?: string }) {
     const card = getCardColor(task.status as TaskStatus, index);
     const statusInfo = STATUS_LABEL[task.status as TaskStatus] ?? STATUS_LABEL.todo;
     const isDragging = draggingId === task.id;
+    const isDropBefore = dropTarget && dayForDrop && dropTarget.day === dayForDrop && dropTarget.index === index;
 
     return (
-      <div
-        draggable={isDraggable}
-        onDragStart={isDraggable ? (e) => onDragStart(e, task.id) : undefined}
-        onDragEnd={isDraggable ? onDragEnd : undefined}
-        onClick={() => cycleStatus(task.id)}
-        style={card.style}
-        className={`${card.className} rounded-2xl p-3.5 cursor-pointer transition-all hover:scale-[1.02] hover:shadow-md active:scale-[0.98] select-none relative group ${isDragging ? "opacity-40 scale-95" : ""}`}
-      >
+      <>
+        {isDropBefore && draggingId !== task.id && (
+          <div className="h-1 bg-yellow-400 rounded-full mx-2 my-1 transition-all" />
+        )}
+        <div
+          draggable={isDraggable}
+          onDragStart={isDraggable ? (e) => onDragStart(e, task.id) : undefined}
+          onDragEnd={isDraggable ? onDragEnd : undefined}
+          onDragOver={isDraggable && dayForDrop ? (e) => onCardDragOver(e, dayForDrop, index) : undefined}
+          onClick={() => cycleStatus(task.id)}
+          style={card.style}
+          className={`${card.className} rounded-2xl p-3.5 cursor-pointer transition-all hover:scale-[1.02] hover:shadow-md active:scale-[0.98] select-none relative group ${isDragging ? "opacity-40 scale-95" : ""}`}
+        >
         <button
           onClick={(e) => { e.stopPropagation(); openModal(task); }}
           className="absolute top-2.5 right-2.5 w-6 h-6 rounded-lg bg-white/60 hover:bg-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer z-10"
@@ -563,6 +633,7 @@ export default function WeeklySchedule() {
           </div>
         )}
       </div>
+      </>
     );
   }
 
@@ -724,8 +795,8 @@ export default function WeeklySchedule() {
                     return (
                       <button key={day} onClick={() => setActiveDay(day)}
                         onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOverDay(day); }}
-                        onDrop={(e) => { e.preventDefault(); e.stopPropagation(); if (draggingId) { patchTask(draggingId, { dayOfWeek: day }); setActiveDay(day); } setDraggingId(null); setDragOverDay(null); }}
-                        onDragLeave={() => setDragOverDay(null)}
+                        onDrop={(e) => { e.preventDefault(); e.stopPropagation(); onColumnDrop(e, day); setActiveDay(day); }}
+                        onDragLeave={() => { setDragOverDay(null); setDropTarget(null); }}
                         className={`flex-1 min-w-0 py-2.5 px-1 rounded-lg text-center transition-colors cursor-pointer ${activeDay === day ? "bg-white text-gray-900 shadow-sm" : "text-gray-500"} ${dragOverDay === day ? "ring-2 ring-yellow-300 bg-yellow-50" : ""}`}>
                         <span className="text-lg font-bold block">{dayDate ?? ""}</span>
                         <span className="text-xs text-gray-400">{day}</span>
@@ -754,8 +825,8 @@ export default function WeeklySchedule() {
                 )}
 
                 <div className="space-y-3">
-                  {sortByPriority(personTasks.filter((t) => t.dayOfWeek === activeDay)).map((task, i) => (
-                    <TaskCard key={task.id} task={task} index={i} draggable />
+                  {sortBySortOrder(personTasks.filter((t) => t.dayOfWeek === activeDay)).map((task, i) => (
+                    <TaskCard key={task.id} task={task} index={i} draggable dayForDrop={activeDay} />
                   ))}
                   {personTasks.filter((t) => t.dayOfWeek === activeDay).length === 0 && !addingToDay && (
                     <div className="h-20 border-2 border-dashed border-gray-200 rounded-2xl flex items-center justify-center"><p className="text-sm text-gray-300">No tasks</p></div>
@@ -767,10 +838,10 @@ export default function WeeklySchedule() {
               <div className="hidden md:grid grid-cols-5 gap-4">
                 {DAYS.map((day) => {
                   const dayDate = getDayDate(weekStart, day);
-                  const dayTasks = sortByPriority(personTasks.filter((t) => t.dayOfWeek === day));
+                  const dayTasks = sortBySortOrder(personTasks.filter((t) => t.dayOfWeek === day));
                   const isOver = dragOverDay === day;
                   return (
-                    <div key={day} onDragOver={(e) => onDragOver(e, day)} onDrop={(e) => onDrop(e, day)} onDragLeave={() => setDragOverDay(null)}
+                    <div key={day} onDragOver={(e) => onColumnDragOver(e, day)} onDrop={(e) => onColumnDrop(e, day)} onDragLeave={() => { setDragOverDay(null); setDropTarget(null); }}
                       className={`min-h-32 rounded-2xl transition-all ${isOver ? "bg-yellow-50 ring-2 ring-yellow-300" : ""}`}>
                       <div className="flex items-center justify-between mb-3 px-1">
                         <div className="flex items-baseline gap-1.5">
@@ -796,7 +867,7 @@ export default function WeeklySchedule() {
                       )}
                       <div className="space-y-3">
                         {dayTasks.length === 0 && addingToDay !== day && <div className="h-20 border-2 border-dashed border-gray-200 rounded-2xl flex items-center justify-center"><p className="text-xs text-gray-300">Drop here</p></div>}
-                        {dayTasks.map((task, i) => <TaskCard key={task.id} task={task} index={i} draggable />)}
+                        {dayTasks.map((task, i) => <TaskCard key={task.id} task={task} index={i} draggable dayForDrop={day} />)}
                       </div>
                     </div>
                   );
