@@ -653,13 +653,13 @@ export default function WeeklySchedule() {
               {assignees.length > 0 && (
                 <div className="flex items-center gap-1 mb-5 bg-gray-100 rounded-xl p-1 w-fit overflow-x-auto">
                   {assignees.map((a) => {
-                    const firstName = a.split(" ")[0];
+                    const [firstName, lastName] = [a.split(" ")[0], a.split(" ").slice(1).join(" ")];
                     const displayName = DISPLAY_NAMES[firstName.toLowerCase()] ?? firstName;
+                    const nameParts = [firstName, lastName, displayName].map((n) => n.toLowerCase()).filter(Boolean);
+                    const allAliases = [...new Set(nameParts.flatMap((n) => [n, ...(NAME_ALIASES[n] ?? [])]))];
                     const hoursKey = Object.keys(weekData?.person_hours ?? {}).find((k) => {
                       const kl = k.toLowerCase();
-                      const fl = firstName.toLowerCase();
-                      const aliases = [fl, ...(NAME_ALIASES[fl] ?? [])];
-                      return aliases.some((al) => kl.startsWith(al.slice(0, 3)) || al.startsWith(kl.slice(0, 3)));
+                      return allAliases.some((al) => kl === al || kl.startsWith(al.slice(0, 3)) || al.startsWith(kl.slice(0, 3)));
                     });
                     const hours = hoursKey ? weekData?.person_hours?.[hoursKey] : null;
                     return (
