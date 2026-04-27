@@ -747,6 +747,9 @@ export default function WeeklySchedule() {
             <div className="flex items-center gap-3">
               <button onClick={() => parseJSON(jsonInput)} className="px-5 py-2.5 bg-yellow-400 text-gray-900 font-semibold rounded-xl hover:bg-yellow-500 transition-colors cursor-pointer">Parse JSON</button>
               <button onClick={() => fileRef.current?.click()} className="flex items-center gap-2 px-5 py-2.5 border border-gray-200 text-gray-600 font-medium rounded-xl hover:bg-gray-50 transition-colors cursor-pointer"><Upload size={16} />Upload File</button>
+              {(parsedSchedule || jsonInput) && (
+                <button onClick={() => { setJsonInput(""); setParsedSchedule(null); setImportError(""); setImportResult(null); setExcludedTasks(new Set()); }} className="flex items-center gap-1.5 px-4 py-2.5 text-gray-500 hover:text-gray-900 text-sm font-medium cursor-pointer transition-colors"><X size={14} />Reset</button>
+              )}
               <input ref={fileRef} type="file" accept=".json" className="hidden" onChange={(e) => { if (e.target.files?.[0]) { const r = new FileReader(); r.onload = (ev) => { const t = ev.target?.result as string; setJsonInput(t); parseJSON(t); }; r.readAsText(e.target.files[0]); } }} />
             </div>
 
