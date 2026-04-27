@@ -174,6 +174,11 @@ const NAME_ALIASES: Record<string, string[]> = {
   yetunde: ["olaniyan", "ayoka"],
 };
 
+// Display name overrides for person tabs
+const DISPLAY_NAMES: Record<string, string> = {
+  olaniyan: "Ayoka",
+};
+
 function findTeamMember(personKey: string, members: TeamMember[]): string {
   const key = personKey.toLowerCase();
   const aliases = [key, ...(NAME_ALIASES[key] ?? [])];
@@ -648,11 +653,19 @@ export default function WeeklySchedule() {
               {assignees.length > 0 && (
                 <div className="flex items-center gap-1 mb-5 bg-gray-100 rounded-xl p-1 w-fit overflow-x-auto">
                   {assignees.map((a) => {
-                    const hours = weekData?.person_hours?.[a.split(" ")[0].toLowerCase()] ?? null;
+                    const firstName = a.split(" ")[0];
+                    const displayName = DISPLAY_NAMES[firstName.toLowerCase()] ?? firstName;
+                    const hoursKey = Object.keys(weekData?.person_hours ?? {}).find((k) => {
+                      const kl = k.toLowerCase();
+                      const fl = firstName.toLowerCase();
+                      const aliases = [fl, ...(NAME_ALIASES[fl] ?? [])];
+                      return aliases.some((al) => kl.startsWith(al.slice(0, 3)) || al.startsWith(kl.slice(0, 3)));
+                    });
+                    const hours = hoursKey ? weekData?.person_hours?.[hoursKey] : null;
                     return (
                       <button key={a} onClick={() => setActivePerson(a)}
                         className={`px-4 py-2 rounded-lg text-sm font-semibold whitespace-nowrap transition-colors cursor-pointer ${activePerson === a ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
-                        {a.split(" ")[0]}{hours ? ` · ${hours}h` : ""}
+                        {displayName}{hours ? ` · ${hours}h` : ""}
                       </button>
                     );
                   })}
