@@ -141,7 +141,17 @@ function getMonday(d: Date): Date {
 }
 
 function formatDateISO(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  // Use local date parts to avoid timezone shifts
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** Parse a YYYY-MM-DD string as a local date (no timezone shift) */
+function parseLocalDate(s: string): Date {
+  const [y, m, d] = s.split("-").map(Number);
+  return new Date(y, m - 1, d);
 }
 
 function formatWeekLabel(d: Date): string {
@@ -152,7 +162,7 @@ function formatWeekLabel(d: Date): string {
 }
 
 function getDayDate(weekStart: string, day: string): number | null {
-  const d = new Date(weekStart + "T00:00:00");
+  const d = parseLocalDate(weekStart);
   if (isNaN(d.getTime())) return null;
   d.setDate(d.getDate() + (DAY_OFFSET[day] ?? 0));
   return d.getDate();
@@ -290,7 +300,7 @@ export default function WeeklySchedule() {
   // ── Week navigation ────────────────────────────────────────────────────────
 
   function shiftWeek(delta: number) {
-    const d = new Date(weekStart + "T00:00:00");
+    const d = parseLocalDate(weekStart);
     d.setDate(d.getDate() + delta * 7);
     setWeekStart(formatDateISO(d));
   }
@@ -495,7 +505,7 @@ export default function WeeklySchedule() {
 
       for (const day of Object.keys(pd.tasks)) {
         const offset = DAY_OFFSET[day] ?? 0;
-        const ws = new Date(importWeek + "T00:00:00");
+        const ws = parseLocalDate(importWeek);
         ws.setDate(ws.getDate() + offset);
         const dueDate = formatDateISO(ws);
 
@@ -679,7 +689,7 @@ export default function WeeklySchedule() {
             <button onClick={() => shiftWeek(-1)} className="w-8 h-8 rounded-lg border border-gray-200 flex items-center justify-center hover:bg-gray-50 cursor-pointer"><ChevronLeft size={16} /></button>
             <div className="flex items-center gap-2">
               <Calendar size={14} className="text-gray-400" />
-              <span className="text-sm font-semibold text-gray-900">{weekData?.week_label || formatWeekLabel(new Date(weekStart + "T00:00:00"))}</span>
+              <span className="text-sm font-semibold text-gray-900">{weekData?.week_label || formatWeekLabel(parseLocalDate(weekStart))}</span>
             </div>
             <button onClick={() => shiftWeek(1)} className="w-8 h-8 rounded-lg border border-gray-200 flex items-center justify-center hover:bg-gray-50 cursor-pointer"><ChevronRight size={16} /></button>
             <button onClick={() => setWeekStart(formatDateISO(getMonday(new Date())))} className="text-xs text-gray-500 hover:text-gray-900 border border-gray-200 rounded-lg px-3 py-1.5 cursor-pointer">Today</button>

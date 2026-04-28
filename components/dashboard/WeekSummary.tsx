@@ -15,7 +15,10 @@ function getMonday(d: Date): string {
   const day = d.getDay();
   const diff = d.getDate() - day + (day === 0 ? -6 : 1);
   const mon = new Date(d.getFullYear(), d.getMonth(), diff);
-  return mon.toISOString().slice(0, 10);
+  const y = mon.getFullYear();
+  const m = String(mon.getMonth() + 1).padStart(2, "0");
+  const dd = String(mon.getDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
 }
 
 export default function WeekSummary() {
