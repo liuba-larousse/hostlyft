@@ -20,6 +20,8 @@ function toTask(row: Record<string, unknown>) {
     dependency: row.dependency ?? '',
     delegate: row.delegate ?? '',
     sortOrder: row.sort_order ?? 0,
+    completedBy: row.completed_by ?? null,
+    completedAt: row.completed_at ?? null,
     createdAt: row.created_at,
   };
 }
@@ -38,7 +40,16 @@ export async function PATCH(
   const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if ('title' in body)       update.title       = body.title;
   if ('description' in body) update.description = body.description;
-  if ('status' in body)      update.status      = body.status;
+  if ('status' in body) {
+    update.status = body.status;
+    if (body.status === 'done') {
+      update.completed_by = session.user?.name ?? session.user?.email ?? 'unknown';
+      update.completed_at = new Date().toISOString();
+    } else {
+      update.completed_by = null;
+      update.completed_at = null;
+    }
+  }
   if ('priority' in body)    update.priority    = body.priority;
   if ('assignee' in body)    update.assignee    = body.assignee;
   if ('client' in body)      update.client      = body.client;

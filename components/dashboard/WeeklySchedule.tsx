@@ -59,6 +59,8 @@ interface DBTask {
   dependency: string;
   delegate: string;
   sortOrder: number;
+  completedBy: string | null;
+  completedAt: string | null;
   createdAt: string;
 }
 
@@ -640,6 +642,15 @@ export default function WeeklySchedule() {
           <div className="flex flex-wrap gap-1 mt-2">
             {task.delegate && <span className="text-xs bg-white/50 rounded-lg px-1.5 py-0.5 text-gray-600">{task.delegate}</span>}
             {task.dependency && <span className="text-xs bg-white/50 rounded-lg px-1.5 py-0.5 text-gray-500 italic">{task.dependency}</span>}
+          </div>
+        )}
+        {task.status === "done" && task.completedBy && (
+          <div className="flex items-center gap-1.5 mt-2 text-xs text-emerald-700/70">
+            <Check size={11} />
+            <span>{task.completedBy}</span>
+            {task.completedAt && (
+              <span className="text-emerald-600/50">· {new Date(task.completedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
+            )}
           </div>
         )}
       </div>

@@ -20,6 +20,8 @@ function toTask(row: Record<string, unknown>) {
     dependency: row.dependency ?? '',
     delegate: row.delegate ?? '',
     sortOrder: row.sort_order ?? 0,
+    completedBy: row.completed_by ?? null,
+    completedAt: row.completed_at ?? null,
     createdAt: row.created_at,
   };
 }
