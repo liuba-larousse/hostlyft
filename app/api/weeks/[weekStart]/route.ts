@@ -33,8 +33,14 @@ export async function GET(
   const session = await auth();
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { weekStart } = await params;
+  const { weekStart: rawWeekStart } = await params;
   const supabase = createSupabaseAdmin();
+
+  // Snap to Monday
+  const d = new Date(rawWeekStart + 'T12:00:00');
+  const day = d.getDay();
+  d.setDate(d.getDate() - day + (day === 0 ? -6 : 1));
+  const weekStart = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
   // Get the week
   const { data: week, error: weekErr } = await supabase

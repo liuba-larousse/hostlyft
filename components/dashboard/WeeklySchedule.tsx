@@ -498,7 +498,8 @@ export default function WeeklySchedule() {
       setImportError("");
       setExcludedTasks(new Set());
       const ws = parseWeekStart(parsed.week);
-      setImportWeek(ws ? formatDateISO(ws) : formatDateISO(getMonday(new Date())));
+      // Always snap to Monday of the parsed week
+      setImportWeek(ws ? formatDateISO(getMonday(ws)) : formatDateISO(getMonday(new Date())));
     } catch { setImportError("Invalid JSON"); }
   }
 
