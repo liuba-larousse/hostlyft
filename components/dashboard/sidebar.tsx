@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
-import { LayoutDashboard, Bot, Package, Users, Briefcase, Megaphone, LogOut, FileText, CalendarDays, Menu, X } from "lucide-react";
+import { LayoutDashboard, Bot, Package, Users, Briefcase, Megaphone, LogOut, FileText, CalendarDays, Menu, X, BarChart3 } from "lucide-react";
 import { clsx } from "clsx";
 
 const nav = [
@@ -11,6 +11,7 @@ const nav = [
   { href: "/dashboard/agents", label: "Cloud Agents", icon: Bot },
   { href: "/dashboard/artifacts", label: "Artifacts", icon: Package },
   { href: "/dashboard/schedule", label: "Schedule", icon: CalendarDays },
+  { href: "/dashboard/cloud9", label: "Cloud 9", icon: BarChart3 },
   { href: "/dashboard/team", label: "Team", icon: Users },
   { href: "/dashboard/clients", label: "Clients", icon: Briefcase },
   { href: "/dashboard/marketing", label: "Marketing", icon: Megaphone },
