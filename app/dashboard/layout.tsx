@@ -20,14 +20,21 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const displayName = `${member.first_name} ${member.last_name}`;
 
   return (
-    <div className="flex min-h-screen">
-      <Sidebar
-        userName={displayName}
-        userEmail={session.user.email}
-        userImage={session.user.image ?? null}
-      />
-      <main className="flex-1 overflow-auto pt-[57px] md:pt-0">{children}</main>
-      <CatMascot />
-    </div>
+    <>
+      <style>{`@media print { .sidebar-wrap, .cat-wrap { display: none !important; } main { padding-top: 0 !important; } }`}</style>
+      <div className="flex min-h-screen">
+        <div className="sidebar-wrap">
+          <Sidebar
+            userName={displayName}
+            userEmail={session.user.email}
+            userImage={session.user.image ?? null}
+          />
+        </div>
+        <main className="flex-1 overflow-auto pt-[57px] md:pt-0">{children}</main>
+        <div className="cat-wrap">
+          <CatMascot />
+        </div>
+      </div>
+    </>
   );
 }

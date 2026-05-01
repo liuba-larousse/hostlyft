@@ -456,11 +456,21 @@ function AnalyticsView({ analytics, totalStats, matrix }) {
 
   return (
     <div className="max-w-[1600px] mx-auto px-8 py-8">
-      <div className="mb-10">
-        <div className="text-[10px] uppercase tracking-[0.3em] text-stone-500 mb-1">Performance · Week of {matrix.dates[0]} → {matrix.dates[matrix.dates.length - 1]}</div>
-        <h1 className="display text-4xl font-light leading-tight max-w-3xl">
-          Which pricing actions <em className="italic font-normal">actually</em> drove revenue this week?
-        </h1>
+      <div className="mb-10 flex items-start justify-between gap-6">
+        <div>
+          <div className="text-[10px] uppercase tracking-[0.3em] text-stone-500 mb-1">Performance · Week of {matrix.dates[0]} → {matrix.dates[matrix.dates.length - 1]}</div>
+          <h1 className="display text-4xl font-light leading-tight max-w-3xl">
+            Which pricing actions <em className="italic font-normal">actually</em> drove revenue this week?
+          </h1>
+        </div>
+        <button
+          onClick={() => window.print()}
+          className="no-print shrink-0 px-5 py-2 text-[11px] uppercase tracking-[0.2em] font-medium bg-stone-900 hover:bg-stone-800 transition-colors cursor-pointer flex items-center gap-2"
+          style={{ color: '#FFFFFF' }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+          Save as PDF
+        </button>
       </div>
 
       {/* CHAMPIONS — three side-by-side */}
@@ -1055,10 +1065,33 @@ export default function Cloud9Matrix() {
         .matrix-wrap::-webkit-scrollbar-track { background: #F0EBE2; }
         .matrix-wrap::-webkit-scrollbar-thumb { background: #A8A29E; border-radius: 0; }
         .matrix-wrap::-webkit-scrollbar-thumb:hover { background: #78716C; }
+
+        @media print {
+          /* Hide non-printable UI */
+          .no-print, .no-print * { display: none !important; }
+          /* Reset layout */
+          body { background: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          .min-h-screen { min-height: auto !important; }
+          /* Remove sticky positioning */
+          .sticky { position: static !important; }
+          /* Full width, no overflow hiding */
+          .overflow-x-auto { overflow: visible !important; }
+          .max-w-\\[1600px\\] { max-width: 100% !important; }
+          /* Ensure tables don't break mid-row */
+          tr { break-inside: avoid; }
+          /* Section breaks */
+          .mb-12 { break-inside: avoid; page-break-inside: avoid; }
+          /* Show grid columns fully */
+          .grid { break-inside: avoid; }
+          /* Reasonable page margins */
+          @page { margin: 0.6in 0.5in; size: landscape; }
+          /* Hide backdrop blur header */
+          .backdrop-blur { backdrop-filter: none !important; background: white !important; }
+        }
       `}</style>
 
       {/* Header */}
-      <div className="border-b border-stone-300 bg-[#FAF8F4]/95 backdrop-blur sticky top-0 z-30">
+      <div className="border-b border-stone-300 bg-[#FAF8F4]/95 backdrop-blur sticky top-0 z-30 no-print">
         <div className="max-w-[1600px] mx-auto px-8 py-5 flex items-baseline justify-between gap-6">
           <div>
             <div className="text-[10px] uppercase tracking-[0.3em] text-stone-500 mb-1">Cloud9 Revenue Operations</div>
@@ -1240,7 +1273,7 @@ export default function Cloud9Matrix() {
           </div>
 
           {/* Toolbar */}
-          <div className="flex items-center justify-between mb-4 gap-4 flex-wrap">
+          <div className="flex items-center justify-between mb-4 gap-4 flex-wrap no-print">
             <div className="flex items-center gap-2">
               <span className="text-[10px] uppercase tracking-[0.2em] text-stone-500 mr-2">View</span>
               {[
