@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Link2, Link2Off, Eye, EyeOff, ToggleLeft, ToggleRight, Loader2, CheckCircle2, ChevronDown, ChevronUp } from "lucide-react";
 import { clsx } from "clsx";
+import OtaListingsEditor from "./OtaListingsEditor";
 
 interface HubSpotContact {
   id: string;
@@ -211,6 +212,13 @@ export default function PriceLabsClients({ contacts, initialClients }: Props) {
                   </button>
                 )}
               </div>
+
+              {/* OTA listings for connected clients */}
+              {linked && (
+                <div className="px-6 pb-4">
+                  <OtaListingsEditor clientId={linked.id} clientName={contact.name} />
+                </div>
+              )}
 
               {/* Inline connect form */}
               {!linked && isExpanded && (
