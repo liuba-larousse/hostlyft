@@ -43,13 +43,19 @@ async function scrapeWithBrowser(url: string, ota: 'vrbo' | 'booking_com'): Prom
     await context.close();
 
     if (ota === 'vrbo') {
-      // VRBO uses 1-10 scale. DOM has itemprop="aggregateRating" with score.
-      // Page shows: "10 Exceptional" or "9.2 Wonderful" + "See all X reviews"
+      // Check for no reviews
+      if (html.match(/No reviews yet|Be the first to review/i)) {
+        return { score: 0, reviewCount: 0 };
+      }
+      // VRBO uses 1-10 scale. DOM has itemprop="aggregateRating" and data-stid="content-hotel-reviewsummary"
+      // The score badge shows "10" with text like "Exceptional"
       const scoreMatch = html.match(/itemprop="ratingValue"[^>]*content="(\d{1,2}\.?\d?)"/i)
-        ?? html.match(/(\d{1,2}(?:\.\d)?)\s*(?:\/\s*10\s*)?(?:Exceptional|Wonderful|Superb|Very good|Good|Pleasant|Review score)/i)
+        ?? html.match(/data-stid="content-hotel-reviewsummary"[\s\S]*?(\d{1,2}(?:\.\d)?)\s*</)
+        ?? html.match(/(\d{1,2}(?:\.\d)?)\s*(?:\/\s*10\s*)?(?:Exceptional|Wonderful|Superb|Very good|Good|Pleasant)/i)
         ?? html.match(/"ratingValue"\s*:\s*"?(\d{1,2}\.?\d?)"?/);
       const countMatch = html.match(/itemprop="reviewCount"[^>]*content="(\d+)"/i)
-        ?? html.match(/(?:See\s+)?(?:all\s+)?(\d+)\s*reviews?/i)
+        ?? html.match(/See\s+all\s+(\d+)\s*reviews?/i)
+        ?? html.match(/aria-label="See\s+all\s+(\d+)\s*reviews?"/i)
         ?? html.match(/"reviewCount"\s*:\s*"?(\d+)"?/);
 
       if (scoreMatch) {
@@ -58,10 +64,14 @@ async function scrapeWithBrowser(url: string, ota: 'vrbo' | 'booking_com'): Prom
     }
 
     if (ota === 'booking_com') {
+      // Check for "No reviews yet" first
+      if (html.match(/No reviews yet|No review score yet/i)) {
+        return { score: 0, reviewCount: 0 };
+      }
       // Booking.com: score out of 10 like "9.4" + "X reviews"
-      const scoreMatch = html.match(/(\d\.\d)\s*(?:\/\s*10)?.*?(?:Superb|Exceptional|Wonderful|Very Good|Good|Pleasant|Review score)/i)
-        ?? html.match(/"ratingValue"\s*:\s*"?(\d\.?\d?)"?/)
-        ?? html.match(/data-testid="review-score-component"[^>]*>[^<]*?(\d\.\d)/);
+      const scoreMatch = html.match(/"ratingValue"\s*:\s*"?(\d\.?\d?)"?/)
+        ?? html.match(/data-testid="review-score-component"[^>]*>[^<]*?(\d\.\d)/)
+        ?? html.match(/(\d\.\d)\s*(?:\/\s*10)?\s*(?:Superb|Exceptional|Wonderful|Very [Gg]ood|Good|Pleasant|Passable|Review score)/i);
       const countMatch = html.match(/(\d[\d,]*)\s*reviews?/i)
         ?? html.match(/"reviewCount"\s*:\s*"?(\d+)"?/);
 

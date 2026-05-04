@@ -168,12 +168,18 @@ export default function OtaScoresView({ initialScores }: { initialScores: ScoreR
                             </a>
                           </td>
                           <td className="px-4 py-3 text-center">
-                            <span className={`inline-block px-3 py-1 rounded-full text-sm font-bold ${color.bg} ${color.text}`}>
-                              {s.overall_score.toFixed(2)}
-                              <span className="text-xs font-normal opacity-60 ml-0.5">
-                                /{s.ota_listings.ota_name === "airbnb" ? "5" : "10"}
+                            {s.overall_score === 0 && s.review_count === 0 ? (
+                              <span className="inline-block px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-400">
+                                N/A
                               </span>
-                            </span>
+                            ) : (
+                              <span className={`inline-block px-3 py-1 rounded-full text-sm font-bold ${color.bg} ${color.text}`}>
+                                {s.overall_score.toFixed(2)}
+                                <span className="text-xs font-normal opacity-60 ml-0.5">
+                                  /{s.ota_listings.ota_name === "airbnb" ? "5" : "10"}
+                                </span>
+                              </span>
+                            )}
                           </td>
                           <td className="px-4 py-3 text-right text-gray-500">{s.review_count}</td>
                           <td className="px-6 py-3 text-right text-xs text-gray-400">
