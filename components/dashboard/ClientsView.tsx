@@ -172,6 +172,7 @@ export default function ClientsView({
   const [dateRange, setDateRange] = useState<DateRange>('this_week');
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
+  const [showLeads, setShowLeads] = useState(false);
   const [tick, setTick] = useState(0); // forces re-read of localStorage
 
   // Modal
@@ -341,6 +342,8 @@ export default function ClientsView({
   const filtered = allContacts
     .filter(c => {
       const status = effectiveStatus(c);
+      // Hide leads when toggle is off (unless explicitly filtering for leads)
+      if (!showLeads && status === 'lead' && filter !== 'lead') return false;
       const matchF =
         filter === 'all' ||
         status === filter ||
@@ -492,7 +495,18 @@ export default function ClientsView({
 
       {/* Header */}
       <div className="flex items-center justify-between mb-5">
-        <h1 className="text-xl font-medium text-gray-900">Clients &amp; leads</h1>
+        <div className="flex items-center gap-4">
+          <h1 className="text-xl font-medium text-gray-900">Clients & Leads</h1>
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <span className="text-xs text-gray-500">Show Leads</span>
+            <button
+              onClick={() => setShowLeads((v) => !v)}
+              className={`relative w-9 h-5 rounded-full transition-colors ${showLeads ? "bg-yellow-400" : "bg-gray-200"}`}
+            >
+              <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${showLeads ? "translate-x-4" : ""}`} />
+            </button>
+          </label>
+        </div>
         <div className="flex items-center gap-4 text-xs font-medium">
           <a href="https://track.toggl.com" target="_blank" rel="noopener"
             className="flex items-center gap-1.5" style={{ color: '#9B2EAD' }}>
