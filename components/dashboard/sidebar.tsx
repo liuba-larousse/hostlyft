@@ -3,10 +3,18 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
-import { LayoutDashboard, Bot, Package, Users, Briefcase, Megaphone, LogOut, FileText, CalendarDays, Menu, X, BarChart3 } from "lucide-react";
+import { LayoutDashboard, Bot, Package, Users, Briefcase, Megaphone, LogOut, FileText, CalendarDays, Menu, X, BarChart3, Settings, Star } from "lucide-react";
 import { clsx } from "clsx";
+import type { LucideIcon } from "lucide-react";
 
-const nav = [
+interface NavItem {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+  sub?: { href: string; label: string; icon: LucideIcon }[];
+}
+
+const nav: NavItem[] = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
   { href: "/dashboard/agents", label: "Cloud Agents", icon: Bot },
   { href: "/dashboard/artifacts", label: "Artifacts", icon: Package },
@@ -15,7 +23,13 @@ const nav = [
   { href: "/dashboard/team", label: "Team", icon: Users },
   { href: "/dashboard/clients", label: "Clients", icon: Briefcase },
   { href: "/dashboard/marketing", label: "Marketing", icon: Megaphone },
-  { href: "/dashboard/client-reports", label: "Client Reports", icon: FileText },
+  {
+    href: "/dashboard/client-reports", label: "Client Reports", icon: FileText,
+    sub: [
+      { href: "/dashboard/client-reports/ota-scores", label: "OTA Scores", icon: Star },
+      { href: "/dashboard/client-reports/manage", label: "Manage Clients", icon: Settings },
+    ],
+  },
 ];
 
 interface Props {
@@ -41,23 +55,47 @@ export function Sidebar({ userName, userEmail, userImage }: Props) {
   const navContent = (
     <>
       <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-        {nav.map(({ href, label, icon: Icon }) => {
+        {nav.map(({ href, label, icon: Icon, sub }) => {
           const active = href === "/dashboard" ? pathname === "/dashboard" : pathname.startsWith(href);
           return (
-            <Link
-              key={href}
-              href={href}
-              onClick={() => setOpen(false)}
-              className={clsx(
-                "flex items-center gap-3 px-3 py-2.5 rounded-lg text-base transition-colors",
-                active
-                  ? "bg-yellow-50 text-yellow-700 font-semibold"
-                  : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+            <div key={href}>
+              <Link
+                href={href}
+                onClick={() => setOpen(false)}
+                className={clsx(
+                  "flex items-center gap-3 px-3 py-2.5 rounded-lg text-base transition-colors",
+                  active
+                    ? "bg-yellow-50 text-yellow-700 font-semibold"
+                    : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+                )}
+              >
+                <Icon size={18} strokeWidth={1.8} />
+                {label}
+              </Link>
+              {sub && active && (
+                <div className="ml-7 mt-0.5 space-y-0.5">
+                  {sub.map(({ href: subHref, label: subLabel, icon: SubIcon }) => {
+                    const subActive = pathname === subHref || pathname.startsWith(subHref + "/");
+                    return (
+                      <Link
+                        key={subHref}
+                        href={subHref}
+                        onClick={() => setOpen(false)}
+                        className={clsx(
+                          "flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-sm transition-colors",
+                          subActive
+                            ? "text-yellow-700 font-semibold"
+                            : "text-gray-500 hover:text-gray-800 hover:bg-gray-50"
+                        )}
+                      >
+                        <SubIcon size={14} strokeWidth={1.8} />
+                        {subLabel}
+                      </Link>
+                    );
+                  })}
+                </div>
               )}
-            >
-              <Icon size={18} strokeWidth={1.8} />
-              {label}
-            </Link>
+            </div>
           );
         })}
       </nav>
