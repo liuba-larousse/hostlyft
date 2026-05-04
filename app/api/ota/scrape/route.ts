@@ -43,18 +43,17 @@ async function scrapeWithBrowser(url: string, ota: 'vrbo' | 'booking_com'): Prom
     await context.close();
 
     if (ota === 'vrbo') {
-      // VRBO shows: "10 Exceptional" or "9.2 Wonderful" + "See all X reviews"
-      // Score can be out of 10 (whole number or decimal)
-      const scoreMatch = html.match(/(\d{1,2}(?:\.\d)?)\s*(?:\/\s*10\s*)?(?:Exceptional|Wonderful|Superb|Very good|Good|Pleasant|Review score)/i)
+      // VRBO uses 1-10 scale. DOM has itemprop="aggregateRating" with score.
+      // Page shows: "10 Exceptional" or "9.2 Wonderful" + "See all X reviews"
+      const scoreMatch = html.match(/itemprop="ratingValue"[^>]*content="(\d{1,2}\.?\d?)"/i)
+        ?? html.match(/(\d{1,2}(?:\.\d)?)\s*(?:\/\s*10\s*)?(?:Exceptional|Wonderful|Superb|Very good|Good|Pleasant|Review score)/i)
         ?? html.match(/"ratingValue"\s*:\s*"?(\d{1,2}\.?\d?)"?/);
-      const countMatch = html.match(/(?:See\s+)?(?:all\s+)?(\d+)\s*reviews?/i)
+      const countMatch = html.match(/itemprop="reviewCount"[^>]*content="(\d+)"/i)
+        ?? html.match(/(?:See\s+)?(?:all\s+)?(\d+)\s*reviews?/i)
         ?? html.match(/"reviewCount"\s*:\s*"?(\d+)"?/);
 
       if (scoreMatch) {
-        const raw = parseFloat(scoreMatch[1]);
-        // VRBO uses 1-10 scale; normalize to 1-5 for consistent display
-        const score = raw > 5 ? raw / 2 : raw;
-        return { score, reviewCount: countMatch ? parseInt(countMatch[1]) : 0 };
+        return { score: parseFloat(scoreMatch[1]), reviewCount: countMatch ? parseInt(countMatch[1]) : 0 };
       }
     }
 

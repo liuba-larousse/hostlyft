@@ -26,13 +26,19 @@ const OTA_LABELS: Record<string, string> = {
 };
 
 function getScoreColor(ota: string, score: number): { bg: string; text: string } {
+  if (ota === "vrbo") {
+    // VRBO uses 1-10 scale
+    if (score < 7.0) return { bg: "bg-red-100", text: "text-red-700" };
+    if (score < 9.0) return { bg: "bg-yellow-100", text: "text-yellow-700" };
+    return { bg: "bg-emerald-100", text: "text-emerald-700" };
+  }
   if (ota === "booking_com") {
     // Booking.com uses 1-10 scale
     if (score < 7.0) return { bg: "bg-red-100", text: "text-red-700" };
     if (score < 8.5) return { bg: "bg-yellow-100", text: "text-yellow-700" };
     return { bg: "bg-emerald-100", text: "text-emerald-700" };
   }
-  // Airbnb and VRBO use 1-5 scale
+  // Airbnb uses 1-5 scale
   if (score < 4.2) return { bg: "bg-red-100", text: "text-red-700" };
   if (score < 4.8) return { bg: "bg-yellow-100", text: "text-yellow-700" };
   return { bg: "bg-emerald-100", text: "text-emerald-700" };
@@ -164,6 +170,9 @@ export default function OtaScoresView({ initialScores }: { initialScores: ScoreR
                           <td className="px-4 py-3 text-center">
                             <span className={`inline-block px-3 py-1 rounded-full text-sm font-bold ${color.bg} ${color.text}`}>
                               {s.overall_score.toFixed(2)}
+                              <span className="text-xs font-normal opacity-60 ml-0.5">
+                                /{s.ota_listings.ota_name === "airbnb" ? "5" : "10"}
+                              </span>
                             </span>
                           </td>
                           <td className="px-4 py-3 text-right text-gray-500">{s.review_count}</td>
