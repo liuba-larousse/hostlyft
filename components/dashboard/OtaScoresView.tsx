@@ -170,7 +170,7 @@ export default function OtaScoresView({ initialScores }: { initialScores: ScoreR
                           <td className="px-4 py-3 text-center">
                             {s.overall_score === 0 && s.review_count === 0 ? (
                               <span className="inline-block px-3 py-1 rounded-full text-sm font-medium bg-gray-100 text-gray-400">
-                                N/A
+                                No reviews
                               </span>
                             ) : (
                               <span className={`inline-block px-3 py-1 rounded-full text-sm font-bold ${color.bg} ${color.text}`}>
