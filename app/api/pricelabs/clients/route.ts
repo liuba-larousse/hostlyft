@@ -10,7 +10,7 @@ export async function GET() {
   const supabase = createSupabaseAdmin();
   const { data, error } = await supabase
     .from('pricelabs_clients')
-    .select('id, client_name, email, active, hubspot_contact_id, created_at')
+    .select('id, client_name, email, active, hubspot_contact_id, connection_type, created_at')
     .order('client_name');
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -21,7 +21,28 @@ export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { hubspot_contact_id, client_name, email, password } = await req.json();
+  const { hubspot_contact_id, client_name, email, password, connection_type } = await req.json();
+
+  // RM Portal connection: no individual credentials needed
+  if (connection_type === 'rm_portal') {
+    if (!client_name) return NextResponse.json({ error: 'client_name is required' }, { status: 400 });
+    const supabase = createSupabaseAdmin();
+    const { data, error } = await supabase
+      .from('pricelabs_clients')
+      .insert({
+        client_name,
+        email: '',
+        password_encrypted: '',
+        connection_type: 'rm_portal',
+        hubspot_contact_id: hubspot_contact_id ?? null,
+      })
+      .select('id, client_name, email, active, hubspot_contact_id, connection_type, created_at')
+      .single();
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json(data, { status: 201 });
+  }
+
+  // Direct connection: requires individual credentials
   if (!client_name || !email || !password) {
     return NextResponse.json({ error: 'client_name, email and password are required' }, { status: 400 });
   }
@@ -29,8 +50,8 @@ export async function POST(req: NextRequest) {
   const supabase = createSupabaseAdmin();
   const { data, error } = await supabase
     .from('pricelabs_clients')
-    .insert({ client_name, email, password_encrypted: encrypt(password), hubspot_contact_id: hubspot_contact_id ?? null })
-    .select('id, client_name, email, active, hubspot_contact_id, created_at')
+    .insert({ client_name, email, password_encrypted: encrypt(password), connection_type: 'direct', hubspot_contact_id: hubspot_contact_id ?? null })
+    .select('id, client_name, email, active, hubspot_contact_id, connection_type, created_at')
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

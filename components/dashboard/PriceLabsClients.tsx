@@ -18,6 +18,7 @@ interface PriceLabsClient {
   email: string;
   active: boolean;
   hubspot_contact_id: string | null;
+  connection_type?: string;
   created_at: string;
 }
 
@@ -40,6 +41,20 @@ export default function PriceLabsClients({ contacts, initialClients }: Props) {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [error, setError] = useState<Record<string, string>>({});
+  // RM Portal
+  const [rmEmail, setRmEmail] = useState("");
+  const [rmPassword, setRmPassword] = useState("");
+  const [rmSaving, setRmSaving] = useState(false);
+  const [rmSaved, setRmSaved] = useState(false);
+  const [rmLoaded, setRmLoaded] = useState(false);
+  const [rmExpanded, setRmExpanded] = useState(false);
+
+  // Load RM Portal credentials on mount
+  useState(() => {
+    fetch("/api/pricelabs/rm-portal").then(r => r.json()).then(data => {
+      if (data.credentials) { setRmEmail(data.credentials.email); setRmLoaded(true); }
+    }).catch(() => {});
+  });
 
   const connectedByHubspotId = new Map(
     clients.filter(c => c.hubspot_contact_id).map(c => [c.hubspot_contact_id!, c])
@@ -55,6 +70,46 @@ export default function PriceLabsClients({ contacts, initialClients }: Props) {
       ...prev,
       [contactId]: { ...(prev[contactId] ?? { email: '', password: '' }), ...patch },
     }));
+  }
+
+  async function saveRmPortal() {
+    if (!rmEmail || !rmPassword) return;
+    setRmSaving(true);
+    try {
+      await fetch("/api/pricelabs/rm-portal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: rmEmail, password: rmPassword }),
+      });
+      setRmSaved(true);
+      setRmLoaded(true);
+      setRmPassword("");
+      setTimeout(() => setRmSaved(false), 3000);
+    } catch {}
+    setRmSaving(false);
+  }
+
+  async function connectViaRmPortal(contact: HubSpotContact) {
+    setSaving(contact.id);
+    setError(prev => ({ ...prev, [contact.id]: '' }));
+    try {
+      const res = await fetch('/api/pricelabs/clients', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          hubspot_contact_id: contact.id,
+          client_name: contact.name,
+          connection_type: 'rm_portal',
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? 'Failed');
+      setClients(prev => [...prev, data]);
+      setExpandedId(null);
+    } catch (err) {
+      setError(prev => ({ ...prev, [contact.id]: String(err) }));
+    }
+    setSaving(null);
   }
 
   async function handleConnect(contact: HubSpotContact) {
@@ -126,10 +181,62 @@ export default function PriceLabsClients({ contacts, initialClients }: Props) {
   }
 
   return (
-    <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+    <div className="space-y-4">
+      {/* RM Portal Credentials */}
+      <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+        <button
+          onClick={() => setRmExpanded(v => !v)}
+          className="w-full px-6 py-4 flex items-center justify-between cursor-pointer hover:bg-gray-50 transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center shrink-0">
+              <span className="text-red-600 font-bold text-sm">RM</span>
+            </div>
+            <div className="text-left">
+              <p className="font-semibold text-gray-900 text-sm">RM Portal Credentials</p>
+              <p className="text-xs text-gray-400">{rmLoaded ? `Connected: ${rmEmail}` : "Set up shared Revenue Manager login"}</p>
+            </div>
+          </div>
+          {rmExpanded ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
+        </button>
+        {rmExpanded && (
+          <div className="px-6 pb-5 border-t border-gray-100">
+            <p className="text-xs text-gray-500 pt-3 mb-3">
+              Unified PriceLabs RM login — used for clients connected via RM Portal (e.g. Cody).
+            </p>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <input
+                type="email"
+                placeholder="RM Portal email"
+                value={rmEmail}
+                onChange={e => setRmEmail(e.target.value)}
+                className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:border-yellow-400 bg-white"
+              />
+              <input
+                type="password"
+                placeholder={rmLoaded ? "••••••• (saved)" : "RM Portal password"}
+                value={rmPassword}
+                onChange={e => setRmPassword(e.target.value)}
+                className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:border-yellow-400 bg-white"
+              />
+              <button
+                onClick={saveRmPortal}
+                disabled={rmSaving || !rmEmail}
+                className="px-4 py-2 rounded-lg text-sm font-semibold bg-yellow-400 hover:bg-yellow-300 text-gray-900 cursor-pointer disabled:opacity-40 shrink-0"
+              >
+                {rmSaving ? "Saving..." : rmSaved ? "Saved!" : "Save"}
+              </button>
+            </div>
+            <p className="text-xs text-gray-400 mt-2">Password is encrypted with AES-256 before saving.</p>
+          </div>
+        )}
+      </div>
+
+      {/* Client List */}
+      <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
       <div className="px-6 py-4 border-b border-gray-100">
         <p className="text-sm text-gray-500">
-          Connect a PriceLabs login to each client so the daily sync can pull their booking reports.
+          Connect a PriceLabs login to each client, or use the RM Portal for shared accounts.
         </p>
       </div>
 
@@ -164,7 +271,9 @@ export default function PriceLabsClients({ contacts, initialClients }: Props) {
                     <div className="flex items-center gap-1.5 text-emerald-600 text-xs font-medium">
                       <CheckCircle2 size={13} strokeWidth={2} />
                       <span className="hidden sm:inline">Connected</span>
-                      <span className="text-gray-400 font-normal hidden sm:inline">· {linked.email}</span>
+                      <span className="text-gray-400 font-normal hidden sm:inline">
+                        · {linked.connection_type === 'rm_portal' ? 'RM Portal' : linked.email}
+                      </span>
                     </div>
 
                     {/* Active toggle */}
@@ -266,12 +375,31 @@ export default function PriceLabsClients({ contacts, initialClients }: Props) {
                     <p className="text-red-500 text-xs mt-2">{error[contact.id]}</p>
                   )}
                   <p className="text-xs text-gray-400 mt-2">Password is encrypted with AES-256 before saving.</p>
+
+                  {/* OR connect via RM Portal */}
+                  {rmLoaded && (
+                    <div className="mt-4 pt-3 border-t border-gray-200">
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs text-gray-400">or</span>
+                        <button
+                          onClick={() => connectViaRmPortal(contact)}
+                          disabled={isSaving}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-50 text-red-700 hover:bg-red-100 cursor-pointer transition-colors disabled:opacity-40"
+                        >
+                          {isSaving ? <Loader2 size={12} className="animate-spin" /> : null}
+                          Connect via RM Portal
+                        </button>
+                        <span className="text-xs text-gray-400">Uses shared RM credentials ({rmEmail})</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           );
         })}
       </div>
+    </div>
     </div>
   );
 }
