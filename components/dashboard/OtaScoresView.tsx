@@ -163,7 +163,7 @@ export default function OtaScoresView({ initialScores }: { initialScores: ScoreR
                           </td>
                           <td className="px-4 py-3 text-center">
                             <span className={`inline-block px-3 py-1 rounded-full text-sm font-bold ${color.bg} ${color.text}`}>
-                              {s.overall_score.toFixed(1)}
+                              {s.overall_score.toFixed(2)}
                             </span>
                           </td>
                           <td className="px-4 py-3 text-right text-gray-500">{s.review_count}</td>

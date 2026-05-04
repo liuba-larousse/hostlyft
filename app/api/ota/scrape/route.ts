@@ -1,61 +1,82 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { createSupabaseAdmin } from '@/lib/supabase';
+import { launchBrowser } from '@/lib/pricelabs/browser';
 
 export const maxDuration = 300;
 
-// Simple score extraction using fetch + regex (no Playwright needed for public pages)
+// ── Airbnb: fetch + regex (works server-side, structured data in HTML) ──────
 async function scrapeAirbnb(url: string): Promise<{ score: number; reviewCount: number } | null> {
   try {
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
     });
     const html = await res.text();
-    // Airbnb embeds rating in meta or structured data
-    const scoreMatch = html.match(/(\d\.\d{1,2})\s*·\s*(\d+)\s*reviews?/i)
-      ?? html.match(/"ratingValue"\s*:\s*(\d\.\d{1,2}).*?"reviewCount"\s*:\s*(\d+)/);
+    // Look for structured data first
+    const scoreMatch = html.match(/"ratingValue"\s*:\s*(\d\.\d{1,2})/);
+    const countMatch = html.match(/"reviewCount"\s*:\s*(\d+)/);
     if (scoreMatch) {
-      return { score: parseFloat(scoreMatch[1]), reviewCount: parseInt(scoreMatch[2]) };
+      return { score: parseFloat(scoreMatch[1]), reviewCount: countMatch ? parseInt(countMatch[1]) : 0 };
     }
-    // Try alternate patterns
-    const altScore = html.match(/"starRating"\s*:\s*(\d\.\d{1,2})/);
-    const altCount = html.match(/"reviewsCount"\s*:\s*(\d+)/);
-    if (altScore) {
-      return { score: parseFloat(altScore[1]), reviewCount: altCount ? parseInt(altCount[1]) : 0 };
-    }
-    return null;
-  } catch { return null; }
-}
-
-async function scrapeVrbo(url: string): Promise<{ score: number; reviewCount: number } | null> {
-  try {
-    const res = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
-    });
-    const html = await res.text();
-    const match = html.match(/"ratingValue"\s*:\s*(\d\.\d{1,2}).*?"reviewCount"\s*:\s*(\d+)/)
-      ?? html.match(/(\d\.\d)\s*\/\s*5\s*.*?(\d+)\s*reviews?/i);
-    if (match) {
-      return { score: parseFloat(match[1]), reviewCount: parseInt(match[2]) };
+    // Fallback: text pattern
+    const altMatch = html.match(/(\d\.\d{1,2})\s*·\s*(\d+)\s*reviews?/i);
+    if (altMatch) {
+      return { score: parseFloat(altMatch[1]), reviewCount: parseInt(altMatch[2]) };
     }
     return null;
   } catch { return null; }
 }
 
-async function scrapeBooking(url: string): Promise<{ score: number; reviewCount: number } | null> {
+// ── VRBO & Booking.com: need Playwright (client-side rendered) ──────────────
+async function scrapeWithBrowser(url: string, ota: 'vrbo' | 'booking_com'): Promise<{ score: number; reviewCount: number } | null> {
+  const browser = await launchBrowser();
   try {
-    const res = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
+    const context = await browser.newContext({
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     });
-    const html = await res.text();
-    // Booking.com uses a 1-10 scale
-    const match = html.match(/"ratingValue"\s*:\s*(\d\.?\d?).*?"reviewCount"\s*:\s*(\d+)/)
-      ?? html.match(/(\d\.\d)\s*<.*?(\d+)\s*reviews?/i);
-    if (match) {
-      return { score: parseFloat(match[1]), reviewCount: parseInt(match[2]) };
+    const page = await context.newPage();
+
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForTimeout(5000); // Let SPA render
+
+    const html = await page.content();
+    await context.close();
+
+    if (ota === 'vrbo') {
+      // VRBO shows: "10 Exceptional" or "9.2 Wonderful" + "See all X reviews"
+      // Score can be out of 10 (whole number or decimal)
+      const scoreMatch = html.match(/(\d{1,2}(?:\.\d)?)\s*(?:\/\s*10\s*)?(?:Exceptional|Wonderful|Superb|Very good|Good|Pleasant|Review score)/i)
+        ?? html.match(/"ratingValue"\s*:\s*"?(\d{1,2}\.?\d?)"?/);
+      const countMatch = html.match(/(?:See\s+)?(?:all\s+)?(\d+)\s*reviews?/i)
+        ?? html.match(/"reviewCount"\s*:\s*"?(\d+)"?/);
+
+      if (scoreMatch) {
+        const raw = parseFloat(scoreMatch[1]);
+        // VRBO uses 1-10 scale; normalize to 1-5 for consistent display
+        const score = raw > 5 ? raw / 2 : raw;
+        return { score, reviewCount: countMatch ? parseInt(countMatch[1]) : 0 };
+      }
     }
+
+    if (ota === 'booking_com') {
+      // Booking.com: score out of 10 like "9.4" + "X reviews"
+      const scoreMatch = html.match(/(\d\.\d)\s*(?:\/\s*10)?.*?(?:Superb|Exceptional|Wonderful|Very Good|Good|Pleasant|Review score)/i)
+        ?? html.match(/"ratingValue"\s*:\s*"?(\d\.?\d?)"?/)
+        ?? html.match(/data-testid="review-score-component"[^>]*>[^<]*?(\d\.\d)/);
+      const countMatch = html.match(/(\d[\d,]*)\s*reviews?/i)
+        ?? html.match(/"reviewCount"\s*:\s*"?(\d+)"?/);
+
+      if (scoreMatch) {
+        return {
+          score: parseFloat(scoreMatch[1]),
+          reviewCount: countMatch ? parseInt(countMatch[1].replace(/,/g, '')) : 0,
+        };
+      }
+    }
+
     return null;
   } catch { return null; }
+  finally { await browser.close(); }
 }
 
 export async function POST(req: Request) {
@@ -66,7 +87,6 @@ export async function POST(req: Request) {
   const clientId = body.clientId ?? null;
   const supabase = createSupabaseAdmin();
 
-  // Get listings to scrape
   let query = supabase.from('ota_listings').select('*, pricelabs_clients(client_name)');
   if (clientId) query = query.eq('client_id', clientId);
 
@@ -76,15 +96,17 @@ export async function POST(req: Request) {
 
   let scraped = 0;
   let failed = 0;
-  const results: Array<{ listing_id: string; url: string; score: number | null; error?: string }> = [];
+  const results: Array<{ listing_id: string; url: string; ota: string; score: number | null; reviewCount: number | null; error?: string }> = [];
 
   for (const listing of listings) {
     let result: { score: number; reviewCount: number } | null = null;
 
     try {
-      if (listing.ota_name === 'airbnb') result = await scrapeAirbnb(listing.listing_url);
-      else if (listing.ota_name === 'vrbo') result = await scrapeVrbo(listing.listing_url);
-      else if (listing.ota_name === 'booking_com') result = await scrapeBooking(listing.listing_url);
+      if (listing.ota_name === 'airbnb') {
+        result = await scrapeAirbnb(listing.listing_url);
+      } else if (listing.ota_name === 'vrbo' || listing.ota_name === 'booking_com') {
+        result = await scrapeWithBrowser(listing.listing_url, listing.ota_name);
+      }
 
       if (result) {
         await supabase
@@ -97,18 +119,18 @@ export async function POST(req: Request) {
             raw_data: { url: listing.listing_url, ota: listing.ota_name, ...result },
           }, { onConflict: 'listing_id' });
         scraped++;
-        results.push({ listing_id: listing.id, url: listing.listing_url, score: result.score });
+        results.push({ listing_id: listing.id, url: listing.listing_url, ota: listing.ota_name, score: result.score, reviewCount: result.reviewCount });
       } else {
         failed++;
-        results.push({ listing_id: listing.id, url: listing.listing_url, score: null, error: 'Could not extract score' });
+        results.push({ listing_id: listing.id, url: listing.listing_url, ota: listing.ota_name, score: null, reviewCount: null, error: 'Could not extract score from page' });
       }
     } catch (e) {
       failed++;
-      results.push({ listing_id: listing.id, url: listing.listing_url, score: null, error: String(e) });
+      results.push({ listing_id: listing.id, url: listing.listing_url, ota: listing.ota_name, score: null, reviewCount: null, error: String(e) });
     }
 
-    // Small delay between requests
-    await new Promise((r) => setTimeout(r, 1000 + Math.random() * 2000));
+    // Delay between requests
+    await new Promise((r) => setTimeout(r, 1500));
   }
 
   return NextResponse.json({ scraped, failed, total: listings.length, results });
