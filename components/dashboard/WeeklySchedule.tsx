@@ -392,6 +392,54 @@ export default function WeeklySchedule() {
     await patchTask(id, { weekId: weekData.id, dayOfWeek: day } as Partial<DBTask>);
   }
 
+  // Get upcoming 4 weeks starting from current weekStart
+  function getUpcomingWeeks(count: number): { start: string; label: string }[] {
+    const weeks: { start: string; label: string }[] = [];
+    for (let i = 0; i <= count; i++) {
+      const d = parseLocalDate(weekStart);
+      d.setDate(d.getDate() + i * 7);
+      const ws = formatDateISO(d);
+      weeks.push({ start: ws, label: formatWeekLabel(d) });
+    }
+    return weeks;
+  }
+
+  async function moveToWeek(taskId: string, targetWeekStart: string, fromBacklog = false) {
+    // Ensure the target week exists
+    const res = await fetch("/api/weeks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        week_start: targetWeekStart,
+        week_label: formatWeekLabel(parseLocalDate(targetWeekStart)),
+      }),
+    });
+    const week = await res.json();
+    if (!week?.id) return;
+
+    const task = fromBacklog
+      ? backlog.find((t) => t.id === taskId)
+      : tasks.find((t) => t.id === taskId);
+    if (!task) return;
+
+    // Remove from current list
+    if (fromBacklog) {
+      setBacklog((prev) => prev.filter((t) => t.id !== taskId));
+    } else {
+      setTasks((prev) => prev.filter((t) => t.id !== taskId));
+    }
+
+    // If moving to current week, add to tasks list
+    if (targetWeekStart === weekStart) {
+      setTasks((prev) => [...prev, { ...task, weekId: week.id, dayOfWeek: task.dayOfWeek || "Mon" }]);
+    }
+
+    await patchTask(taskId, { weekId: week.id, dayOfWeek: task.dayOfWeek || "Mon" } as Partial<DBTask>);
+    setModalTask(null); setDraft(null);
+  }
+
+  const upcomingWeeks = getUpcomingWeeks(4);
+
   // ── Add task ────────────────────────────────────────────────────────────────
 
   async function addTask(day: string) {
@@ -1084,19 +1132,19 @@ export default function WeeklySchedule() {
             {sortByPriority(backlog).map((task, i) => (
               <div key={task.id} className="relative">
                 <TaskCard task={task} index={i} showDay />
-                {weekData && (
-                  <div className="absolute top-2.5 left-2.5 opacity-0 group-hover:opacity-100">
-                    <select
-                      onClick={(e) => e.stopPropagation()}
-                      onChange={(e) => { if (e.target.value) assignToWeek(task.id, e.target.value); }}
-                      className="text-xs px-2 py-1 rounded-lg bg-white/80 border border-gray-200 cursor-pointer"
-                      defaultValue=""
-                    >
-                      <option value="" disabled>+ Assign to day</option>
-                      {DAYS.map((d) => <option key={d} value={d}>{d}</option>)}
-                    </select>
-                  </div>
-                )}
+                <div className="absolute top-2.5 left-2.5 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <select
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => { if (e.target.value) moveToWeek(task.id, e.target.value, true); }}
+                    className="text-xs px-2 py-1 rounded-lg bg-white/90 border border-gray-200 shadow-sm cursor-pointer outline-none"
+                    defaultValue=""
+                  >
+                    <option value="" disabled>+ Assign to week</option>
+                    {upcomingWeeks.map((w) => (
+                      <option key={w.start} value={w.start}>{w.label}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
             ))}
           </div>
@@ -1115,12 +1163,23 @@ export default function WeeklySchedule() {
                 <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Task detail</span>
               </div>
               <div className="flex items-center gap-2">
-                {draft.weekId && (
-                  <button onClick={() => { moveToBacklog(draft.id); setModalTask(null); setDraft(null); }}
-                    className="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 cursor-pointer transition-colors">
-                    Move to Backlog
-                  </button>
-                )}
+                <select
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === "backlog") { moveToBacklog(draft.id); setModalTask(null); setDraft(null); }
+                    else if (val) moveToWeek(draft.id, val, !draft.weekId);
+                  }}
+                  defaultValue=""
+                  className="text-xs px-2 py-1.5 rounded-lg border border-gray-200 text-gray-500 bg-white outline-none cursor-pointer"
+                >
+                  <option value="" disabled>Move to...</option>
+                  <option value="backlog">Backlog</option>
+                  <optgroup label="Upcoming weeks">
+                    {upcomingWeeks.map((w) => (
+                      <option key={w.start} value={w.start}>{w.label}</option>
+                    ))}
+                  </optgroup>
+                </select>
                 <button onClick={() => deleteTask(draft.id)} className="text-xs px-3 py-1.5 rounded-lg border border-red-200 text-red-500 hover:bg-red-50 cursor-pointer transition-colors">Delete</button>
                 <button onClick={() => { setModalTask(null); setDraft(null); }} className="text-gray-400 hover:text-gray-600 cursor-pointer text-lg leading-none">✕</button>
               </div>
