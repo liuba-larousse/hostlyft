@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { FileText, Star } from "lucide-react";
+import { FileText, Star, Settings } from "lucide-react";
 
 const tabs = [
   { href: "/dashboard/client-reports", label: "Bookings", icon: FileText },
   { href: "/dashboard/client-reports/ota-scores", label: "OTA Scores", icon: Star },
+  { href: "/dashboard/client-reports/manage", label: "Manage Clients", icon: Settings },
 ];
 
 export default function ClientReportsLayout({ children }: { children: React.ReactNode }) {
