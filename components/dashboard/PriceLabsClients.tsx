@@ -377,22 +377,23 @@ export default function PriceLabsClients({ contacts, initialClients }: Props) {
                   <p className="text-xs text-gray-400 mt-2">Password is encrypted with AES-256 before saving.</p>
 
                   {/* OR connect via RM Portal */}
-                  {rmLoaded && (
-                    <div className="mt-4 pt-3 border-t border-gray-200">
-                      <div className="flex items-center gap-3">
-                        <span className="text-xs text-gray-400">or</span>
-                        <button
-                          onClick={() => connectViaRmPortal(contact)}
-                          disabled={isSaving}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-50 text-red-700 hover:bg-red-100 cursor-pointer transition-colors disabled:opacity-40"
-                        >
-                          {isSaving ? <Loader2 size={12} className="animate-spin" /> : null}
-                          Connect via RM Portal
-                        </button>
-                        <span className="text-xs text-gray-400">Uses shared RM credentials ({rmEmail})</span>
-                      </div>
+                  <div className="mt-4 pt-3 border-t border-gray-200">
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <span className="text-xs text-gray-400">or</span>
+                      <button
+                        onClick={() => connectViaRmPortal(contact)}
+                        disabled={isSaving || !rmLoaded}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-50 text-red-700 hover:bg-red-100 cursor-pointer transition-colors disabled:opacity-40"
+                      >
+                        {isSaving ? <Loader2 size={12} className="animate-spin" /> : null}
+                        Connect via RM Portal
+                      </button>
+                      {rmLoaded
+                        ? <span className="text-xs text-gray-400">Uses shared RM credentials ({rmEmail})</span>
+                        : <span className="text-xs text-amber-600">Set up RM Portal credentials above first</span>
+                      }
                     </div>
-                  )}
+                  </div>
                 </div>
               )}
             </div>
