@@ -34,9 +34,20 @@ async function scrapeVrbo(url: string): Promise<{ score: number; reviewCount: nu
   }
 
   try {
-    // Use the VRBO search/listing scraper actor
-    // Actor ID: w6lNm5DeDKCs6byfP
-    // It accepts listing URLs and returns review_score, review_count, review_label
+    // The actor needs a listing URL with dates to return results
+    // Append check-in/checkout dates if not already present
+    let listingUrl = url;
+    if (!listingUrl.includes('chkin') && !listingUrl.includes('startDate')) {
+      // Add dates 2 weeks from now for a 2-night stay
+      const checkIn = new Date();
+      checkIn.setDate(checkIn.getDate() + 14);
+      const checkOut = new Date(checkIn);
+      checkOut.setDate(checkOut.getDate() + 2);
+      const fmt = (d: Date) => d.toISOString().slice(0, 10);
+      const sep = listingUrl.includes('?') ? '&' : '?';
+      listingUrl = `${listingUrl}${sep}chkin=${fmt(checkIn)}&chkout=${fmt(checkOut)}&adults=2`;
+    }
+
     const runRes = await fetch(
       'https://api.apify.com/v2/acts/w6lNm5DeDKCs6byfP/runs?waitForFinish=180',
       {
@@ -46,7 +57,7 @@ async function scrapeVrbo(url: string): Promise<{ score: number; reviewCount: nu
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          property_listings_urls: [url],
+          property_listings_urls: [listingUrl],
           results_wanted: 1,
           max_pages: 1,
         }),
