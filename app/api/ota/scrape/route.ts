@@ -34,11 +34,25 @@ async function scrapeVrbo(url: string): Promise<{ score: number; reviewCount: nu
   }
 
   try {
-    // The actor needs a listing URL with dates to return results
-    // Append check-in/checkout dates if not already present
+    // Convert listing URL to a format the Apify actor can process
+    // Extract property ID from various VRBO URL formats:
+    //   vrbo.com/en-gb/p4517808vb  →  4517808
+    //   vrbo.com/4517808           →  4517808
+    //   vrbo.com/3721404?chkin=... →  3721404
     let listingUrl = url;
-    if (!listingUrl.includes('chkin') && !listingUrl.includes('startDate')) {
-      // Add dates 2 weeks from now for a 2-night stay
+    const idMatch = url.match(/\/p?(\d{5,})(?:vb)?(?:\?|$|\/)/i)
+      ?? url.match(/vrbo\.com\/(?:en-\w+\/)?p?(\d{5,})/i);
+
+    if (idMatch) {
+      // Build a clean listing URL with dates (required for the actor)
+      const propId = idMatch[1];
+      const checkIn = new Date();
+      checkIn.setDate(checkIn.getDate() + 14);
+      const checkOut = new Date(checkIn);
+      checkOut.setDate(checkOut.getDate() + 2);
+      const fmt = (d: Date) => d.toISOString().slice(0, 10);
+      listingUrl = `https://www.vrbo.com/${propId}?chkin=${fmt(checkIn)}&chkout=${fmt(checkOut)}&adults=2`;
+    } else if (!listingUrl.includes('chkin') && !listingUrl.includes('startDate')) {
       const checkIn = new Date();
       checkIn.setDate(checkIn.getDate() + 14);
       const checkOut = new Date(checkIn);
