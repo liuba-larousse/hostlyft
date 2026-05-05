@@ -34,9 +34,11 @@ async function scrapeVrbo(url: string): Promise<{ score: number; reviewCount: nu
   }
 
   try {
-    // Run the Apify VRBO reviews scraper actor
+    // Use the VRBO search/listing scraper actor
+    // Actor ID: w6lNm5DeDKCs6byfP
+    // It accepts listing URLs and returns review_score, review_count, review_label
     const runRes = await fetch(
-      'https://api.apify.com/v2/acts/w6lNm5DeDKCs6byfP/runs?waitForFinish=120',
+      'https://api.apify.com/v2/acts/w6lNm5DeDKCs6byfP/runs?waitForFinish=180',
       {
         method: 'POST',
         headers: {
@@ -44,20 +46,28 @@ async function scrapeVrbo(url: string): Promise<{ score: number; reviewCount: nu
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          startUrls: [{ url }],
-          maxReviews: 1, // We only need the score, not all reviews
+          property_listings_urls: [url],
+          results_wanted: 1,
+          max_pages: 1,
         }),
       }
     );
 
     if (!runRes.ok) {
-      console.error('Apify run failed:', await runRes.text());
+      const errText = await runRes.text();
+      console.error('Apify VRBO run failed:', runRes.status, errText);
       return null;
     }
 
     const runData = await runRes.json();
     const datasetId = runData?.data?.defaultDatasetId;
-    if (!datasetId) return null;
+    if (!datasetId) {
+      console.error('Apify VRBO: no datasetId in response');
+      return null;
+    }
+
+    // Wait a moment for dataset to be ready
+    await new Promise(r => setTimeout(r, 2000));
 
     // Fetch results from the dataset
     const dataRes = await fetch(
@@ -65,30 +75,32 @@ async function scrapeVrbo(url: string): Promise<{ score: number; reviewCount: nu
       { headers: { 'Authorization': `Bearer ${apiToken}` } }
     );
 
-    if (!dataRes.ok) return null;
+    if (!dataRes.ok) {
+      console.error('Apify VRBO dataset fetch failed:', dataRes.status);
+      return null;
+    }
+
     const items = await dataRes.json();
-
-    if (!items || items.length === 0) return null;
-
-    // Extract score from the first item — Apify actor returns review data
-    // Look for aggregated rating info
-    const first = items[0];
-    const score = first.rating ?? first.overallRating ?? first.averageRating ?? first.score ?? null;
-    const reviewCount = first.reviewCount ?? first.totalReviews ?? items.length ?? 0;
-
-    if (score !== null && score !== undefined) {
-      return { score: parseFloat(String(score)), reviewCount: parseInt(String(reviewCount)) };
+    if (!items || items.length === 0) {
+      console.error('Apify VRBO: no items in dataset');
+      return null;
     }
 
-    // If actor returns individual reviews, calculate average
-    if (items.length > 0 && items[0].rating !== undefined) {
-      const ratings = items.map((r: { rating?: number }) => r.rating).filter((r: number | undefined): r is number => r !== undefined);
-      if (ratings.length > 0) {
-        const avg = ratings.reduce((a: number, b: number) => a + b, 0) / ratings.length;
-        return { score: Math.round(avg * 10) / 10, reviewCount: ratings.length };
-      }
+    // The actor returns: review_score, review_count, review_label
+    const item = items[0];
+    const score = item.review_score ?? item.rating ?? item.overallRating ?? null;
+    const reviewCount = item.review_count ?? item.reviewCount ?? 0;
+
+    if (score !== null && score !== undefined && !isNaN(Number(score))) {
+      return { score: parseFloat(String(score)), reviewCount: parseInt(String(reviewCount)) || 0 };
     }
 
+    // No score found — might be a listing with no reviews
+    if (item.review_label === null || item.review_count === 0) {
+      return { score: 0, reviewCount: 0 };
+    }
+
+    console.error('Apify VRBO: could not extract score from item:', JSON.stringify(item).slice(0, 300));
     return null;
   } catch (e) {
     console.error('VRBO Apify scrape error:', e);
