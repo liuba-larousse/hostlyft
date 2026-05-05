@@ -224,7 +224,7 @@ export default function PriceLabsClients({ contacts, initialClients }: Props) {
                 disabled={rmSaving || !rmEmail}
                 className="px-4 py-2 rounded-lg text-sm font-semibold bg-yellow-400 hover:bg-yellow-300 text-gray-900 cursor-pointer disabled:opacity-40 shrink-0"
               >
-                {rmSaving ? "Saving..." : rmSaved ? "Saved!" : "Save"}
+                {rmSaving ? "Saving..." : (rmLoaded && !rmPassword) ? "Saved" : "Save"}
               </button>
             </div>
             <p className="text-xs text-gray-400 mt-2">Password is encrypted with AES-256 before saving.</p>
