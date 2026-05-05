@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link2, Link2Off, Eye, EyeOff, ToggleLeft, ToggleRight, Loader2, CheckCircle2, ChevronDown, ChevronUp } from "lucide-react";
 import { clsx } from "clsx";
 import OtaListingsEditor from "./OtaListingsEditor";
@@ -50,11 +50,11 @@ export default function PriceLabsClients({ contacts, initialClients }: Props) {
   const [rmExpanded, setRmExpanded] = useState(false);
 
   // Load RM Portal credentials on mount
-  useState(() => {
+  useEffect(() => {
     fetch("/api/pricelabs/rm-portal").then(r => r.json()).then(data => {
       if (data.credentials) { setRmEmail(data.credentials.email); setRmLoaded(true); }
     }).catch(() => {});
-  });
+  }, []);
 
   const connectedByHubspotId = new Map(
     clients.filter(c => c.hubspot_contact_id).map(c => [c.hubspot_contact_id!, c])
