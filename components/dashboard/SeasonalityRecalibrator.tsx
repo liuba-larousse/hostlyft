@@ -366,7 +366,12 @@ Use the EXACT listing names from my list above as keys. Use numeric values (no $
         }),
       });
 
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || `API returned ${response.status}`);
+      }
       const data = await response.json();
+      if (data.error) throw new Error(data.error);
       const text = data.content
         .filter((b) => b.type === "text")
         .map((b) => b.text)
