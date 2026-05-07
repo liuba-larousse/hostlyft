@@ -1,4 +1,4 @@
-import { BarChart2, TrendingUp, Calculator, Package, FileCode, Trash2 } from "lucide-react";
+import { BarChart2, TrendingUp, Calculator, Package, FileCode, Trash2, Sun } from "lucide-react";
 import Link from "next/link";
 import { createSupabaseAdmin } from "@/lib/supabase";
 import UploadArtifactButton from "@/components/dashboard/UploadArtifactButton";
@@ -31,6 +31,15 @@ const builtIn = [
     color: "bg-yellow-50 text-yellow-600",
     type: "React Component",
     href: "/dashboard/artifacts/pricing-calculator",
+  },
+  {
+    id: "seasonality-recalibrator",
+    title: "Seasonality Recalibrator — Smokies",
+    description: "Recalibrate PriceLabs seasonality profiles for Smoky Mountains properties with tier-based adjustments across 29 micro-seasons.",
+    icon: Sun,
+    color: "bg-orange-50 text-orange-600",
+    type: "React Component",
+    href: "/dashboard/artifacts/seasonality",
   },
 ];
 
