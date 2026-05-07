@@ -348,7 +348,7 @@ Return ONLY a JSON object with no other text, no markdown, no code fences. Forma
 Use the EXACT listing names from my list above as keys. Use numeric values (no $ sign, no quotes around numbers). If you can't find a fee for a listing, omit it from the JSON.`;
 
     try {
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
+      const response = await fetch("/api/claude", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
