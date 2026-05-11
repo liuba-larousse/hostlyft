@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import {
   Upload, Calendar, ChevronRight, ChevronLeft, X, AlertCircle, Check, Save,
-  Eye, ListChecks, Clock, GripVertical, Tag, Pencil, Inbox, Plus,
+  Eye, ListChecks, Clock, GripVertical, Tag, Pencil, Inbox, Plus, Trash2,
 } from "lucide-react";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -251,6 +251,8 @@ export default function WeeklySchedule() {
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<number | null>(null);
   const [excludedTasks, setExcludedTasks] = useState<Set<string>>(new Set());
+  const [clearConfirm, setClearConfirm] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const memberNames = teamMembers.map((m) => `${m.first_name} ${m.last_name}`);
@@ -316,6 +318,19 @@ export default function WeeklySchedule() {
     const d = parseLocalDate(weekStart);
     d.setDate(d.getDate() + delta * 7);
     setWeekStart(formatDateISO(d));
+  }
+
+  async function clearWeek() {
+    if (!tasks.length) return;
+    setClearing(true);
+    try {
+      await Promise.all(tasks.map((t) => fetch(`/api/tasks/${t.id}`, { method: "DELETE" })));
+      setTasks([]);
+    } catch (e) {
+      console.error("Failed to clear week:", e);
+    }
+    setClearing(false);
+    setClearConfirm(false);
   }
 
   // ── Task CRUD ──────────────────────────────────────────────────────────────
@@ -764,6 +779,20 @@ export default function WeeklySchedule() {
             </div>
             <button onClick={() => shiftWeek(1)} className="w-8 h-8 rounded-lg border border-gray-200 flex items-center justify-center hover:bg-gray-50 cursor-pointer"><ChevronRight size={16} /></button>
             <button onClick={() => setWeekStart(formatDateISO(getMonday(new Date())))} className="text-xs text-gray-500 hover:text-gray-900 border border-gray-200 rounded-lg px-3 py-1.5 cursor-pointer">Today</button>
+            {tasks.length > 0 && !clearConfirm && (
+              <button onClick={() => setClearConfirm(true)} className="flex items-center gap-1.5 text-xs text-red-400 hover:text-red-600 border border-red-200 rounded-lg px-3 py-1.5 cursor-pointer transition-colors ml-auto">
+                <Trash2 size={12} />Clear Week
+              </button>
+            )}
+            {clearConfirm && (
+              <div className="flex items-center gap-2 ml-auto">
+                <span className="text-xs text-red-600 font-medium">Delete all {tasks.length} tasks?</span>
+                <button onClick={clearWeek} disabled={clearing} className="text-xs font-semibold bg-red-600 text-white px-3 py-1.5 rounded-lg hover:bg-red-700 cursor-pointer disabled:opacity-50 transition-colors">
+                  {clearing ? "Clearing..." : "Yes, clear"}
+                </button>
+                <button onClick={() => setClearConfirm(false)} className="text-xs text-gray-500 hover:text-gray-700 cursor-pointer">Cancel</button>
+              </div>
+            )}
           </div>
 
           {loading && <div className="text-sm text-gray-400 py-10 text-center">Loading...</div>}
