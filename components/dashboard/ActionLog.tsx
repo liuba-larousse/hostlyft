@@ -2372,7 +2372,7 @@ const FlagDetailRow = ({ flag, contribs, direction }) => {
   );
 };
 
-function SimpleReportPanel({ levelLabel, levelHint, todayReport, priorReport, priorDate, onUpload, onClear, isReadOnly, selectedISO, onInvestigate, segmentLabel }) {
+function SimpleReportPanel({ levelLabel, levelHint, todayReport, priorReport, priorDate, onUpload, onClear, isReadOnly, selectedISO, onInvestigate, segmentLabel, syncSegment }) {
   const inputRef = useRef(null);
   const [parsing, setParsing] = useState(false);
   const [uploadError, setUploadError] = useState(null);
@@ -2496,8 +2496,13 @@ function SimpleReportPanel({ levelLabel, levelHint, todayReport, priorReport, pr
     <div className="border border-stone-300 rounded-sm bg-white">
       {/* Upload section */}
       <div className="p-4 border-b border-stone-200 bg-stone-50/40">
-        <div className="text-[10px] uppercase tracking-[0.2em] text-stone-500 mb-1">
-          {levelLabel} report — drop today's PriceLabs export filtered to this scope
+        <div className="flex items-center justify-between mb-1">
+          <div className="text-[10px] uppercase tracking-[0.2em] text-stone-500">
+            {levelLabel} report
+          </div>
+          {!todayReport && !isReadOnly && syncSegment && (
+            <SyncReportButton segment={syncSegment} onReportLoaded={(parsed) => onUpload(parsed)} />
+          )}
         </div>
         {levelHint && <div className="text-[10px] text-stone-500 mb-2 italic">{levelHint}</div>}
 
@@ -3109,6 +3114,7 @@ function PortfolioReportPanel({ portfolioData, onUpdate, isReadOnly, selectedISO
             selectedISO={selectedISO}
             onInvestigate={onInvestigate}
             segmentLabel={drilldown.label}
+            syncSegment={segment}
           />
         );
       })()}
@@ -5280,7 +5286,7 @@ Format bullets with a leading "- ". Do not use markdown headers (#). Keep the wh
    prior-day comparison (weekly cadence makes daily diffs irrelevant), no
    segment cascade, no contributing buildings.
 */
-function WeeksTab({ weeksReport, onUpload, onClear }) {
+function WeeksTab({ weeksReport, onUpload, onClear, onSyncLoaded }) {
   const inputRef = useRef(null);
   const [parsing, setParsing] = useState(false);
   const [uploadError, setUploadError] = useState(null);
@@ -5352,6 +5358,12 @@ function WeeksTab({ weeksReport, onUpload, onClear }) {
       {/* Upload section */}
       <div className="border border-stone-300 rounded-sm bg-white mb-6">
         <div className="p-4 border-b border-stone-200 bg-stone-50/40">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[10px] uppercase tracking-[0.2em] text-stone-500">Weeks Report</span>
+            {!weeksReport && (
+              <SyncReportButton segment="weeks" onReportLoaded={onSyncLoaded} />
+            )}
+          </div>
           <div
             onDragOver={(e) => e.preventDefault()}
             onDrop={handleDrop}
@@ -6807,7 +6819,9 @@ function SyncReportButton({ segment, onReportLoaded }) {
       XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
       const arrayBuffer = XLSX.write(wb, { type: 'array' });
 
-      const parsed = parseReportFile(arrayBuffer, match.report_data.fileName || `report-${segment}.xlsx`);
+      const parsed = segment === 'weeks'
+        ? parseWeeksReportFile(arrayBuffer, match.report_data.fileName || 'weeks-report.xlsx')
+        : parseReportFile(arrayBuffer, match.report_data.fileName || `report-${segment}.xlsx`);
 
       // Step 4: Feed into the component via the same path as XLSX drop
       onReportLoaded(parsed);
@@ -7693,6 +7707,7 @@ export default function ActionLog() {
           weeksReport={weeksReport}
           onUpload={(parsed) => setWeeksReport(parsed)}
           onClear={() => setWeeksReport(null)}
+          onSyncLoaded={(parsed) => setWeeksReport(parsed)}
         />
       )}
 
