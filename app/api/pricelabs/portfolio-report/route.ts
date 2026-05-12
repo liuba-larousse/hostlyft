@@ -9,8 +9,10 @@ import * as XLSX from 'xlsx';
 
 export const maxDuration = 300;
 
+const SEGMENTS = ['all', 'ph'] as const;
+
 /** Parse the downloaded XLSX into a structured report object */
-function parsePortfolioXlsx(buffer: Buffer) {
+function parsePortfolioXlsx(buffer: Buffer, segment: string) {
   const wb = XLSX.read(buffer, { type: 'buffer', cellDates: false });
   const sheet = wb.Sheets[wb.SheetNames[0]];
   if (!sheet) throw new Error('Workbook has no sheets');
@@ -18,14 +20,15 @@ function parsePortfolioXlsx(buffer: Buffer) {
   if (rows.length === 0) throw new Error('Report is empty');
 
   return {
-    fileName: 'portfolio-report.xlsx',
+    fileName: `portfolio-report-${segment}.xlsx`,
     uploadedAt: new Date().toISOString(),
+    segment,
     rawRows: rows,
     rowCount: rows.length,
   };
 }
 
-/** Find Marcus Halawi's client and download + store the report */
+/** Download All + PH reports and store both in Supabase */
 async function syncPortfolioReport() {
   const clients = await getActiveClients();
   const client = clients.find(c =>
@@ -38,33 +41,39 @@ async function syncPortfolioReport() {
   }
 
   const browser = await launchBrowser();
+  const results: { segment: string; rowCount: number }[] = [];
+
   try {
     const { context, page } = await loginToPriceLabs(browser, client.email, client.password);
     try {
-      const buffer = await downloadPortfolioReport(page);
-      const reportData = parsePortfolioXlsx(buffer);
-
       const supabase = createSupabaseAdmin();
       const today = new Date().toISOString().split('T')[0];
 
-      const { error } = await supabase
-        .from('portfolio_reports')
-        .upsert(
-          {
-            client_id: client.id,
-            report_date: today,
-            report_data: reportData,
-          },
-          { onConflict: 'client_id,report_date' }
-        );
+      for (const segment of SEGMENTS) {
+        const buffer = await downloadPortfolioReport(page, segment);
+        const reportData = parsePortfolioXlsx(buffer, segment);
 
-      if (error) throw new Error(`Failed to store report: ${error.message}`);
+        const { error } = await supabase
+          .from('portfolio_reports')
+          .upsert(
+            {
+              client_id: client.id,
+              report_date: today,
+              segment,
+              report_data: reportData,
+            },
+            { onConflict: 'client_id,report_date,segment' }
+          );
+
+        if (error) throw new Error(`Failed to store ${segment} report: ${error.message}`);
+        results.push({ segment, rowCount: reportData.rowCount });
+      }
 
       return {
         success: true,
         clientName: client.client_name,
         reportDate: today,
-        rowCount: reportData.rowCount,
+        reports: results,
       };
     } finally {
       await context.close();
@@ -81,7 +90,6 @@ export async function GET(req: NextRequest) {
   const isCron = secret && authHeader === `Bearer ${secret}`;
 
   if (isCron) {
-    // Cron trigger — run the sync
     try {
       const result = await syncPortfolioReport();
       return NextResponse.json(result);
@@ -115,7 +123,7 @@ export async function GET(req: NextRequest) {
     .select('*')
     .eq('client_id', clientData.id)
     .order('report_date', { ascending: false })
-    .limit(90);
+    .limit(180);
 
   return NextResponse.json({ reports: reports ?? [] });
 }
