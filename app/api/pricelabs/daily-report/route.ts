@@ -185,19 +185,23 @@ export async function POST() {
       const today = new Date().toISOString().split('T')[0];
 
       for (const segment of PORTFOLIO_SEGMENTS) {
-        const buffer = await downloadPortfolioReport(page, segment);
-        const reportData = parsePortfolioXlsx(buffer, segment);
-        const { error } = await supabase
-          .from('portfolio_reports')
-          .upsert(
-            { client_id: client.id, report_date: today, segment, report_data: reportData },
-            { onConflict: 'client_id,report_date,segment' }
-          );
-        if (error) throw new Error(`Failed to store ${segment} report: ${error.message}`);
-        results.push({ segment, rowCount: reportData.rowCount });
+        try {
+          const buffer = await downloadPortfolioReport(page, segment);
+          const reportData = parsePortfolioXlsx(buffer, segment);
+          const { error } = await supabase
+            .from('portfolio_reports')
+            .upsert(
+              { client_id: client.id, report_date: today, segment, report_data: reportData },
+              { onConflict: 'client_id,report_date,segment' }
+            );
+          if (error) throw new Error(`Failed to store ${segment} report: ${error.message}`);
+          results.push({ segment, rowCount: reportData.rowCount });
+        } catch (segErr) {
+          results.push({ segment, rowCount: 0, error: String(segErr) } as any);
+        }
       }
 
-      return NextResponse.json({ success: true, clientName: client.client_name, reportDate: today, reports: results });
+      return NextResponse.json({ success: results.length > 0, clientName: client.client_name, reportDate: today, reports: results });
     } finally { await context.close(); }
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });

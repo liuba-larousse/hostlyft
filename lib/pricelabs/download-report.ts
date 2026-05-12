@@ -1,7 +1,7 @@
 import type { Page } from 'playwright-core';
 import { readFileSync } from 'fs';
 
-const TIMEOUT = 60_000;
+const TIMEOUT = 45_000;
 
 export type ReportSegment = 'all' | 'ph' | 'building' | 'weeks';
 
