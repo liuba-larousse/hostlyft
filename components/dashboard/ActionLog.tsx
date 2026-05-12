@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Plus, Download, Copy, Trash2, Check, AlertCircle, FileText, Sparkles, X, StickyNote, ImagePlus, ZoomIn, FileSpreadsheet, Loader2, Camera, Filter, ChevronRight, History, Flag, CheckCircle2, AlertTriangle, Calendar, Upload, RefreshCw, BookOpen, TrendingUp } from 'lucide-react';
+import { Plus, Download, Copy, Trash2, Check, AlertCircle, FileText, Sparkles, X, StickyNote, ImagePlus, ZoomIn, FileSpreadsheet, Loader2, Camera, Filter, ChevronRight, History, Flag, CheckCircle2, AlertTriangle, Calendar, Upload, RefreshCw, BookOpen, TrendingUp, Pencil } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 /* ---------- Constants ---------- */
@@ -5629,6 +5629,8 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
   const [page, setPage] = useState({ problems: 1, opportunities: 1, mixed: 1 });
   // Toast confirms an action log row was created from this view. Auto-clears after 3s.
   const [addToast, setAddToast] = useState(null);
+  // Override modal state
+  const [overrideModal, setOverrideModal] = useState(null); // { pair, bucket }
 
   // Inline month label helper — "May 2026", "Jun 2026" etc.
   const monthLabel = (y, m) => {
@@ -6032,14 +6034,23 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
       indigo: 'border-indigo-300 hover:border-indigo-500 text-indigo-800 hover:bg-indigo-100',
     }[accent] || 'border-stone-300 hover:border-stone-500 text-stone-700 hover:bg-stone-100';
     return (
-      <button
-        onClick={() => addActionFromPair(pair, bucket)}
-        disabled={!setRows}
-        className={`inline-flex items-center gap-1 px-2 py-1 text-[10px] mono border rounded-sm bg-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${accentClasses}`}
-        title="Add this to the Action Log"
-      >
-        <Plus className="w-3 h-3" /> Add action
-      </button>
+      <div className="inline-flex items-center gap-1">
+        <button
+          onClick={() => addActionFromPair(pair, bucket)}
+          disabled={!setRows}
+          className={`inline-flex items-center gap-1 px-2 py-1 text-[10px] mono border rounded-sm bg-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${accentClasses}`}
+          title="Record this in the Action Log"
+        >
+          <Plus className="w-3 h-3" /> Record action
+        </button>
+        <button
+          onClick={() => setOverrideModal({ pair, bucket })}
+          className="inline-flex items-center gap-1 px-2 py-1 text-[10px] mono border border-indigo-300 hover:border-indigo-500 text-indigo-800 hover:bg-indigo-100 rounded-sm bg-white transition-colors"
+          title="Change price override via PriceLabs API"
+        >
+          <Pencil className="w-3 h-3" /> Override
+        </button>
+      </div>
     );
   };
 
@@ -6442,6 +6453,346 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
           </div>
         </div>
       )}
+
+      {/* Override Modal */}
+      {overrideModal && (
+        <OverrideModal
+          pair={overrideModal.pair}
+          bucket={overrideModal.bucket}
+          onClose={() => setOverrideModal(null)}
+          onRecordAction={(pair, bucket, overrideInfo) => {
+            // Record the override as an action log entry
+            const newRow = {
+              id: `r_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+              date: todayMDY(),
+              owner: 'Liuba',
+              reason: `Override applied (Summary · ${bucket})`,
+              affectedGroup: pair.building,
+              affectedDates: overrideInfo.dates,
+              action: `Override: ${overrideInfo.description}`,
+              valueBefore: overrideInfo.before || '',
+              valueAfter: overrideInfo.after || '',
+              notes: `Via PriceLabs API · listing ${overrideInfo.listingId}`,
+              checkDone: false,
+            };
+            setRows(prev => [newRow, ...prev]);
+            setAddToast({ building: pair.building, week: pair.weekLabel || '', bucket });
+            setTimeout(() => setAddToast(null), 3000);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ---------- Override Modal ---------- */
+
+function OverrideModal({ pair, bucket, onClose, onRecordAction }) {
+  const [loading, setLoading] = useState(true);
+  const [existing, setExisting] = useState([]);
+  const [error, setError] = useState('');
+  const [listingId, setListingId] = useState('');
+  const [pms, setPms] = useState('airbnb');
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+
+  // Form fields
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [priceType, setPriceType] = useState('fixed');
+  const [price, setPrice] = useState('');
+  const [currency, setCurrency] = useState('USD');
+  const [minPrice, setMinPrice] = useState('');
+  const [minStay, setMinStay] = useState('');
+
+  // Pre-fill dates from the pair's week range if available
+  useEffect(() => {
+    if (pair.weekDateRange) {
+      // weekDateRange is like "May 18–24, 2026"
+      // Try to extract start/end dates
+      const match = pair.weekDateRange.match(/(\w+ \d+)[–-](\d+),?\s*(\d{4})/);
+      if (match) {
+        const year = match[3];
+        const monthDay = match[1];
+        const endDay = match[2];
+        const start = new Date(`${monthDay}, ${year}`);
+        const end = new Date(start);
+        end.setDate(parseInt(endDay));
+        if (!isNaN(start.getTime())) setDateFrom(start.toISOString().split('T')[0]);
+        if (!isNaN(end.getTime())) setDateTo(end.toISOString().split('T')[0]);
+      }
+    }
+  }, [pair]);
+
+  // Fetch existing overrides when listing ID is entered
+  const fetchOverrides = async () => {
+    if (!listingId.trim()) return;
+    setLoading(true);
+    setError('');
+    try {
+      const res = await fetch(`/api/pricelabs/overrides?listingId=${listingId}&pms=${pms}`);
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || 'Failed to fetch overrides');
+        setExisting([]);
+      } else {
+        setExisting(data.overrides || []);
+      }
+    } catch (e) {
+      setError(String(e));
+    }
+    setLoading(false);
+  };
+
+  // Generate date range array
+  const generateDates = (from, to) => {
+    const dates = [];
+    const d = new Date(from);
+    const end = new Date(to);
+    while (d <= end) {
+      dates.push(d.toISOString().split('T')[0]);
+      d.setDate(d.getDate() + 1);
+    }
+    return dates;
+  };
+
+  const handleSubmit = async () => {
+    if (!listingId || !dateFrom || !dateTo) {
+      setError('Listing ID and date range are required');
+      return;
+    }
+    setSubmitting(true);
+    setError('');
+
+    const dates = generateDates(dateFrom, dateTo);
+    const overrides = dates.map(date => {
+      const o = { date };
+      if (price) {
+        o.price = price;
+        o.price_type = priceType;
+        if (priceType === 'fixed') o.currency = currency;
+      }
+      if (minPrice) {
+        o.min_price = parseInt(minPrice);
+        o.min_price_type = 'fixed';
+        o.currency = currency;
+      }
+      if (minStay) {
+        o.min_stay = parseInt(minStay);
+      }
+      return o;
+    });
+
+    try {
+      const res = await fetch('/api/pricelabs/overrides', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ listingId, pms, overrides }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || 'Failed to apply override');
+      } else {
+        setSubmitted(true);
+        // Record the action
+        const desc = [];
+        if (price) desc.push(`${priceType === 'fixed' ? '$' : ''}${price}${priceType === 'percent' ? '%' : ''}`);
+        if (minPrice) desc.push(`min $${minPrice}`);
+        if (minStay) desc.push(`min stay ${minStay}n`);
+
+        onRecordAction(pair, bucket, {
+          listingId,
+          dates: `${dateFrom} → ${dateTo}`,
+          description: desc.join(', ') || 'override applied',
+          before: existing.length > 0 ? `${existing.length} existing overrides` : 'none',
+          after: `${dates.length} dates updated`,
+        });
+
+        setTimeout(onClose, 1500);
+      }
+    } catch (e) {
+      setError(String(e));
+    }
+    setSubmitting(false);
+  };
+
+  const handleDelete = async (date) => {
+    try {
+      await fetch('/api/pricelabs/overrides', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ listingId, pms, overrides: [{ date }] }),
+      });
+      setExisting(prev => prev.filter(o => o.date !== date));
+    } catch {}
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="bg-white rounded-lg shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-stone-200">
+          <div>
+            <h2 className="text-[14px] font-semibold text-stone-900">Price Override</h2>
+            <p className="text-[11px] text-stone-500">{pair.building} · {pair.weekLabel || pair.monthLabel}</p>
+          </div>
+          <button onClick={onClose} className="text-stone-400 hover:text-stone-600 text-lg">✕</button>
+        </div>
+
+        <div className="px-5 py-4 space-y-4">
+          {/* Listing ID + PMS */}
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <label className="text-[10px] uppercase tracking-wider text-stone-500 block mb-1">Listing ID</label>
+              <div className="flex gap-2">
+                <input
+                  value={listingId}
+                  onChange={e => setListingId(e.target.value)}
+                  placeholder="e.g. 2854562"
+                  className="flex-1 px-3 py-2 text-sm border border-stone-300 rounded-sm focus:outline-none focus:border-indigo-500"
+                />
+                <button
+                  onClick={fetchOverrides}
+                  disabled={!listingId.trim()}
+                  className="px-3 py-2 text-[11px] font-medium bg-stone-900 text-white rounded-sm hover:bg-stone-700 disabled:opacity-40"
+                >
+                  Check
+                </button>
+              </div>
+            </div>
+            <div className="w-24">
+              <label className="text-[10px] uppercase tracking-wider text-stone-500 block mb-1">PMS</label>
+              <select value={pms} onChange={e => setPms(e.target.value)} className="w-full px-2 py-2 text-sm border border-stone-300 rounded-sm focus:outline-none focus:border-indigo-500">
+                <option value="airbnb">Airbnb</option>
+                <option value="vrbo">VRBO</option>
+                <option value="guesty">Guesty</option>
+                <option value="hostaway">Hostaway</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Existing overrides */}
+          {existing.length > 0 && (
+            <div>
+              <label className="text-[10px] uppercase tracking-wider text-stone-500 block mb-1">
+                Existing Overrides ({existing.length})
+              </label>
+              <div className="max-h-32 overflow-y-auto border border-stone-200 rounded-sm">
+                <table className="w-full text-[11px]">
+                  <thead>
+                    <tr className="bg-stone-50 text-stone-500">
+                      <th className="text-left px-2 py-1">Date</th>
+                      <th className="text-left px-2 py-1">Price</th>
+                      <th className="text-left px-2 py-1">Type</th>
+                      <th className="text-left px-2 py-1">Min Stay</th>
+                      <th className="px-2 py-1"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {existing.map(o => (
+                      <tr key={o.date} className="border-t border-stone-100">
+                        <td className="px-2 py-1 mono">{o.date}</td>
+                        <td className="px-2 py-1">{o.price || '—'}</td>
+                        <td className="px-2 py-1">{o.price_type}</td>
+                        <td className="px-2 py-1">{o.min_stay || '—'}</td>
+                        <td className="px-2 py-1">
+                          <button onClick={() => handleDelete(o.date)} className="text-rose-500 hover:text-rose-700">
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Date range */}
+          <div>
+            <label className="text-[10px] uppercase tracking-wider text-stone-500 block mb-1">Date Range</label>
+            <div className="flex items-center gap-2">
+              <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+                className="flex-1 px-3 py-2 text-sm border border-stone-300 rounded-sm focus:outline-none focus:border-indigo-500" />
+              <span className="text-stone-400">→</span>
+              <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+                className="flex-1 px-3 py-2 text-sm border border-stone-300 rounded-sm focus:outline-none focus:border-indigo-500" />
+            </div>
+          </div>
+
+          {/* Price Settings */}
+          <div className="bg-stone-50 border border-stone-200 rounded-sm p-3">
+            <label className="text-[10px] uppercase tracking-wider text-stone-600 font-semibold block mb-2">Price Settings</label>
+            <div className="space-y-3">
+              <div>
+                <span className="text-[11px] text-stone-700 font-medium">New Final Price</span>
+                <div className="flex items-center gap-3 mt-1">
+                  <label className="flex items-center gap-1.5 text-[11px]">
+                    <input type="radio" name="priceType" value="fixed" checked={priceType === 'fixed'} onChange={() => setPriceType('fixed')} className="accent-rose-500" />
+                    Fixed
+                  </label>
+                  <label className="flex items-center gap-1.5 text-[11px]">
+                    <input type="radio" name="priceType" value="percent" checked={priceType === 'percent'} onChange={() => setPriceType('percent')} className="accent-rose-500" />
+                    Percent
+                  </label>
+                  <input value={price} onChange={e => setPrice(e.target.value)} placeholder={priceType === 'fixed' ? '250' : '10'}
+                    className="w-20 px-2 py-1.5 text-sm border border-stone-300 rounded-sm focus:outline-none focus:border-indigo-500" />
+                  {priceType === 'fixed' && (
+                    <span className="text-[11px] text-stone-400">{currency}</span>
+                  )}
+                </div>
+              </div>
+              <div className="flex gap-4">
+                <div>
+                  <span className="text-[11px] text-stone-700 font-medium">Min Price</span>
+                  <input value={minPrice} onChange={e => setMinPrice(e.target.value)} placeholder="Optional"
+                    className="w-full mt-1 px-2 py-1.5 text-sm border border-stone-300 rounded-sm focus:outline-none focus:border-indigo-500" />
+                </div>
+                <div>
+                  <span className="text-[11px] text-stone-700 font-medium">Currency</span>
+                  <input value={currency} onChange={e => setCurrency(e.target.value)} placeholder="USD"
+                    className="w-full mt-1 px-2 py-1.5 text-sm border border-stone-300 rounded-sm focus:outline-none focus:border-indigo-500" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Stay Restrictions */}
+          <div className="bg-stone-50 border border-stone-200 rounded-sm p-3">
+            <label className="text-[10px] uppercase tracking-wider text-stone-600 font-semibold block mb-2">Stay Restrictions</label>
+            <div>
+              <span className="text-[11px] text-stone-700 font-medium">Minimum Stay</span>
+              <div className="flex items-center gap-2 mt-1">
+                <input value={minStay} onChange={e => setMinStay(e.target.value)} placeholder="0"
+                  className="w-20 px-2 py-1.5 text-sm border border-stone-300 rounded-sm focus:outline-none focus:border-indigo-500" />
+                <span className="text-[11px] text-stone-500">Night(s)</span>
+              </div>
+            </div>
+          </div>
+
+          {error && (
+            <div className="flex items-center gap-1.5 text-[11px] text-rose-700">
+              <AlertCircle className="w-3 h-3" /> {error}
+            </div>
+          )}
+
+          {submitted && (
+            <div className="flex items-center gap-1.5 text-[11px] text-emerald-700">
+              <Check className="w-3 h-3" /> Override applied and recorded in Action Log
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between px-5 py-3 border-t border-stone-200 bg-stone-50">
+          <button onClick={onClose} className="text-[11px] text-stone-500 hover:text-stone-700">Cancel</button>
+          <button
+            onClick={handleSubmit}
+            disabled={submitting || !listingId || !dateFrom || !dateTo || submitted}
+            className="px-4 py-2 text-[11px] font-semibold bg-indigo-600 text-white rounded-sm hover:bg-indigo-700 disabled:opacity-40 transition-colors flex items-center gap-1.5"
+          >
+            {submitting ? <><Loader2 className="w-3 h-3 animate-spin" /> Applying...</> : 'Confirm Override'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
