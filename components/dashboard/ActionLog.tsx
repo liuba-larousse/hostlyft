@@ -1563,17 +1563,17 @@ const FLAG_METRIC_MAP = {
 // WHY bidirectional: when investigating a flagged segment, you need to see
 // both who's at fault AND who's offsetting them. Adjusting pricing on a
 // building that's already outperforming would damage what's working.
-const computeContributingBuildings = (buildingReport, flag, monthIso, activeSegment, topN = 3) => {
+const computeContributingBuildings = (buildingReport, flag, monthIso, activeSegment, topN = 0) => {
   const empty = { sameDirection: [], oppositeDirection: [] };
   if (!buildingReport?.byBuilding || !flag || !monthIso) return empty;
-  if (activeSegment === 'all') return empty; // 'all' uses segment chips, not building chips
 
   const cfg = FLAG_METRIC_MAP[flag.id];
   if (!cfg) return empty;
 
   const candidates = [];
   Object.entries(buildingReport.byBuilding).forEach(([group, monthsArr]) => {
-    if (buildingToSegment(group) !== activeSegment) return;
+    // When viewing All, show all buildings; otherwise filter to active segment
+    if (activeSegment !== 'all' && buildingToSegment(group) !== activeSegment) return;
     const monthRow = monthsArr.find(m => m.iso === monthIso);
     if (!monthRow) return;
     const ty = monthRow[cfg.ty];
@@ -1594,8 +1594,8 @@ const computeContributingBuildings = (buildingReport, flag, monthIso, activeSegm
   oppositeDirection.sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap));
 
   return {
-    sameDirection: sameDirection.slice(0, topN),
-    oppositeDirection: oppositeDirection.slice(0, topN),
+    sameDirection: topN > 0 ? sameDirection.slice(0, topN) : sameDirection,
+    oppositeDirection: topN > 0 ? oppositeDirection.slice(0, topN) : oppositeDirection,
   };
 };
 
@@ -3302,11 +3302,8 @@ function PortfolioReportPanel({ portfolioData, onUpdate, isReadOnly, selectedISO
                       </div>
                       <div className="flex flex-col gap-1">
                         {problems.map(f => {
-                          // For All segment: show segment chips (which sub-segment is contributing)
-                          // For PH/Excl PH: show bidirectional building chips (top 3 worst + top 3 best)
-                          const contribs = segment === 'all'
-                            ? { segments: computeContributingSegments(portfolioData, f, month.iso) }
-                            : computeContributingBuildings(buildingReport, f, month.iso, segment);
+                          // Show building breakdown for all segments (including All)
+                          const contribs = computeContributingBuildings(buildingReport, f, month.iso, segment);
                           return (
                             <FlagDetailRow
                               key={f.id}
@@ -3317,9 +3314,7 @@ function PortfolioReportPanel({ portfolioData, onUpdate, isReadOnly, selectedISO
                           );
                         })}
                         {opportunities.map(f => {
-                          const contribs = segment === 'all'
-                            ? { segments: computeContributingSegments(portfolioData, f, month.iso) }
-                            : computeContributingBuildings(buildingReport, f, month.iso, segment);
+                          const contribs = computeContributingBuildings(buildingReport, f, month.iso, segment);
                           return (
                             <FlagDetailRow
                               key={f.id}
