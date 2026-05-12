@@ -8,6 +8,7 @@ import { downloadPortfolioReport } from '@/lib/pricelabs/download-report';
 import * as XLSX from 'xlsx';
 
 export const maxDuration = 300;
+export const dynamic = 'force-dynamic';
 
 const SEGMENTS = ['all', 'ph', 'building', 'weeks'] as const;
 
