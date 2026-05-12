@@ -3,6 +3,9 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   reactCompiler: true,
   serverExternalPackages: ['playwright-core', '@sparticuz/chromium-min'],
+  outputFileTracingIncludes: {
+    '/api/pricelabs/*': ['./node_modules/playwright-core/**/*'],
+  },
   async redirects() {
     return [
       {
