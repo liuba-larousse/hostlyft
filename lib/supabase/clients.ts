@@ -7,6 +7,7 @@ export interface PriceLabsClient {
   email: string;
   password: string; // decrypted at read time
   connection_type: 'direct' | 'rm_portal';
+  api_key: string | null;
 }
 
 export interface RmPortalCredentials {
@@ -18,7 +19,7 @@ export async function getActiveClients(): Promise<PriceLabsClient[]> {
   const supabase = createSupabaseAdmin();
   const { data, error } = await supabase
     .from('pricelabs_clients')
-    .select('id, client_name, email, password_encrypted, connection_type')
+    .select('id, client_name, email, password_encrypted, connection_type, api_key_encrypted')
     .eq('active', true)
     .order('client_name');
 
@@ -30,6 +31,7 @@ export async function getActiveClients(): Promise<PriceLabsClient[]> {
     email: row.email,
     password: row.password_encrypted ? decrypt(row.password_encrypted) : '',
     connection_type: row.connection_type ?? 'direct',
+    api_key: row.api_key_encrypted ? decrypt(row.api_key_encrypted) : null,
   }));
 }
 

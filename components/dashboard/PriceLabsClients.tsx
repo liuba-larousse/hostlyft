@@ -19,6 +19,7 @@ interface PriceLabsClient {
   active: boolean;
   hubspot_contact_id: string | null;
   connection_type?: string;
+  has_api_key?: boolean;
   created_at: string;
 }
 
@@ -329,6 +330,11 @@ export default function PriceLabsClients({ contacts, initialClients }: Props) {
                 </div>
               )}
 
+              {/* API Key for connected clients */}
+              {linked && (
+                <ApiKeyField clientId={linked.id} hasApiKey={linked.has_api_key ?? false} />
+              )}
+
               {/* Inline connect form */}
               {!linked && isExpanded && (
                 <div className="px-6 pb-5 bg-gray-50 border-t border-gray-100">
@@ -401,6 +407,88 @@ export default function PriceLabsClients({ contacts, initialClients }: Props) {
         })}
       </div>
     </div>
+    </div>
+  );
+}
+
+function ApiKeyField({ clientId, hasApiKey }: { clientId: string; hasApiKey: boolean }) {
+  const [apiKey, setApiKey] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(hasApiKey);
+  const [show, setShow] = useState(false);
+
+  const save = async () => {
+    if (!apiKey.trim()) return;
+    setSaving(true);
+    try {
+      await fetch("/api/pricelabs/clients", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: clientId, api_key: apiKey.trim() }),
+      });
+      setSaved(true);
+      setApiKey("");
+    } catch {}
+    setSaving(false);
+  };
+
+  const remove = async () => {
+    setSaving(true);
+    try {
+      await fetch("/api/pricelabs/clients", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: clientId, api_key: null }),
+      });
+      setSaved(false);
+    } catch {}
+    setSaving(false);
+  };
+
+  return (
+    <div className="px-6 pb-4">
+      <div className="flex items-center gap-2 mb-1.5">
+        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">PriceLabs API Key</span>
+        {saved && <span className="text-xs text-emerald-600 font-medium">Saved</span>}
+      </div>
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <input
+            type={show ? "text" : "password"}
+            placeholder={saved ? "••••••••••••" : "Paste API key"}
+            value={apiKey}
+            onChange={e => setApiKey(e.target.value)}
+            className="w-full px-3 py-2 pr-9 border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:border-yellow-400 bg-white transition-colors"
+          />
+          <button
+            type="button"
+            onClick={() => setShow(p => !p)}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+          >
+            {show ? <EyeOff size={13} strokeWidth={1.8} /> : <Eye size={13} strokeWidth={1.8} />}
+          </button>
+        </div>
+        <button
+          onClick={save}
+          disabled={saving || !apiKey.trim()}
+          className={clsx(
+            "px-4 py-2 rounded-lg text-sm font-semibold transition-colors shrink-0",
+            saving || !apiKey.trim() ? "bg-gray-100 text-gray-400 cursor-not-allowed" : "bg-yellow-400 hover:bg-yellow-300 text-gray-900"
+          )}
+        >
+          {saving ? "Saving..." : "Save"}
+        </button>
+        {saved && (
+          <button
+            onClick={remove}
+            disabled={saving}
+            className="text-xs text-gray-400 hover:text-red-500 transition-colors"
+          >
+            Remove
+          </button>
+        )}
+      </div>
+      <p className="text-xs text-gray-400 mt-1.5">Encrypted with AES-256. Used for PriceLabs API access.</p>
     </div>
   );
 }

@@ -10,18 +10,25 @@ export async function GET() {
   const supabase = createSupabaseAdmin();
   const { data, error } = await supabase
     .from('pricelabs_clients')
-    .select('id, client_name, email, active, hubspot_contact_id, connection_type, created_at')
+    .select('id, client_name, email, active, hubspot_contact_id, connection_type, api_key_encrypted, created_at')
     .order('client_name');
 
+  // Mark which clients have an API key (don't expose the key itself in GET)
+  const safeData = (data ?? []).map(c => ({
+    ...c,
+    has_api_key: !!c.api_key_encrypted,
+    api_key_encrypted: undefined,
+  }));
+
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data);
+  return NextResponse.json(safeData);
 }
 
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { hubspot_contact_id, client_name, email, password, connection_type } = await req.json();
+  const { hubspot_contact_id, client_name, email, password, connection_type, api_key } = await req.json();
 
   // RM Portal connection: no individual credentials needed
   if (connection_type === 'rm_portal') {
@@ -50,7 +57,7 @@ export async function POST(req: NextRequest) {
   const supabase = createSupabaseAdmin();
   const { data, error } = await supabase
     .from('pricelabs_clients')
-    .insert({ client_name, email, password_encrypted: encrypt(password), connection_type: 'direct', hubspot_contact_id: hubspot_contact_id ?? null })
+    .insert({ client_name, email, password_encrypted: encrypt(password), connection_type: 'direct', hubspot_contact_id: hubspot_contact_id ?? null, api_key_encrypted: api_key ? encrypt(api_key) : null })
     .select('id, client_name, email, active, hubspot_contact_id, connection_type, created_at')
     .single();
 
@@ -75,12 +82,13 @@ export async function PATCH(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { id, active, password } = await req.json();
+  const { id, active, password, api_key } = await req.json();
   if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 });
 
   const updates: Record<string, unknown> = {};
   if (active !== undefined) updates.active = active;
   if (password) updates.password_encrypted = encrypt(password);
+  if (api_key !== undefined) updates.api_key_encrypted = api_key ? encrypt(api_key) : null;
 
   const supabase = createSupabaseAdmin();
   const { error } = await supabase.from('pricelabs_clients').update(updates).eq('id', id);
