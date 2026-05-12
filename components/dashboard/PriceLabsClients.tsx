@@ -336,6 +336,11 @@ export default function PriceLabsClients({ contacts, initialClients }: Props) {
                 <ApiKeyField clientId={linked.id} hasApiKey={linked.has_api_key ?? false} />
               )}
 
+              {/* Listing Mapping for connected clients */}
+              {linked && (
+                <ListingMappingUpload clientId={linked.id} clientName={linked.client_name} />
+              )}
+
               {/* Inline connect form */}
               {!linked && isExpanded && (
                 <div className="px-6 pb-5 bg-gray-50 border-t border-gray-100">
@@ -409,14 +414,11 @@ export default function PriceLabsClients({ contacts, initialClients }: Props) {
       </div>
     </div>
 
-    {/* Listing → Building Group Mapping */}
-    <ListingMappingUpload />
-
     </div>
   );
 }
 
-function ListingMappingUpload() {
+function ListingMappingUpload({ clientId, clientName }: { clientId: string; clientName: string }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [result, setResult] = useState<{ imported: number; groups: Record<string, number> } | null>(null);
@@ -431,7 +433,7 @@ function ListingMappingUpload() {
       const res = await fetch('/api/pricelabs/listings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ csvText, clientName: 'Marcus' }),
+        body: JSON.stringify({ csvText, clientName }),
       });
       const data = await res.json();
       if (!res.ok || data.error) {
@@ -446,13 +448,12 @@ function ListingMappingUpload() {
   };
 
   return (
-    <div className="mt-8">
-      <h3 className="text-sm font-bold text-gray-900 mb-1">Listing → Building Group Mapping</h3>
-      <p className="text-xs text-gray-500 mb-4">
-        Upload the PriceLabs "Manage Listings" CSV export to map listings to their building groups.
-        Combined Listings are automatically resolved by tag. Used for bulk overrides.
-      </p>
-      <div className="bg-white border border-gray-200 rounded-2xl p-5">
+    <div className="px-6 pb-4">
+      <div className="flex items-center gap-2 mb-1.5">
+        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Listing Mapping</span>
+        {result && <span className="text-xs text-emerald-600 font-medium">{result.imported} listings</span>}
+      </div>
+      <div>
         <div className="flex items-center gap-3">
           <button
             onClick={() => fileRef.current?.click()}
@@ -486,17 +487,16 @@ function ListingMappingUpload() {
         />
 
         {result && result.groups && (
-          <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-2">
+          <div className="mt-3 flex flex-wrap gap-1.5">
             {Object.entries(result.groups).sort(([,a],[,b]) => b - a).map(([group, count]) => (
-              <div key={group} className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg text-xs">
-                <FileSpreadsheet size={12} className="text-gray-400 shrink-0" />
-                <span className="font-medium text-gray-900 truncate">{group}</span>
-                <span className="text-gray-400 ml-auto shrink-0">{count}</span>
-              </div>
+              <span key={group} className="inline-flex items-center gap-1 px-2 py-1 bg-gray-50 rounded text-xs text-gray-700">
+                {group} <span className="text-gray-400">{count}</span>
+              </span>
             ))}
           </div>
         )}
       </div>
+      <p className="text-xs text-gray-400 mt-1.5">Upload PriceLabs "Manage Listings" CSV. Used for bulk overrides by building.</p>
     </div>
   );
 }
