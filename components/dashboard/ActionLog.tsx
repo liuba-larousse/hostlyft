@@ -6119,15 +6119,19 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
   const opportunitiesTop = sliceFor(opportunities, pageOpps);
   const mixedTop = sliceFor(mixed, pageMixed);
 
-  // Find last action logged for a building
-  const getLastAction = (building) => {
+  // Find last action logged for a specific building + week
+  const getLastAction = (building, weekLabel) => {
     if (!rows?.length) return null;
-    return rows.find(r => r.affectedGroup === building && (r.action?.includes('Override') || r.action?.includes('changed') || r.action?.includes('Investigate'))) || null;
+    return rows.find(r =>
+      r.affectedGroup === building &&
+      r.affectedDates?.includes(weekLabel) &&
+      (r.action?.includes('Override') || r.action?.includes('changed') || r.action?.includes('Investigate'))
+    ) || null;
   };
 
   // Reusable row component
   const PairRow = ({ pair, isProblem, i, bucket, accent }) => {
-    const lastAction = getLastAction(pair.building);
+    const lastAction = getLastAction(pair.building, pair.weekLabel);
     return (
     <tr key={`${pair.building}-${pair.weekIso}`} className={`border-b border-stone-100 ${i % 2 === 1 ? 'bg-stone-50/50' : 'bg-white'}`}>
       <td className="px-3 py-2 text-stone-500 mono text-[11px]">{i + 1}</td>
@@ -6683,8 +6687,8 @@ function OverrideModal({ pair, bucket, onClose, onRecordAction }) {
   const [currency, setCurrency] = useState('USD');
   const [minPrice, setMinPrice] = useState('');
   const [minStay, setMinStay] = useState('');
-  // Apply to all listings in group
-  const [applyToAll, setApplyToAll] = useState(true);
+  // Selected listing IDs (all selected by default)
+  const [selectedListings, setSelectedListings] = useState<Set<string>>(new Set());
 
   // Auto-fetch listings for this building group
   useEffect(() => {
@@ -6693,11 +6697,9 @@ function OverrideModal({ pair, bucket, onClose, onRecordAction }) {
       fetch(`/api/pricelabs/listings?building_group=${encodeURIComponent(pair.building)}`)
         .then(r => r.json())
         .then(data => {
-          setGroupListings(data.listings || []);
-          if (data.listings?.length === 1) {
-            setListingId(data.listings[0].listing_id);
-            setPms(data.listings[0].pms || 'guesty');
-          }
+          const listings = data.listings || [];
+          setGroupListings(listings);
+          setSelectedListings(new Set(listings.map(l => l.listing_id)));
         })
         .catch(() => {})
         .finally(() => setLoadingListings(false));
@@ -6756,8 +6758,8 @@ function OverrideModal({ pair, bucket, onClose, onRecordAction }) {
   };
 
   const handleSubmit = async () => {
-    const targetListings = applyToAll && groupListings.length > 0
-      ? groupListings.map(l => ({ id: l.listing_id, pms: l.pms || 'guesty' }))
+    const targetListings = selectedListings.size > 0
+      ? groupListings.filter(l => selectedListings.has(l.listing_id)).map(l => ({ id: l.listing_id, pms: l.pms || 'guesty' }))
       : listingId ? [{ id: listingId, pms }] : [];
 
     if (targetListings.length === 0 || !dateFrom || !dateTo) {
@@ -6856,38 +6858,46 @@ function OverrideModal({ pair, bucket, onClose, onRecordAction }) {
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="text-[10px] uppercase tracking-wider text-stone-500">
-                  Listings in {pair.building} ({groupListings.length})
+                  Listings in {pair.building} ({selectedListings.size}/{groupListings.length} selected)
                 </label>
-                <label className="flex items-center gap-1.5 text-[10px] text-stone-600">
-                  <input type="checkbox" checked={applyToAll} onChange={e => setApplyToAll(e.target.checked)} className="accent-indigo-500" />
-                  Apply to all
-                </label>
-              </div>
-              {!applyToAll && (
-                <select
-                  value={listingId}
-                  onChange={e => {
-                    setListingId(e.target.value);
-                    const l = groupListings.find(l => l.listing_id === e.target.value);
-                    if (l) setPms(l.pms || 'guesty');
+                <button
+                  onClick={() => {
+                    if (selectedListings.size === groupListings.length) {
+                      setSelectedListings(new Set());
+                    } else {
+                      setSelectedListings(new Set(groupListings.map(l => l.listing_id)));
+                    }
                   }}
-                  className="w-full px-3 py-2 text-sm border border-stone-300 rounded-sm focus:outline-none focus:border-indigo-500 bg-white"
+                  className="text-[10px] text-indigo-600 hover:text-indigo-800"
                 >
-                  <option value="">Select a listing...</option>
-                  {groupListings.map(l => (
-                    <option key={l.listing_id} value={l.listing_id}>{l.listing_name}</option>
-                  ))}
-                </select>
-              )}
-              {applyToAll && (
-                <div className="max-h-24 overflow-y-auto border border-stone-200 rounded-sm text-[10px] mono text-stone-600">
-                  {groupListings.map(l => (
-                    <div key={l.listing_id} className="px-2 py-1 border-b border-stone-100 last:border-0 truncate" title={l.listing_name}>
-                      {l.listing_name}
-                    </div>
-                  ))}
-                </div>
-              )}
+                  {selectedListings.size === groupListings.length ? 'Deselect all' : 'Select all'}
+                </button>
+              </div>
+              <div className="max-h-40 overflow-y-auto border border-stone-200 rounded-sm">
+                {groupListings.map(l => (
+                  <label
+                    key={l.listing_id}
+                    className={`flex items-center gap-2 px-2 py-1.5 border-b border-stone-100 last:border-0 cursor-pointer hover:bg-stone-50 text-[11px] ${
+                      selectedListings.has(l.listing_id) ? 'text-stone-900' : 'text-stone-400'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedListings.has(l.listing_id)}
+                      onChange={() => {
+                        setSelectedListings(prev => {
+                          const next = new Set(prev);
+                          if (next.has(l.listing_id)) next.delete(l.listing_id);
+                          else next.add(l.listing_id);
+                          return next;
+                        });
+                      }}
+                      className="accent-indigo-500 shrink-0"
+                    />
+                    <span className="truncate" title={l.listing_name}>{l.listing_name}</span>
+                  </label>
+                ))}
+              </div>
             </div>
           ) : (
             <div className="flex gap-3">
@@ -7037,7 +7047,7 @@ function OverrideModal({ pair, bucket, onClose, onRecordAction }) {
           <button onClick={onClose} className="text-[11px] text-stone-500 hover:text-stone-700">Cancel</button>
           <button
             onClick={handleSubmit}
-            disabled={submitting || (!listingId && !applyToAll) || !dateFrom || !dateTo || submitted}
+            disabled={submitting || (!listingId && selectedListings.size === 0) || !dateFrom || !dateTo || submitted}
             className="px-4 py-2 text-[11px] font-semibold bg-indigo-600 text-white rounded-sm hover:bg-indigo-700 disabled:opacity-40 transition-colors flex items-center gap-1.5"
           >
             {submitting ? <><Loader2 className="w-3 h-3 animate-spin" /> Applying...</> : 'Confirm Override'}
