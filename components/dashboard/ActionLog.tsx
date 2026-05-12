@@ -3113,8 +3113,13 @@ function PortfolioReportPanel({ portfolioData, onUpdate, isReadOnly, selectedISO
       <>
       {/* Upload slot for today */}
       <div className="p-4 border-b border-stone-200 bg-stone-50/40">
-        <div className="text-[10px] uppercase tracking-[0.2em] text-stone-500 mb-2">
-          Today's report — drop the PriceLabs "Total Revenue On The Books" export
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-[10px] uppercase tracking-[0.2em] text-stone-500">
+            Today's report ({isoToMDY(selectedISO)})
+          </div>
+          {!todayReport && !isReadOnly && (
+            <SyncReportButton onSynced={handleUpload} />
+          )}
         </div>
         <ReportUploadSlot
           label={`Today (${isoToMDY(selectedISO)})`}
@@ -3562,7 +3567,7 @@ function PortfolioReportPanel({ portfolioData, onUpdate, isReadOnly, selectedISO
   );
 }
 
-function LevelEditor({ level, dayData, onUpdate, onSetStatus, isReadOnly, portfolioData, onUpdatePortfolio, selectedISO, onInvestigate, levelReport, onUpdateLevelReport, buildingReport }) {
+function LevelEditor({ level, dayData, onUpdate, onSetStatus, isReadOnly, portfolioData, onUpdatePortfolio, selectedISO, onInvestigate, levelReport, onUpdateLevelReport, buildingReport, onParseNotes }) {
   const data = dayData?.[level.id] || { status: null, fields: {}, notes: '' };
 
   return (
@@ -3691,7 +3696,18 @@ function LevelEditor({ level, dayData, onUpdate, onSetStatus, isReadOnly, portfo
 
       {/* Free notes */}
       <div className="px-5 py-3">
-        <label className="text-[10px] uppercase tracking-wider text-stone-500 block mb-1">Notes</label>
+        <div className="flex items-center justify-between mb-1">
+          <label className="text-[10px] uppercase tracking-wider text-stone-500">Notes</label>
+          {!isReadOnly && (
+            <button
+              onClick={() => onParseNotes?.()}
+              className="px-2.5 py-1 text-[11px] font-medium bg-emerald-700 text-white hover:bg-emerald-800 transition-colors flex items-center gap-1.5 rounded-sm"
+              title="Parse funnel notes into action log rows"
+            >
+              <Sparkles className="w-3 h-3" /> Parse notes → actions
+            </button>
+          )}
+        </div>
         <textarea
           value={data.notes || ''}
           onChange={(e) => !isReadOnly && onUpdate(level.id, 'notes', e.target.value)}
@@ -3893,13 +3909,6 @@ function FunnelView({ funnel, setFunnel, portfolioReports, setPortfolioReports, 
         </div>
         {view === 'today' && (
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setParseModalOpen(true)}
-              className="px-3 py-1.5 text-[11px] font-medium bg-emerald-700 text-white hover:bg-emerald-800 transition-colors flex items-center gap-1.5 rounded-sm"
-              title="Use AI to extract actions from your funnel notes and add them to the action log"
-            >
-              <Sparkles className="w-3 h-3" /> Parse notes → actions
-            </button>
             {Object.keys(dayData).some(k => dayData[k]?.status || Object.keys(dayData[k]?.fields || {}).length > 0 || dayData[k]?.notes) && (
               <button
                 onClick={resetToday}
@@ -4028,15 +4037,6 @@ function FunnelView({ funnel, setFunnel, portfolioReports, setPortfolioReports, 
               <div className="text-[10px] uppercase tracking-[0.2em] text-stone-500">
                 Daily review · sub-tabs below are the funnel steps
               </div>
-              {!isReadOnly && (
-                <button
-                  onClick={() => setParseModalOpen(true)}
-                  className="px-3 py-1.5 text-[11px] font-medium bg-emerald-700 text-white hover:bg-emerald-800 transition-colors flex items-center gap-1.5 rounded-sm shadow-sm"
-                  title="Parse funnel notes into action log rows"
-                >
-                  <Sparkles className="w-3 h-3" /> Parse notes → actions
-                </button>
-              )}
             </div>
             {FUNNEL_LEVELS.filter(L => L.id === 'portfolio').map(L => {
               // Build segment + drill-down lookup for the Portfolio level.
@@ -4074,6 +4074,7 @@ function FunnelView({ funnel, setFunnel, portfolioReports, setPortfolioReports, 
                   levelReport={null}
                   onUpdateLevelReport={null}
                   buildingReport={buildingReportToday}
+                  onParseNotes={() => setParseModalOpen(true)}
                 />
               );
             })}
@@ -4083,7 +4084,7 @@ function FunnelView({ funnel, setFunnel, portfolioReports, setPortfolioReports, 
           <div className="mt-8 pt-5 border-t border-stone-200 text-[11px] text-stone-500 leading-relaxed max-w-2xl">
             <span className="text-stone-700 font-medium">How this works.</span> Funnel data saves automatically per day; switch to History to review past days or copy a day's setup forward. The sub-tabs above (All, PH, Excl PH, Building, Listing) cover the levels of the daily review funnel — start at All, drill into PH/Excl PH if a segment is flagged, then into Building or Listing if you need to act on specific inventory.
             <br />
-            <span className="text-stone-700 font-medium">Parse notes → actions:</span> use the button above (in Today view) to have Claude scan your funnel notes and propose action log rows. You preview and pick which to add.
+            <span className="text-stone-700 font-medium">Parse notes → actions:</span> use the button in the Notes section to have Claude scan your funnel notes and propose action log rows. You preview and pick which to add.
           </div>
         </>
       )}
@@ -6817,6 +6818,58 @@ function RulesTab() {
   );
 }
 
+/* ---------- Sync Report Button ---------- */
+
+function SyncReportButton({ onSynced }) {
+  const [syncing, setSyncing] = useState(false);
+  const [error, setError] = useState('');
+  const [result, setResult] = useState(null);
+
+  const sync = async () => {
+    setSyncing(true);
+    setError('');
+    setResult(null);
+    try {
+      const res = await fetch('/api/pricelabs/portfolio-report', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        setError(data.error || 'Sync failed');
+      } else {
+        setResult(data);
+      }
+    } catch (e) {
+      setError(String(e));
+    }
+    setSyncing(false);
+  };
+
+  return (
+    <div className="flex items-center gap-2">
+      <button
+        onClick={sync}
+        disabled={syncing}
+        className="px-3 py-1.5 text-[11px] font-medium bg-stone-900 text-white hover:bg-stone-700 transition-colors flex items-center gap-1.5 rounded-sm disabled:opacity-50"
+      >
+        {syncing ? (
+          <><Loader2 className="w-3 h-3 animate-spin" /> Syncing...</>
+        ) : (
+          <><RefreshCw className="w-3 h-3" /> Sync from PriceLabs</>
+        )}
+      </button>
+      {result && (
+        <span className="text-[10px] text-emerald-700 flex items-center gap-1">
+          <Check className="w-3 h-3" /> {result.reports?.length ?? 0} reports synced
+        </span>
+      )}
+      {error && (
+        <span className="text-[10px] text-rose-700 flex items-center gap-1">
+          <AlertCircle className="w-3 h-3" /> {error.slice(0, 60)}
+        </span>
+      )}
+    </div>
+  );
+}
+
 /* ---------- Main App ---------- */
 
 export default function ActionLog() {
@@ -7364,13 +7417,6 @@ export default function ActionLog() {
               <span className="text-[10px] text-stone-400 mono">running notes · paste screenshots anywhere</span>
             </div>
             <div className="flex items-center gap-2">
-              <button
-                onClick={() => setParseModalOpenApp(true)}
-                className="px-2.5 py-1 text-[11px] font-medium bg-emerald-700 text-white hover:bg-emerald-800 transition-colors flex items-center gap-1.5 rounded-sm"
-                title="Parse funnel notes into action log rows"
-              >
-                <Sparkles className="w-3 h-3" /> Parse notes → actions
-              </button>
               {scratchpad.trim() && (
                 <button
                   onClick={() => { if (confirm('Clear scratchpad text? (Screenshots stay)')) setScratchpad(''); }}
