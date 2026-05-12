@@ -2,27 +2,42 @@ import type { Page } from 'playwright-core';
 import { readFileSync } from 'fs';
 
 const TIMEOUT = 60_000;
-const REPORT_URL = 'https://app.pricelabs.co/report-builder/9276';
 
-type ReportSegment = 'all' | 'ph';
+export type ReportSegment = 'all' | 'ph' | 'building';
 
-/** Saved filter names in PriceLabs — "PH" loads Tags Include All PH + Sync ON */
-const SAVED_FILTER: Record<ReportSegment, string | null> = {
-  all: null,   // No saved filter — just Sync ON/OFF = ON
-  ph: 'PH',    // Saved filter named "PH"
+interface ReportConfig {
+  url: string;
+  savedFilter: string | null;  // Name of saved filter to load, or null for manual Sync ON
+}
+
+const REPORT_CONFIG: Record<ReportSegment, ReportConfig> = {
+  all: {
+    url: 'https://app.pricelabs.co/report-builder/9276',
+    savedFilter: null,
+  },
+  ph: {
+    url: 'https://app.pricelabs.co/report-builder/9276',
+    savedFilter: 'PH',
+  },
+  building: {
+    url: 'https://app.pricelabs.co/report-builder/10420',
+    savedFilter: null,
+  },
 };
 
 /**
- * Download the portfolio report from PriceLabs Report Builder.
+ * Download a portfolio report from PriceLabs Report Builder.
  *
- * @param segment - 'all' for Sync ON only, 'ph' for PH saved filter + Sync ON
+ * @param segment - 'all' (Sync ON), 'ph' (saved PH filter), 'building' (by-building report, Sync ON)
  */
 export async function downloadPortfolioReport(
   page: Page,
   segment: ReportSegment = 'all'
 ): Promise<Buffer> {
+  const config = REPORT_CONFIG[segment];
+
   // Navigate to the report
-  await page.goto(REPORT_URL, { waitUntil: 'domcontentloaded', timeout: TIMEOUT });
+  await page.goto(config.url, { waitUntil: 'domcontentloaded', timeout: TIMEOUT });
   await page.waitForLoadState('networkidle', { timeout: 30_000 }).catch(() => {});
   await page.waitForTimeout(3000);
 
@@ -32,23 +47,17 @@ export async function downloadPortfolioReport(
   await filterButton.click();
   await page.waitForTimeout(1500);
 
-  const savedFilterName = SAVED_FILTER[segment];
-
-  if (savedFilterName) {
-    // Load a saved filter (e.g., "PH") from the "Load Saved Filters" dropdown
-    const savedFiltersDropdown = page.locator('text=Load Saved Filters').locator('..').locator('select, [role="combobox"]');
-    // Try clicking the dropdown area that shows saved filters
+  if (config.savedFilter) {
+    // Load a saved filter (e.g., "PH") from the dropdown
     const dropdownTrigger = page.locator('[class*="saved"] select, [class*="filter"] select').first();
     if (await dropdownTrigger.isVisible().catch(() => false)) {
-      await dropdownTrigger.selectOption({ label: savedFilterName });
+      await dropdownTrigger.selectOption({ label: config.savedFilter });
     } else {
-      // Try the dropdown with "Custom Filters" text — click it and select the saved filter
       const customDropdown = page.locator('text=Custom Filters').locator('..');
       if (await customDropdown.isVisible().catch(() => false)) {
         await customDropdown.click();
         await page.waitForTimeout(500);
-        // Click the saved filter option
-        const option = page.locator(`text="${savedFilterName}"`).first();
+        const option = page.locator(`text="${config.savedFilter}"`).first();
         if (await option.isVisible().catch(() => false)) {
           await option.click();
         }
@@ -56,7 +65,7 @@ export async function downloadPortfolioReport(
     }
     await page.waitForTimeout(1000);
   } else {
-    // No saved filter — ensure Sync ON/OFF = ON is applied
+    // Ensure Sync ON/OFF = ON is applied
     const syncFilterExists = await page.locator('text=Sync ON/OFF').isVisible().catch(() => false);
 
     if (!syncFilterExists) {
@@ -66,7 +75,6 @@ export async function downloadPortfolioReport(
         await page.waitForTimeout(500);
       }
 
-      // Select "Sync ON/OFF" from dropdowns
       const filterDropdowns = page.locator('select, [role="listbox"], [role="combobox"]');
       const count = await filterDropdowns.count();
       for (let i = 0; i < count; i++) {
@@ -79,7 +87,6 @@ export async function downloadPortfolioReport(
       }
       await page.waitForTimeout(500);
 
-      // Set the value to "ON"
       const valueDropdowns = page.locator('select, [role="listbox"], [role="combobox"]');
       const valCount = await valueDropdowns.count();
       for (let i = 0; i < valCount; i++) {
