@@ -118,7 +118,7 @@ export async function downloadPortfolioReport(
   await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
 
   // Click Download
-  const downloadBtn = page.locator('button:has-text("Download"), a:has-text("Download")');
+  const downloadBtn = page.locator('#rb-template-top-panel-download-report-btn');
   await downloadBtn.waitFor({ state: 'visible', timeout: 10_000 });
 
   const downloadPromise = page.waitForEvent('download', { timeout: TIMEOUT });
