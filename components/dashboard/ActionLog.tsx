@@ -6811,7 +6811,7 @@ function OverrideModal({ pair, bucket, onClose, onRecordAction }) {
         if (minStay) desc.push(`min stay ${minStay}n`);
 
         onRecordAction(pair, bucket, {
-          listingId: applyToAll ? `${targetListings.length} listings` : listingId,
+          listingId: targetListings.length > 1 ? `${targetListings.length} listings` : listingId,
           dates: `${dateFrom} → ${dateTo}`,
           description: desc.join(', ') || 'override applied',
           before: existing.length > 0 ? `${existing.length} existing overrides` : 'none',
