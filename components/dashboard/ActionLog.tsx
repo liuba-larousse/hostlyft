@@ -5631,6 +5631,7 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
   const [addToast, setAddToast] = useState(null);
   // Override modal state
   const [overrideModal, setOverrideModal] = useState(null); // { pair, bucket }
+  const [settingModal, setSettingModal] = useState(null); // { pair, bucket }
 
   // Inline month label helper — "May 2026", "Jun 2026" etc.
   const monthLabel = (y, m) => {
@@ -6036,19 +6037,18 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
     return (
       <div className="inline-flex items-center gap-1">
         <button
-          onClick={() => addActionFromPair(pair, bucket)}
-          disabled={!setRows}
-          className={`inline-flex items-center gap-1 px-2 py-1 text-[10px] mono border rounded-sm bg-white transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${accentClasses}`}
-          title="Record this in the Action Log"
+          onClick={() => setSettingModal({ pair, bucket })}
+          className={`inline-flex items-center gap-1 px-2 py-1 text-[10px] mono border rounded-sm bg-white transition-colors ${accentClasses}`}
+          title="Record a PriceLabs setting change"
         >
-          <Plus className="w-3 h-3" /> Record action
+          <Pencil className="w-3 h-3" /> Adjust setting
         </button>
         <button
           onClick={() => setOverrideModal({ pair, bucket })}
           className="inline-flex items-center gap-1 px-2 py-1 text-[10px] mono border border-indigo-300 hover:border-indigo-500 text-indigo-800 hover:bg-indigo-100 rounded-sm bg-white transition-colors"
-          title="Change price override via PriceLabs API"
+          title="Change date-level price override via API"
         >
-          <Pencil className="w-3 h-3" /> Override
+          <Plus className="w-3 h-3" /> Override
         </button>
       </div>
     );
@@ -6454,6 +6454,33 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
         </div>
       )}
 
+      {/* Setting Modal */}
+      {settingModal && (
+        <SettingModal
+          pair={settingModal.pair}
+          bucket={settingModal.bucket}
+          onClose={() => setSettingModal(null)}
+          onRecord={(pair, bucket, info) => {
+            const newRow = {
+              id: `r_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+              date: todayMDY(),
+              owner: 'Liuba',
+              reason: `Setting change (Summary · ${bucket}): ${pair.buildingFlags?.map(f => f.label).join(', ') || 'flagged'}`,
+              affectedGroup: info.affectedGroup || pair.building,
+              affectedDates: info.affectedDates || `${pair.monthLabel} · ${pair.weekLabel || ''}`,
+              action: `${info.setting}: changed`,
+              valueBefore: info.before,
+              valueAfter: info.after,
+              notes: info.notes || '',
+              checkDone: false,
+            };
+            setRows(prev => [newRow, ...prev]);
+            setAddToast({ building: pair.building, week: pair.weekLabel || '', bucket });
+            setTimeout(() => setAddToast(null), 3000);
+          }}
+        />
+      )}
+
       {/* Override Modal */}
       {overrideModal && (
         <OverrideModal
@@ -6481,6 +6508,121 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
           }}
         />
       )}
+    </div>
+  );
+}
+
+/* ---------- PriceLabs Settings ---------- */
+
+const PRICELABS_SETTINGS = [
+  'Last Minute Prices',
+  'Far Out Prices',
+  'Booking Recency Factor',
+  'Orphan Day Prices',
+  'Occupancy Based Adjustments',
+  'Safety Minimum Price',
+  'Demand Factor Sensitivity',
+  'Seasonality Factor Sensitivity',
+  'Custom Seasonal Profile',
+  'Weekend Adjustments',
+  'Weekly Discounts',
+  'Monthly Discounts',
+  'Day of Week Pricing Adjustments',
+  'Extra Person Fee',
+  'Pricing Offset',
+  'Rounding',
+];
+
+function SettingModal({ pair, bucket, onClose, onRecord }) {
+  const [setting, setSetting] = useState('');
+  const [before, setBefore] = useState('');
+  const [after, setAfter] = useState('');
+  const [affectedGroup, setAffectedGroup] = useState(pair.building || '');
+  const [affectedDates, setAffectedDates] = useState(
+    `${pair.monthLabel || ''} · ${pair.weekLabel || ''} (${pair.weekDateRange || ''})`
+  );
+  const [notes, setNotes] = useState('');
+
+  const handleSubmit = () => {
+    if (!setting) return;
+    onRecord(pair, bucket, { setting, before, after, affectedGroup, affectedDates, notes });
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="bg-white rounded-lg shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-stone-200">
+          <div>
+            <h2 className="text-[14px] font-semibold text-stone-900">Adjust Setting</h2>
+            <p className="text-[11px] text-stone-500">{pair.building} · {pair.weekLabel || pair.monthLabel}</p>
+          </div>
+          <button onClick={onClose} className="text-stone-400 hover:text-stone-600 text-lg">✕</button>
+        </div>
+
+        <div className="px-5 py-4 space-y-3">
+          {/* Setting picker */}
+          <div>
+            <label className="text-[10px] uppercase tracking-wider text-stone-500 block mb-1">PriceLabs Setting</label>
+            <select
+              value={setting}
+              onChange={e => setSetting(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-stone-300 rounded-sm focus:outline-none focus:border-indigo-500 bg-white"
+            >
+              <option value="">Select a setting...</option>
+              {PRICELABS_SETTINGS.map(s => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Affected group */}
+          <div>
+            <label className="text-[10px] uppercase tracking-wider text-stone-500 block mb-1">Affected Group</label>
+            <input value={affectedGroup} onChange={e => setAffectedGroup(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-stone-300 rounded-sm focus:outline-none focus:border-indigo-500" />
+          </div>
+
+          {/* Affected dates */}
+          <div>
+            <label className="text-[10px] uppercase tracking-wider text-stone-500 block mb-1">Affected Dates</label>
+            <input value={affectedDates} onChange={e => setAffectedDates(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-stone-300 rounded-sm focus:outline-none focus:border-indigo-500" />
+          </div>
+
+          {/* Before / After */}
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <label className="text-[10px] uppercase tracking-wider text-stone-500 block mb-1">Value Before</label>
+              <input value={before} onChange={e => setBefore(e.target.value)} placeholder="e.g. Aggressive"
+                className="w-full px-3 py-2 text-sm border border-stone-300 rounded-sm focus:outline-none focus:border-indigo-500" />
+            </div>
+            <div className="flex-1">
+              <label className="text-[10px] uppercase tracking-wider text-stone-500 block mb-1">Value After</label>
+              <input value={after} onChange={e => setAfter(e.target.value)} placeholder="e.g. Recommended"
+                className="w-full px-3 py-2 text-sm border border-stone-300 rounded-sm focus:outline-none focus:border-indigo-500" />
+            </div>
+          </div>
+
+          {/* Notes */}
+          <div>
+            <label className="text-[10px] uppercase tracking-wider text-stone-500 block mb-1">Notes</label>
+            <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="Optional context..."
+              className="w-full px-3 py-2 text-sm border border-stone-300 rounded-sm focus:outline-none focus:border-indigo-500 resize-none" />
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between px-5 py-3 border-t border-stone-200 bg-stone-50">
+          <button onClick={onClose} className="text-[11px] text-stone-500 hover:text-stone-700">Cancel</button>
+          <button
+            onClick={handleSubmit}
+            disabled={!setting}
+            className="px-4 py-2 text-[11px] font-semibold bg-stone-900 text-white rounded-sm hover:bg-stone-700 disabled:opacity-40 transition-colors"
+          >
+            Record Action
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
