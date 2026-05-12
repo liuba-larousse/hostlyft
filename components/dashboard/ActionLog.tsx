@@ -6794,10 +6794,16 @@ function SyncReportButton({ segment, onReportLoaded }) {
     try {
       // Step 1: Try live sync from PriceLabs
       const syncRes = await fetch(`/api/pricelabs/daily-report?segment=${apiSegment}`, { method: 'POST' });
-      const syncData = await syncRes.json();
-      if (!syncRes.ok || syncData.error) {
-        // Live sync failed — try reading from stored reports
-        console.warn('Live sync failed:', syncData.error);
+      let syncError = '';
+      try {
+        const syncData = await syncRes.json();
+        if (!syncRes.ok || syncData.error) {
+          syncError = syncData.error || `HTTP ${syncRes.status}`;
+          console.warn('Live sync failed:', syncError);
+        }
+      } catch {
+        syncError = `HTTP ${syncRes.status} (no response body)`;
+        console.warn('Live sync failed:', syncError);
       }
 
       // Step 2: Fetch from Supabase (either just synced or previously stored)
@@ -6808,7 +6814,7 @@ function SyncReportButton({ segment, onReportLoaded }) {
       // Find the latest report for this segment
       const match = reports.find(r => r.segment === apiSegment);
       if (!match?.report_data?.rawRows) {
-        setError('No report found for this segment');
+        setError(syncError ? `Sync failed: ${syncError}` : 'No report found for this segment');
         setSyncing(false);
         return;
       }
