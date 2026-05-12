@@ -13,7 +13,7 @@
       "schedule": "0 8 * * *"
     },
     {
-      "path": "/api/pricelabs/portfolio-sync",
+      "path": "/api/pricelabs/daily-report?include=portfolio",
       "schedule": "0 7 * * *"
     }
   ]

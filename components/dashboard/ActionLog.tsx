@@ -6772,8 +6772,8 @@ function SyncReportButton({ onSynced }) {
     setError('');
     setResult(null);
     try {
-      // Trigger a live sync from PriceLabs via Playwright
-      const syncRes = await fetch('/api/pricelabs/portfolio-sync', { method: 'POST' });
+      // Trigger a live sync from PriceLabs via Playwright (same route as bookings sync)
+      const syncRes = await fetch('/api/pricelabs/daily-report', { method: 'POST' });
       const syncData = await syncRes.json();
       if (!syncRes.ok || syncData.error) {
         // If Playwright fails (e.g. on Vercel), fall back to reading stored reports
