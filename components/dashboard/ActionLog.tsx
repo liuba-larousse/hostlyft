@@ -6532,7 +6532,7 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
               owner: 'Liuba',
               reason: `Override applied (Summary · ${bucket})`,
               affectedGroup: pair.building,
-              affectedDates: overrideInfo.dates,
+              affectedDates: `${pair.monthLabel || ''} · ${pair.weekLabel || ''} · ${overrideInfo.dates}`,
               action: `Override: ${overrideInfo.description}`,
               valueBefore: overrideInfo.before || '',
               valueAfter: overrideInfo.after || '',
