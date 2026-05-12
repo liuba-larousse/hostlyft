@@ -1,4 +1,4 @@
-import { BarChart3, FileText, ArrowRight } from "lucide-react";
+import { BarChart3, FileText, Grid3X3, ArrowRight } from "lucide-react";
 import Link from "next/link";
 
 const cards = [
@@ -15,6 +15,13 @@ const cards = [
     label: "Action Log",
     description: "Daily pricing review funnel, action tracking, and portfolio reports",
     color: "bg-amber-50 text-amber-600",
+  },
+  {
+    href: "/dashboard/cloud9/price-matrix",
+    icon: Grid3X3,
+    label: "Price Matrix",
+    description: "Base, min, max pricing calculator",
+    color: "bg-rose-50 text-rose-600",
   },
 ];
 

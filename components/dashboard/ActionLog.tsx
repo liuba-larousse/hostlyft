@@ -3572,64 +3572,6 @@ function LevelEditor({ level, dayData, onUpdate, onSetStatus, isReadOnly, portfo
 
   return (
     <div className="border border-stone-300 rounded-sm bg-white">
-      {/* Header */}
-      <div className="px-5 py-3 border-b border-stone-200 bg-stone-50 flex items-start justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <div
-              className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-semibold ${
-                level.color === 'emerald-deep' ? 'bg-emerald-800 text-white' : 'bg-stone-700 text-white'
-              }`}
-            >
-              {level.num}
-            </div>
-            <h3 className="text-[15px] font-semibold text-stone-900">{level.title}</h3>
-            <span className="text-[10px] uppercase tracking-wider text-stone-400">{level.subtitle}</span>
-          </div>
-          <div className="text-[11px] text-stone-600 mt-1.5 ml-8 leading-snug">
-            <span className="font-medium text-stone-700">Purpose:</span> {level.purpose}
-          </div>
-          <div className="text-[10px] text-stone-500 mt-0.5 ml-8 mono">
-            Review daily? <span className="text-stone-700">{level.reviewDaily ? 'Yes' : 'Only if flagged'}</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Status row */}
-      <div className="px-5 py-3 border-b border-stone-200 bg-white">
-        <div className="text-[10px] uppercase tracking-[0.2em] text-stone-500 mb-2">Today's status</div>
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {FUNNEL_STATUSES.map(s => {
-            const active = data.status === s.value;
-            const Icon = s.icon;
-            return (
-              <button
-                key={s.value}
-                onClick={() => !isReadOnly && onSetStatus(level.id, active ? null : s.value)}
-                disabled={isReadOnly}
-                className={`px-2.5 py-1.5 text-[11px] font-medium rounded-sm border transition-colors flex items-center gap-1.5 ${
-                  active
-                    ? 'border-transparent'
-                    : 'border-stone-300 bg-white text-stone-600 hover:border-stone-500'
-                } ${isReadOnly ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'}`}
-                style={active ? { background: s.bg, color: s.fg } : undefined}
-              >
-                <Icon className="w-3 h-3" />
-                {s.label}
-              </button>
-            );
-          })}
-          {data.status && !isReadOnly && (
-            <button
-              onClick={() => onSetStatus(level.id, null)}
-              className="text-[10px] text-stone-400 hover:text-stone-700 px-2"
-            >
-              Clear
-            </button>
-          )}
-        </div>
-      </div>
-
       {/* Portfolio: full segment-aware panel */}
       {level.isReportDriven && (
         <div className="px-5 py-4 border-b border-stone-200 bg-stone-50/30">

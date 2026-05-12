@@ -1,11 +1,6 @@
 import { test, expect } from "@playwright/test";
 
-// These tests require an authenticated session.
-// Set PLAYWRIGHT_STORAGE_STATE to a saved auth state file, or
-// configure the auth setup fixture below.
-
 test.describe("Dashboard", () => {
-  // Skip if no auth state is available — these tests require a logged-in session
   test.skip(
     !process.env.PLAYWRIGHT_STORAGE_STATE,
     "Requires PLAYWRIGHT_STORAGE_STATE for authenticated tests"
@@ -22,7 +17,6 @@ test.describe("Dashboard", () => {
     await expect(page.locator("h1")).toContainText("Welcome back");
     await expect(page.getByText("Quick access")).toBeVisible();
 
-    // Verify all quick access cards are present
     const cards = [
       "Cloud Agents",
       "Artifacts",
@@ -30,7 +24,6 @@ test.describe("Dashboard", () => {
       "Team",
       "Clients",
       "Cloud 9",
-      "Price Matrix",
     ];
     for (const card of cards) {
       await expect(page.getByText(card, { exact: true })).toBeVisible();
@@ -46,7 +39,6 @@ test.describe("Dashboard", () => {
       "Artifacts",
       "Schedule",
       "Cloud 9",
-      "Price Matrix",
       "Team",
       "Clients",
       "Marketing",
@@ -69,21 +61,19 @@ test.describe("Dashboard", () => {
   test("schedule week navigation works", async ({ page }) => {
     await page.goto("/dashboard/schedule");
     await expect(page.getByText("Weekly Schedule")).toBeVisible();
-
-    // Navigate to next week
-    const nextBtn = page.locator('button:has(svg)').filter({ hasText: '' }).nth(1);
     await page.getByRole("button", { name: "Today" }).click();
   });
 
-  test("cloud9 page loads", async ({ page }) => {
+  test("cloud9 page loads with subtabs", async ({ page }) => {
     await page.goto("/dashboard/cloud9");
-    await page.waitForLoadState("networkidle");
-    // Cloud9Matrix loads dynamically — just verify the page doesn't error
-    await expect(page.locator("body")).not.toContainText("Application error");
+    await expect(page.getByText("Cloud 9")).toBeVisible();
+    await expect(page.getByText("Cloud 9 Matrix")).toBeVisible();
+    await expect(page.getByText("Action Log")).toBeVisible();
+    await expect(page.getByText("Price Matrix")).toBeVisible();
   });
 
-  test("price matrix page loads", async ({ page }) => {
-    await page.goto("/dashboard/price-matrix");
+  test("price matrix page loads under cloud9", async ({ page }) => {
+    await page.goto("/dashboard/cloud9/price-matrix");
     await page.waitForLoadState("networkidle");
     await expect(page.locator("body")).not.toContainText("Application error");
   });
@@ -117,10 +107,6 @@ test.describe("Dashboard", () => {
 
     await page.getByText("Cloud 9").click();
     await expect(page).toHaveURL("/dashboard/cloud9");
-
-    await page.goto("/dashboard");
-    await page.getByText("Price Matrix").click();
-    await expect(page).toHaveURL("/dashboard/price-matrix");
 
     await page.goto("/dashboard");
     await page.getByText("Schedule").click();
