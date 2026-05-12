@@ -6634,9 +6634,12 @@ function OverrideModal({ pair, bucket, onClose, onRecordAction }) {
   const [existing, setExisting] = useState([]);
   const [error, setError] = useState('');
   const [listingId, setListingId] = useState('');
-  const [pms, setPms] = useState('airbnb');
+  const [pms, setPms] = useState('guesty');
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  // Listings for this building group
+  const [groupListings, setGroupListings] = useState([]);
+  const [loadingListings, setLoadingListings] = useState(true);
 
   // Form fields
   const [dateFrom, setDateFrom] = useState('');
@@ -6646,6 +6649,26 @@ function OverrideModal({ pair, bucket, onClose, onRecordAction }) {
   const [currency, setCurrency] = useState('USD');
   const [minPrice, setMinPrice] = useState('');
   const [minStay, setMinStay] = useState('');
+  // Apply to all listings in group
+  const [applyToAll, setApplyToAll] = useState(true);
+
+  // Auto-fetch listings for this building group
+  useEffect(() => {
+    if (pair.building) {
+      setLoadingListings(true);
+      fetch(`/api/pricelabs/listings?building_group=${encodeURIComponent(pair.building)}`)
+        .then(r => r.json())
+        .then(data => {
+          setGroupListings(data.listings || []);
+          if (data.listings?.length === 1) {
+            setListingId(data.listings[0].listing_id);
+            setPms(data.listings[0].pms || 'guesty');
+          }
+        })
+        .catch(() => {})
+        .finally(() => setLoadingListings(false));
+    }
+  }, [pair.building]);
 
   // Pre-fill dates from the pair's week range if available
   useEffect(() => {
@@ -6699,8 +6722,12 @@ function OverrideModal({ pair, bucket, onClose, onRecordAction }) {
   };
 
   const handleSubmit = async () => {
-    if (!listingId || !dateFrom || !dateTo) {
-      setError('Listing ID and date range are required');
+    const targetListings = applyToAll && groupListings.length > 0
+      ? groupListings.map(l => ({ id: l.listing_id, pms: l.pms || 'guesty' }))
+      : listingId ? [{ id: listingId, pms }] : [];
+
+    if (targetListings.length === 0 || !dateFrom || !dateTo) {
+      setError('Select listings and date range');
       return;
     }
     setSubmitting(true);
@@ -6726,28 +6753,33 @@ function OverrideModal({ pair, bucket, onClose, onRecordAction }) {
     });
 
     try {
-      const res = await fetch('/api/pricelabs/overrides', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ listingId, pms, overrides }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || 'Failed to apply override');
+      let successCount = 0;
+      let failCount = 0;
+      for (const target of targetListings) {
+        const res = await fetch('/api/pricelabs/overrides', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ listingId: target.id, pms: target.pms, overrides }),
+        });
+        if (res.ok) successCount++;
+        else failCount++;
+      }
+
+      if (failCount > 0 && successCount === 0) {
+        setError(`Failed to apply overrides to all ${failCount} listings`);
       } else {
         setSubmitted(true);
-        // Record the action
         const desc = [];
         if (price) desc.push(`${priceType === 'fixed' ? '$' : ''}${price}${priceType === 'percent' ? '%' : ''}`);
         if (minPrice) desc.push(`min $${minPrice}`);
         if (minStay) desc.push(`min stay ${minStay}n`);
 
         onRecordAction(pair, bucket, {
-          listingId,
+          listingId: applyToAll ? `${targetListings.length} listings` : listingId,
           dates: `${dateFrom} → ${dateTo}`,
           description: desc.join(', ') || 'override applied',
           before: existing.length > 0 ? `${existing.length} existing overrides` : 'none',
-          after: `${dates.length} dates updated`,
+          after: `${dates.length} dates × ${successCount} listings${failCount ? ` (${failCount} failed)` : ''}`,
         });
 
         setTimeout(onClose, 1500);
@@ -6781,36 +6813,79 @@ function OverrideModal({ pair, bucket, onClose, onRecordAction }) {
         </div>
 
         <div className="px-5 py-4 space-y-4">
-          {/* Listing ID + PMS */}
-          <div className="flex gap-3">
-            <div className="flex-1">
-              <label className="text-[10px] uppercase tracking-wider text-stone-500 block mb-1">Listing ID</label>
-              <div className="flex gap-2">
-                <input
+          {/* Listings in this building group */}
+          {loadingListings ? (
+            <div className="text-[11px] text-stone-400 flex items-center gap-1.5">
+              <Loader2 className="w-3 h-3 animate-spin" /> Loading listings for {pair.building}...
+            </div>
+          ) : groupListings.length > 0 ? (
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-[10px] uppercase tracking-wider text-stone-500">
+                  Listings in {pair.building} ({groupListings.length})
+                </label>
+                <label className="flex items-center gap-1.5 text-[10px] text-stone-600">
+                  <input type="checkbox" checked={applyToAll} onChange={e => setApplyToAll(e.target.checked)} className="accent-indigo-500" />
+                  Apply to all
+                </label>
+              </div>
+              {!applyToAll && (
+                <select
                   value={listingId}
-                  onChange={e => setListingId(e.target.value)}
-                  placeholder="e.g. 2854562"
-                  className="flex-1 px-3 py-2 text-sm border border-stone-300 rounded-sm focus:outline-none focus:border-indigo-500"
-                />
-                <button
-                  onClick={fetchOverrides}
-                  disabled={!listingId.trim()}
-                  className="px-3 py-2 text-[11px] font-medium bg-stone-900 text-white rounded-sm hover:bg-stone-700 disabled:opacity-40"
+                  onChange={e => {
+                    setListingId(e.target.value);
+                    const l = groupListings.find(l => l.listing_id === e.target.value);
+                    if (l) setPms(l.pms || 'guesty');
+                  }}
+                  className="w-full px-3 py-2 text-sm border border-stone-300 rounded-sm focus:outline-none focus:border-indigo-500 bg-white"
                 >
-                  Check
-                </button>
+                  <option value="">Select a listing...</option>
+                  {groupListings.map(l => (
+                    <option key={l.listing_id} value={l.listing_id}>{l.listing_name}</option>
+                  ))}
+                </select>
+              )}
+              {applyToAll && (
+                <div className="max-h-24 overflow-y-auto border border-stone-200 rounded-sm text-[10px] mono text-stone-600">
+                  {groupListings.map(l => (
+                    <div key={l.listing_id} className="px-2 py-1 border-b border-stone-100 last:border-0 truncate" title={l.listing_name}>
+                      {l.listing_name}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <label className="text-[10px] uppercase tracking-wider text-stone-500 block mb-1">Listing ID (no mapping found)</label>
+                <div className="flex gap-2">
+                  <input
+                    value={listingId}
+                    onChange={e => setListingId(e.target.value)}
+                    placeholder="e.g. 640f2a1a19ef5f003879cc6b"
+                    className="flex-1 px-3 py-2 text-sm border border-stone-300 rounded-sm focus:outline-none focus:border-indigo-500"
+                  />
+                  <button
+                    onClick={fetchOverrides}
+                    disabled={!listingId.trim()}
+                    className="px-3 py-2 text-[11px] font-medium bg-stone-900 text-white rounded-sm hover:bg-stone-700 disabled:opacity-40"
+                  >
+                    Check
+                  </button>
+                </div>
+              </div>
+              <div className="w-24">
+                <label className="text-[10px] uppercase tracking-wider text-stone-500 block mb-1">PMS</label>
+                <select value={pms} onChange={e => setPms(e.target.value)} className="w-full px-2 py-2 text-sm border border-stone-300 rounded-sm focus:outline-none focus:border-indigo-500">
+                  <option value="guesty">Guesty</option>
+                  <option value="airbnb">Airbnb</option>
+                  <option value="vrbo">VRBO</option>
+                  <option value="hostaway">Hostaway</option>
+                </select>
               </div>
             </div>
-            <div className="w-24">
-              <label className="text-[10px] uppercase tracking-wider text-stone-500 block mb-1">PMS</label>
-              <select value={pms} onChange={e => setPms(e.target.value)} className="w-full px-2 py-2 text-sm border border-stone-300 rounded-sm focus:outline-none focus:border-indigo-500">
-                <option value="airbnb">Airbnb</option>
-                <option value="vrbo">VRBO</option>
-                <option value="guesty">Guesty</option>
-                <option value="hostaway">Hostaway</option>
-              </select>
-            </div>
-          </div>
+          )}
 
           {/* Existing overrides */}
           {existing.length > 0 && (
