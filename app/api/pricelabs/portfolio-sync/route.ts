@@ -2,9 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { createSupabaseAdmin } from '@/lib/supabase';
 import { getActiveClients } from '@/lib/supabase/clients';
-import { launchBrowser } from '@/lib/pricelabs/browser';
-import { loginToPriceLabs } from '@/lib/pricelabs/login';
-import { downloadPortfolioReport } from '@/lib/pricelabs/download-report';
+// Playwright modules are dynamically imported to avoid bundler issues on Vercel Fluid compute
 import * as XLSX from 'xlsx';
 
 export const maxDuration = 300;
@@ -37,6 +35,11 @@ async function runSync() {
   if (!client) {
     throw new Error('Client "Marcus Halawi" not found in active clients');
   }
+
+  // Dynamic imports to avoid Vercel bundler issues with playwright-core
+  const { launchBrowser } = await import('@/lib/pricelabs/browser');
+  const { loginToPriceLabs } = await import('@/lib/pricelabs/login');
+  const { downloadPortfolioReport } = await import('@/lib/pricelabs/download-report');
 
   const browser = await launchBrowser();
   const results: { segment: string; rowCount: number }[] = [];
