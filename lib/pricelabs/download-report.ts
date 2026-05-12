@@ -118,18 +118,12 @@ export async function downloadPortfolioReport(
     }
   }
 
-  // Close the filter panel — look for X/close button in the drawer/panel
-  const closeBtn = page.locator('button[aria-label="Close"], button[aria-label="close"]').first();
+  // Close the filter panel — Chakra modal close button
+  const closeBtn = page.locator('[id^="chakra-modal"] > button, button[aria-label="Close"]').first();
   if (await closeBtn.isVisible().catch(() => false)) {
     await closeBtn.click();
   } else {
-    // Try the X button near "Listing Filter" heading
-    const xBtn = page.locator('button:has(svg)').filter({ hasText: '' }).locator('near=:text("Listing Filter")').first();
-    if (await xBtn.isVisible().catch(() => false)) {
-      await xBtn.click();
-    } else {
-      await page.keyboard.press('Escape');
-    }
+    await page.keyboard.press('Escape');
   }
   await page.waitForTimeout(1000);
 
