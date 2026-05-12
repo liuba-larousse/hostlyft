@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Link2, Link2Off, Eye, EyeOff, ToggleLeft, ToggleRight, Loader2, CheckCircle2, ChevronDown, ChevronUp } from "lucide-react";
+import { Link2, Link2Off, Eye, EyeOff, ToggleLeft, ToggleRight, Loader2, CheckCircle2, ChevronDown, ChevronUp, Upload, FileSpreadsheet } from "lucide-react";
+import { useRef } from "react";
 import { clsx } from "clsx";
 import OtaListingsEditor from "./OtaListingsEditor";
 
@@ -407,6 +408,95 @@ export default function PriceLabsClients({ contacts, initialClients }: Props) {
         })}
       </div>
     </div>
+
+    {/* Listing → Building Group Mapping */}
+    <ListingMappingUpload />
+
+    </div>
+  );
+}
+
+function ListingMappingUpload() {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [result, setResult] = useState<{ imported: number; groups: Record<string, number> } | null>(null);
+  const [error, setError] = useState('');
+
+  const handleFile = async (file: File) => {
+    setUploading(true);
+    setError('');
+    setResult(null);
+    try {
+      const csvText = await file.text();
+      const res = await fetch('/api/pricelabs/listings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ csvText, clientName: 'Marcus' }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        setError(data.error || 'Import failed');
+      } else {
+        setResult(data);
+      }
+    } catch (e) {
+      setError(String(e));
+    }
+    setUploading(false);
+  };
+
+  return (
+    <div className="mt-8">
+      <h3 className="text-sm font-bold text-gray-900 mb-1">Listing → Building Group Mapping</h3>
+      <p className="text-xs text-gray-500 mb-4">
+        Upload the PriceLabs "Manage Listings" CSV export to map listings to their building groups.
+        Combined Listings are automatically resolved by tag. Used for bulk overrides.
+      </p>
+      <div className="bg-white border border-gray-200 rounded-2xl p-5">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+            className={clsx(
+              "flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors",
+              uploading ? "bg-gray-100 text-gray-400" : "bg-yellow-400 hover:bg-yellow-300 text-gray-900"
+            )}
+          >
+            {uploading ? (
+              <><Loader2 size={14} className="animate-spin" /> Importing...</>
+            ) : (
+              <><Upload size={14} /> Upload CSV</>
+            )}
+          </button>
+          {result && (
+            <span className="text-sm text-emerald-600 flex items-center gap-1.5">
+              <CheckCircle2 size={14} /> {result.imported} listings imported
+            </span>
+          )}
+          {error && (
+            <span className="text-sm text-red-500">{error}</span>
+          )}
+        </div>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".csv"
+          className="hidden"
+          onChange={e => { if (e.target.files?.[0]) handleFile(e.target.files[0]); e.target.value = ''; }}
+        />
+
+        {result && result.groups && (
+          <div className="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {Object.entries(result.groups).sort(([,a],[,b]) => b - a).map(([group, count]) => (
+              <div key={group} className="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg text-xs">
+                <FileSpreadsheet size={12} className="text-gray-400 shrink-0" />
+                <span className="font-medium text-gray-900 truncate">{group}</span>
+                <span className="text-gray-400 ml-auto shrink-0">{count}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
