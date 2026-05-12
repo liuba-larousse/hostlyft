@@ -6783,7 +6783,7 @@ function SyncReportButton({ onSynced }) {
     setResult(null);
     try {
       // Sync each segment one at a time to avoid timeout
-      const segments = ['all', 'ph', 'building', 'weeks'];
+      const segments = ['all', 'ph', 'exclPh', 'building', 'weeks'];
       for (const seg of segments) {
         try {
           const syncRes = await fetch(`/api/pricelabs/daily-report?segment=${seg}`, { method: 'POST' });
