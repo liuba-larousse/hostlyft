@@ -5756,9 +5756,8 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
             buildingMetrics: { tyAdr: m.rentalADR, stlyAdr: m.rentalADRSTLY, tyOcc: m.occupancy, stlyOcc: m.occupancySTLY },
           });
 
-          // Pair has DOWN flags (building + week both flagged problems)
-          if (buildingProblems.length > 0 && wProblems.length > 0) {
-            // If revenue gap is null, treat as no info — keep in Problems bucket per old behavior
+          // Classify based on building flags — week flags enhance but aren't required
+          if (buildingProblems.length > 0) {
             if (revenueGap == null || revenueGap <= 0) {
               problemPairs.push({ ...basePair(buildingProblems, wProblems), bucket: 'problem' });
             } else {
@@ -5770,8 +5769,7 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
               });
             }
           }
-          // Pair has UP flags (building + week both flagged opportunities)
-          if (buildingOpps.length > 0 && wOpps.length > 0) {
+          if (buildingOpps.length > 0) {
             if (revenueGap == null || revenueGap >= 0) {
               opportunityPairs.push({ ...basePair(buildingOpps, wOpps), bucket: 'opportunity' });
             } else {
