@@ -3128,7 +3128,7 @@ function PortfolioReportPanel({ portfolioData, onUpdate, isReadOnly, selectedISO
             Today's report ({isoToMDY(selectedISO)})
           </div>
           {!todayReport && !isReadOnly && (
-            <SyncReportButton onSynced={handleUpload} />
+            <SyncReportButton segment={segment} onReportLoaded={(parsed) => handleUpload('todayReport', parsed)} />
           )}
         </div>
         <ReportUploadSlot
@@ -6772,93 +6772,51 @@ function RulesTab() {
 
 /* ---------- Sync Report Button ---------- */
 
-function SyncReportButton({ onSynced }) {
+function SyncReportButton({ segment, onReportLoaded }) {
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState('');
-  const [result, setResult] = useState(null);
+  const [done, setDone] = useState(false);
+
+  // Map Action Log segment names to API segment names
+  const apiSegment = segment === 'exclPh' ? 'exclPh' : segment;
 
   const sync = async () => {
     setSyncing(true);
     setError('');
-    setResult(null);
+    setDone(false);
     try {
-      // Sync each segment one at a time to avoid timeout
-      const segments = ['all', 'ph', 'exclPh', 'building', 'weeks'];
-      for (const seg of segments) {
-        try {
-          const syncRes = await fetch(`/api/pricelabs/daily-report?segment=${seg}`, { method: 'POST' });
-          const syncData = await syncRes.json();
-          if (!syncRes.ok || syncData.error) {
-            console.warn(`Sync ${seg} failed:`, syncData.error);
-          }
-        } catch (e) {
-          console.warn(`Sync ${seg} error:`, e);
-        }
+      // Step 1: Try live sync from PriceLabs
+      const syncRes = await fetch(`/api/pricelabs/daily-report?segment=${apiSegment}`, { method: 'POST' });
+      const syncData = await syncRes.json();
+      if (!syncRes.ok || syncData.error) {
+        // Live sync failed — try reading from stored reports
+        console.warn('Live sync failed:', syncData.error);
       }
 
-      // Fetch reports from Supabase (either just synced or previously stored)
+      // Step 2: Fetch from Supabase (either just synced or previously stored)
       const res = await fetch('/api/pricelabs/portfolio-report');
       const data = await res.json();
-      if (!res.ok || data.error) {
-        setError(data.error || 'Failed to fetch reports');
-        setSyncing(false);
-        return;
-      }
-
       const reports = data.reports || [];
-      if (reports.length === 0) {
-        setError('No reports available — drop XLSX as fallback');
+
+      // Find the latest report for this segment
+      const match = reports.find(r => r.segment === apiSegment);
+      if (!match?.report_data?.rawRows) {
+        setError('No report found for this segment');
         setSyncing(false);
         return;
       }
 
-      // Group by date → segment, find the latest date
-      const byDate = {};
-      for (const r of reports) {
-        if (!byDate[r.report_date]) byDate[r.report_date] = {};
-        byDate[r.report_date][r.segment] = r.report_data;
-      }
+      // Step 3: Parse rawRows into the format the Action Log expects
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(match.report_data.rawRows);
+      XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+      const arrayBuffer = XLSX.write(wb, { type: 'array' });
 
-      // Load reports into the Action Log's portfolioReports store via window.storage
-      // The Action Log stores reports keyed by ISO date → { all, ph, exclPh }
-      const currentReports = await loadPortfolioReports();
-      let imported = 0;
-      for (const [date, segments] of Object.entries(byDate)) {
-        if (!currentReports[date]) currentReports[date] = {};
-        for (const [seg, data] of Object.entries(segments)) {
-          if (seg === 'all' || seg === 'ph') {
-            // Parse rawRows using the same parseReportFile logic
-            // The report_data already has rawRows — reconstruct into the format the component expects
-            const reportData = data;
-            if (reportData?.rawRows) {
-              try {
-                const parsed = parseReportFile(
-                  (() => {
-                    // Convert rawRows back to XLSX buffer for parseReportFile
-                    const wb = XLSX.utils.book_new();
-                    const ws = XLSX.utils.json_to_sheet(reportData.rawRows);
-                    XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
-                    return XLSX.write(wb, { type: 'array' });
-                  })(),
-                  reportData.fileName || `report-${seg}.xlsx`
-                );
-                currentReports[date][seg] = parsed;
-                imported++;
-              } catch (e) {
-                console.error(`Failed to parse ${seg} report for ${date}:`, e);
-              }
-            }
-          }
-        }
-        // Compute exclPh if we have both all and ph
-        if (currentReports[date]?.all && currentReports[date]?.ph && !currentReports[date]?.exclPh) {
-          // exclPh = all minus ph (computed by the component's cascade logic)
-          // Leave it empty — the component will handle the cascade
-        }
-      }
+      const parsed = parseReportFile(arrayBuffer, match.report_data.fileName || `report-${segment}.xlsx`);
 
-      await savePortfolioReports(currentReports);
-      setResult({ count: imported });
+      // Step 4: Feed into the component via the same path as XLSX drop
+      onReportLoaded(parsed);
+      setDone(true);
     } catch (e) {
       setError(String(e));
     }
@@ -6873,14 +6831,14 @@ function SyncReportButton({ onSynced }) {
         className="px-3 py-1.5 text-[11px] font-medium bg-stone-900 text-white hover:bg-stone-700 transition-colors flex items-center gap-1.5 rounded-sm disabled:opacity-50"
       >
         {syncing ? (
-          <><Loader2 className="w-3 h-3 animate-spin" /> Syncing...</>
+          <><Loader2 className="w-3 h-3 animate-spin" /> Syncing {segment}...</>
         ) : (
           <><RefreshCw className="w-3 h-3" /> Sync from PriceLabs</>
         )}
       </button>
-      {result && (
+      {done && (
         <span className="text-[10px] text-emerald-700 flex items-center gap-1">
-          <Check className="w-3 h-3" /> {result.count} reports loaded
+          <Check className="w-3 h-3" /> Loaded
         </span>
       )}
       {error && (
