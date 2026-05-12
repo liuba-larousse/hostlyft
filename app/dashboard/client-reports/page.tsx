@@ -13,30 +13,51 @@ function formatDate(s: string | null): string {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-async function getLastSyncedAt(reportDate: string): Promise<string | null> {
+async function getLastSyncedAt(): Promise<string | null> {
   const supabase = createSupabaseAdmin();
   const { data } = await supabase
     .from('booking_reports')
     .select('created_at')
-    .eq('report_date', reportDate)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
   return data?.created_at ?? null;
 }
 
+async function getLatestBookedDate(): Promise<string | null> {
+  const supabase = createSupabaseAdmin();
+  const { data } = await supabase
+    .from('booking_reports')
+    .select('booked_date')
+    .order('booked_date', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return data?.booked_date ?? null;
+}
+
 export default async function BookingsPage() {
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
-  const reportDate = yesterday.toISOString().split('T')[0];
-  const displayDate = yesterday.toLocaleDateString('en-US', {
+  const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+  // Try yesterday first; if no bookings, fall back to the latest available booked_date
+  let summaries = await getReportsByDate(yesterdayStr);
+  let reportDate = yesterdayStr;
+  const hasBookings = summaries.some(s => s.bookings.length > 0);
+  if (!hasBookings) {
+    const latest = await getLatestBookedDate();
+    if (latest && latest !== yesterdayStr) {
+      reportDate = latest;
+      summaries = await getReportsByDate(latest);
+    }
+  }
+
+  const reportDateObj = new Date(reportDate + 'T00:00:00');
+  const displayDate = reportDateObj.toLocaleDateString('en-US', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
   });
 
-  const [summaries, lastSyncedAt] = await Promise.all([
-    getReportsByDate(reportDate),
-    getLastSyncedAt(reportDate),
-  ]);
+  const lastSyncedAt = await getLastSyncedAt();
 
   const lastSynced = lastSyncedAt
     ? new Date(lastSyncedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })

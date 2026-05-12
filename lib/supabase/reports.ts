@@ -72,11 +72,11 @@ export async function getReportsByDate(reportDate: string): Promise<ClientSummar
 
   if (!clients?.length) return [];
 
-  // Fetch today's bookings
+  // Fetch bookings by booked_date (more reliable than report_date which depends on sync timing)
   const { data: todayRows, error } = await supabase
     .from('booking_reports')
     .select('*')
-    .eq('report_date', reportDate)
+    .eq('booked_date', reportDate)
     .order('listing_name');
 
   if (error) throw new Error(`Failed to fetch reports: ${error.message}`);
