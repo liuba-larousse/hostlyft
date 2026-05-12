@@ -24,7 +24,7 @@ export async function GET() {
 
   const clientId = await getClientId();
   if (!clientId) {
-    return NextResponse.json({ rows: [], scratchpad: '', notes: [], screenshots: { scratchpad: [], byNote: {} }, funnel: {}, states: [] });
+    return NextResponse.json({ rows: [], scratchpad: '', notes: [], screenshots: { scratchpad: [], byNote: {} }, funnel: {}, states: [], portfolio_reports: {}, weeks_report: null });
   }
 
   const supabase = createSupabaseAdmin();
@@ -35,7 +35,7 @@ export async function GET() {
     .maybeSingle();
 
   if (!data) {
-    return NextResponse.json({ rows: [], scratchpad: '', notes: [], screenshots: { scratchpad: [], byNote: {} }, funnel: {}, states: [] });
+    return NextResponse.json({ rows: [], scratchpad: '', notes: [], screenshots: { scratchpad: [], byNote: {} }, funnel: {}, states: [], portfolio_reports: {}, weeks_report: null });
   }
 
   return NextResponse.json({
@@ -45,6 +45,8 @@ export async function GET() {
     screenshots: data.screenshots ?? { scratchpad: [], byNote: {} },
     funnel: data.funnel ?? {},
     states: data.states ?? [],
+    portfolio_reports: data.portfolio_reports ?? {},
+    weeks_report: data.weeks_report ?? null,
   });
 }
 
@@ -61,7 +63,7 @@ export async function PATCH(req: NextRequest) {
   }
 
   const body = await req.json();
-  const allowedFields = ['rows', 'scratchpad', 'notes', 'screenshots', 'funnel', 'states'];
+  const allowedFields = ['rows', 'scratchpad', 'notes', 'screenshots', 'funnel', 'states', 'portfolio_reports', 'weeks_report'];
   const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
 
   for (const field of allowedFields) {

@@ -46,6 +46,8 @@ const KEY_TO_FIELD: Record<string, string> = {
   [SCREENSHOTS_KEY]: 'screenshots',
   [FUNNEL_KEY]: 'funnel',
   [STATES_KEY]: 'states',
+  [PORTFOLIO_REPORTS_KEY]: 'portfolio_reports',
+  [WEEKS_REPORT_KEY]: 'weeks_report',
 };
 
 // In-memory cache so reads are instant after first load
@@ -65,6 +67,8 @@ async function _ensureCache() {
       if (data.screenshots) _cache[SCREENSHOTS_KEY] = JSON.stringify(data.screenshots);
       if (data.funnel) _cache[FUNNEL_KEY] = JSON.stringify(data.funnel);
       if (data.states) _cache[STATES_KEY] = JSON.stringify(data.states);
+      if (data.portfolio_reports) _cache[PORTFOLIO_REPORTS_KEY] = JSON.stringify(data.portfolio_reports);
+      if (data.weeks_report) _cache[WEEKS_REPORT_KEY] = JSON.stringify(data.weeks_report);
     }
   } catch (e) {
     console.error('Failed to load action log from API:', e);
@@ -90,19 +94,14 @@ function _flushToAPI() {
 if (typeof window !== 'undefined' && !(window as any).storage) {
   (window as any).storage = {
     get: async (key: string) => {
-      if (KEY_TO_FIELD[key]) {
-        await _ensureCache();
-        const value = _cache[key] ?? null;
-        return value !== null ? { value } : null;
-      }
-      // Unmapped keys (portfolio reports, weeks report) use localStorage
-      const value = localStorage.getItem(key);
+      await _ensureCache();
+      const value = _cache[key] ?? null;
       return value !== null ? { value } : null;
     },
     set: async (key: string, value: string) => {
+      _cache[key] = value;
       const field = KEY_TO_FIELD[key];
       if (field) {
-        _cache[key] = value;
         try {
           _pendingFields[field] = field === 'scratchpad' ? value : JSON.parse(value);
         } catch {
@@ -110,26 +109,22 @@ if (typeof window !== 'undefined' && !(window as any).storage) {
         }
         if (_saveTimeout) clearTimeout(_saveTimeout);
         _saveTimeout = setTimeout(_flushToAPI, 1500);
-      } else {
-        localStorage.setItem(key, value);
       }
     },
     delete: async (key: string) => {
+      delete _cache[key];
       const field = KEY_TO_FIELD[key];
       if (field) {
-        delete _cache[key];
-        _pendingFields[field] = field === 'scratchpad' ? '' : (field === 'screenshots' ? { scratchpad: [], byNote: {} } : []);
+        const defaults: Record<string, unknown> = { scratchpad: '', screenshots: { scratchpad: [], byNote: {} }, portfolio_reports: {}, weeks_report: null };
+        _pendingFields[field] = defaults[field] ?? [];
         if (_saveTimeout) clearTimeout(_saveTimeout);
         _saveTimeout = setTimeout(_flushToAPI, 1500);
-      } else {
-        localStorage.removeItem(key);
       }
     },
   };
 }
 
-// Portfolio reports & weeks report use localStorage as cache until auto-sync replaces manual upload.
-// These are too large for the action_log_state row and have their own Supabase table.
+// All data is backed by Supabase via /api/action-log — no localStorage.
 
 /* ---------- Storage helpers ---------- */
 
