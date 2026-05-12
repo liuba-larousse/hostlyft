@@ -111,8 +111,18 @@ if (typeof window !== 'undefined' && !(window as any).storage) {
         if (_saveTimeout) clearTimeout(_saveTimeout);
         _saveTimeout = setTimeout(_flushToAPI, 1500);
       } else {
-        // Unmapped keys use localStorage
         localStorage.setItem(key, value);
+      }
+    },
+    delete: async (key: string) => {
+      const field = KEY_TO_FIELD[key];
+      if (field) {
+        delete _cache[key];
+        _pendingFields[field] = field === 'scratchpad' ? '' : (field === 'screenshots' ? { scratchpad: [], byNote: {} } : []);
+        if (_saveTimeout) clearTimeout(_saveTimeout);
+        _saveTimeout = setTimeout(_flushToAPI, 1500);
+      } else {
+        localStorage.removeItem(key);
       }
     },
   };
@@ -6772,12 +6782,18 @@ function SyncReportButton({ onSynced }) {
     setError('');
     setResult(null);
     try {
-      // Trigger a live sync from PriceLabs via Playwright (same route as bookings sync)
-      const syncRes = await fetch('/api/pricelabs/daily-report', { method: 'POST' });
-      const syncData = await syncRes.json();
-      if (!syncRes.ok || syncData.error) {
-        // If Playwright fails (e.g. on Vercel), fall back to reading stored reports
-        console.warn('Live sync failed, falling back to stored reports:', syncData.error);
+      // Sync each segment one at a time to avoid timeout
+      const segments = ['all', 'ph', 'building', 'weeks'];
+      for (const seg of segments) {
+        try {
+          const syncRes = await fetch(`/api/pricelabs/daily-report?segment=${seg}`, { method: 'POST' });
+          const syncData = await syncRes.json();
+          if (!syncRes.ok || syncData.error) {
+            console.warn(`Sync ${seg} failed:`, syncData.error);
+          }
+        } catch (e) {
+          console.warn(`Sync ${seg} error:`, e);
+        }
       }
 
       // Fetch reports from Supabase (either just synced or previously stored)

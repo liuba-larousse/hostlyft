@@ -123,7 +123,7 @@ export async function GET(req: NextRequest) {
           const supabase = createSupabaseAdmin();
           const today = new Date().toISOString().split('T')[0];
           portfolioResults = [];
-          for (const seg of PORTFOLIO_SEGMENTS) {
+          for (const seg of VALID_SEGMENTS) {
             try {
               const buffer = await downloadPortfolioReport(page, seg);
               const reportData = parsePortfolioXlsx(buffer, seg);
@@ -149,7 +149,9 @@ export async function GET(req: NextRequest) {
 }
 
 // POST — manual portfolio report sync (uses the same Playwright setup that works for GET)
-const PORTFOLIO_SEGMENTS = ['all', 'ph', 'building', 'weeks'] as const;
+// Manual sync downloads one segment at a time to avoid 5-min timeout.
+// The client sends ?segment=all (default), then ?segment=ph, etc.
+const VALID_SEGMENTS = ['all', 'ph', 'building', 'weeks'] as const;
 
 function parsePortfolioXlsx(buffer: Buffer, segment: string) {
   const wb = XLSX.read(buffer, { type: 'buffer', cellDates: false });
@@ -160,11 +162,15 @@ function parsePortfolioXlsx(buffer: Buffer, segment: string) {
   return { fileName: `portfolio-report-${segment}.xlsx`, uploadedAt: new Date().toISOString(), segment, rawRows: rows, rowCount: rows.length };
 }
 
-export async function POST() {
+export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.email) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+
+  // Download one segment per request to avoid timeout
+  const segmentParam = req.nextUrl.searchParams.get('segment') || 'all';
+  const segment = VALID_SEGMENTS.includes(segmentParam as any) ? segmentParam as typeof VALID_SEGMENTS[number] : 'all';
 
   const clients = await getActiveClients();
   const client = clients.find(c =>
@@ -176,7 +182,6 @@ export async function POST() {
   }
 
   const browser = await launchBrowser();
-  const results: { segment: string; rowCount: number }[] = [];
 
   try {
     const { context, page } = await loginToPriceLabs(browser, client.email, client.password);
@@ -184,24 +189,17 @@ export async function POST() {
       const supabase = createSupabaseAdmin();
       const today = new Date().toISOString().split('T')[0];
 
-      for (const segment of PORTFOLIO_SEGMENTS) {
-        try {
-          const buffer = await downloadPortfolioReport(page, segment);
-          const reportData = parsePortfolioXlsx(buffer, segment);
-          const { error } = await supabase
-            .from('portfolio_reports')
-            .upsert(
-              { client_id: client.id, report_date: today, segment, report_data: reportData },
-              { onConflict: 'client_id,report_date,segment' }
-            );
-          if (error) throw new Error(`Failed to store ${segment} report: ${error.message}`);
-          results.push({ segment, rowCount: reportData.rowCount });
-        } catch (segErr) {
-          results.push({ segment, rowCount: 0, error: String(segErr) } as any);
-        }
-      }
+      const buffer = await downloadPortfolioReport(page, segment);
+      const reportData = parsePortfolioXlsx(buffer, segment);
+      const { error } = await supabase
+        .from('portfolio_reports')
+        .upsert(
+          { client_id: client.id, report_date: today, segment, report_data: reportData },
+          { onConflict: 'client_id,report_date,segment' }
+        );
+      if (error) throw new Error(`Failed to store ${segment} report: ${error.message}`);
 
-      return NextResponse.json({ success: results.length > 0, clientName: client.client_name, reportDate: today, reports: results });
+      return NextResponse.json({ success: true, clientName: client.client_name, reportDate: today, segment, rowCount: reportData.rowCount });
     } finally { await context.close(); }
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });
