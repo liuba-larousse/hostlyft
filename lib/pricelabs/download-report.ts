@@ -7,7 +7,7 @@ export type ReportSegment = 'all' | 'ph' | 'building' | 'weeks';
 
 interface ReportConfig {
   url: string;
-  savedFilter: string | null;  // Name of saved filter to load, or null for manual Sync ON
+  savedFilter: string | null;
 }
 
 const REPORT_CONFIG: Record<ReportSegment, ReportConfig> = {
@@ -30,9 +30,8 @@ const REPORT_CONFIG: Record<ReportSegment, ReportConfig> = {
 };
 
 /**
- * Download a portfolio report from PriceLabs Report Builder.
- *
- * @param segment - 'all' (Sync ON), 'ph' (saved PH filter), 'building' (by-building report, Sync ON)
+ * Apply filters and download a report from PriceLabs Report Builder.
+ * PriceLabs uses Chakra UI — all dropdowns are custom menus, not native <select>.
  */
 export async function downloadPortfolioReport(
   page: Page,
@@ -46,78 +45,98 @@ export async function downloadPortfolioReport(
   await page.waitForTimeout(3000);
 
   // Open Listing Filter panel
-  const filterButton = page.locator('button:has-text("Listing Filter"), [class*="filter"]:has-text("Listing Filter")');
+  const filterButton = page.locator('button:has-text("Listing Filter")').first();
   await filterButton.waitFor({ state: 'visible', timeout: 10_000 });
   await filterButton.click();
   await page.waitForTimeout(1500);
 
   if (config.savedFilter) {
-    // Load a saved filter (e.g., "PH") from the dropdown
-    const dropdownTrigger = page.locator('[class*="saved"] select, [class*="filter"] select').first();
-    if (await dropdownTrigger.isVisible().catch(() => false)) {
-      await dropdownTrigger.selectOption({ label: config.savedFilter });
+    // Load a saved filter (e.g., "PH") — Chakra UI Menu
+    // Click the saved filters dropdown trigger (shows "Custom Filters" or similar)
+    const savedDropdown = page.locator('[class*="menu"] button, button[id*="menu-button"]')
+      .filter({ hasText: /Custom Filters|Saved|Select/i }).first();
+
+    if (await savedDropdown.isVisible().catch(() => false)) {
+      await savedDropdown.click();
+      await page.waitForTimeout(500);
+      // Click the menu item with the filter name
+      await page.locator(`[role="menuitem"]:has-text("${config.savedFilter}")`).first().click();
+      await page.waitForTimeout(1000);
     } else {
-      const customDropdown = page.locator('text=Custom Filters').locator('..');
-      if (await customDropdown.isVisible().catch(() => false)) {
-        await customDropdown.click();
+      // Try clicking any element that contains "Custom Filters" text
+      const customFilters = page.getByText('Custom Filters').first();
+      if (await customFilters.isVisible().catch(() => false)) {
+        await customFilters.click();
         await page.waitForTimeout(500);
-        const option = page.locator(`text="${config.savedFilter}"`).first();
-        if (await option.isVisible().catch(() => false)) {
-          await option.click();
-        }
+        await page.getByRole('menuitem', { name: config.savedFilter }).first().click();
+        await page.waitForTimeout(1000);
       }
     }
-    await page.waitForTimeout(1000);
   } else {
-    // Ensure Sync ON/OFF = ON is applied
-    const syncFilterExists = await page.locator('text=Sync ON/OFF').isVisible().catch(() => false);
+    // Ensure "Sync ON/OFF: ON" filter chip is present
+    const syncChip = page.locator('text=Sync ON/OFF').first();
+    const hasSyncFilter = await syncChip.isVisible().catch(() => false);
 
-    if (!syncFilterExists) {
-      const addFilter = page.locator('text=Add Filter');
+    if (!hasSyncFilter) {
+      // Need to add the Sync ON/OFF filter manually
+      // Click "Add Filter" link
+      const addFilter = page.getByText('Add Filter').first();
       if (await addFilter.isVisible().catch(() => false)) {
         await addFilter.click();
         await page.waitForTimeout(500);
       }
 
-      const filterDropdowns = page.locator('select, [role="listbox"], [role="combobox"]');
-      const count = await filterDropdowns.count();
-      for (let i = 0; i < count; i++) {
-        const dropdown = filterDropdowns.nth(i);
-        const options = await dropdown.locator('option').allTextContents().catch(() => []);
-        if (options.some(o => o.includes('Sync'))) {
-          await dropdown.selectOption({ label: 'Sync ON/OFF' });
-          break;
+      // The filter type dropdown — click it and select "Sync ON/OFF"
+      // Chakra uses role="combobox" or custom select components
+      const filterTypeSelect = page.locator('select').first();
+      if (await filterTypeSelect.isVisible().catch(() => false)) {
+        await filterTypeSelect.selectOption({ label: 'Sync ON/OFF' });
+      } else {
+        // Try Chakra-style: click the dropdown, then click the option
+        const typeDropdown = page.locator('[class*="select"] button, [class*="Select"]').first();
+        if (await typeDropdown.isVisible().catch(() => false)) {
+          await typeDropdown.click();
+          await page.waitForTimeout(300);
+          await page.getByText('Sync ON/OFF', { exact: true }).click();
         }
       }
       await page.waitForTimeout(500);
 
-      const valueDropdowns = page.locator('select, [role="listbox"], [role="combobox"]');
-      const valCount = await valueDropdowns.count();
-      for (let i = 0; i < valCount; i++) {
-        const dropdown = valueDropdowns.nth(i);
-        const options = await dropdown.locator('option').allTextContents().catch(() => []);
-        if (options.some(o => o === 'ON')) {
-          await dropdown.selectOption({ label: 'ON' });
-          break;
+      // Select "ON" value
+      const valueSelect = page.locator('select').last();
+      if (await valueSelect.isVisible().catch(() => false)) {
+        await valueSelect.selectOption({ label: 'ON' });
+      } else {
+        const valDropdown = page.locator('[class*="select"] button, [class*="Select"]').last();
+        if (await valDropdown.isVisible().catch(() => false)) {
+          await valDropdown.click();
+          await page.waitForTimeout(300);
+          await page.locator('[role="option"]:has-text("ON"), [role="menuitem"]:has-text("ON")').first().click();
         }
       }
       await page.waitForTimeout(500);
     }
   }
 
-  // Close the filter panel
-  const closeBtn = page.locator('button[aria-label="close"], button:has-text("×"), [class*="filter"] button:has(svg[class*="close"]), button:has(svg):near(:text("Listing Filter"))').first();
+  // Close the filter panel — look for X/close button in the drawer/panel
+  const closeBtn = page.locator('button[aria-label="Close"], button[aria-label="close"]').first();
   if (await closeBtn.isVisible().catch(() => false)) {
     await closeBtn.click();
   } else {
-    await page.keyboard.press('Escape');
+    // Try the X button near "Listing Filter" heading
+    const xBtn = page.locator('button:has(svg)').filter({ hasText: '' }).locator('near=:text("Listing Filter")').first();
+    if (await xBtn.isVisible().catch(() => false)) {
+      await xBtn.click();
+    } else {
+      await page.keyboard.press('Escape');
+    }
   }
   await page.waitForTimeout(1000);
 
   // Wait for report data to refresh
   await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
 
-  // Click Download
+  // Click Download button
   const downloadBtn = page.locator('#rb-template-top-panel-download-report-btn');
   await downloadBtn.waitFor({ state: 'visible', timeout: 10_000 });
 
