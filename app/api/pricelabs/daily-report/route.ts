@@ -181,27 +181,31 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Client "Marcus Halawi" not found' }, { status: 404 });
   }
 
-  const browser = await launchBrowser();
-
+  let step = 'launching browser';
+  let browser;
   try {
+    browser = await launchBrowser();
+    step = 'logging in';
     const { context, page } = await loginToPriceLabs(browser, client.email, client.password);
     try {
+      step = `downloading ${segment} report`;
+      const buffer = await downloadPortfolioReport(page, segment);
+      step = `parsing ${segment} report`;
+      const reportData = parsePortfolioXlsx(buffer, segment);
+      step = `saving ${segment} to supabase`;
       const supabase = createSupabaseAdmin();
       const today = new Date().toISOString().split('T')[0];
-
-      const buffer = await downloadPortfolioReport(page, segment);
-      const reportData = parsePortfolioXlsx(buffer, segment);
       const { error } = await supabase
         .from('portfolio_reports')
         .upsert(
           { client_id: client.id, report_date: today, segment, report_data: reportData },
           { onConflict: 'client_id,report_date,segment' }
         );
-      if (error) throw new Error(`Failed to store ${segment} report: ${error.message}`);
+      if (error) throw new Error(`Supabase: ${error.message}`);
 
       return NextResponse.json({ success: true, clientName: client.client_name, reportDate: today, segment, rowCount: reportData.rowCount });
     } finally { await context.close(); }
   } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
-  } finally { await browser.close(); }
+    return NextResponse.json({ error: `Failed at "${step}": ${String(err)}` }, { status: 500 });
+  } finally { if (browser) await browser.close().catch(() => {}); }
 }
