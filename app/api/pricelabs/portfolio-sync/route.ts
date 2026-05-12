@@ -7,7 +7,7 @@ import * as XLSX from 'xlsx';
 
 export const maxDuration = 300;
 
-const SEGMENTS = ['all', 'ph', 'building', 'weeks'] as const;
+const SEGMENTS = ['all', 'building', 'weeks'] as const;
 
 function parsePortfolioXlsx(buffer: Buffer, segment: string) {
   const wb = XLSX.read(buffer, { type: 'buffer', cellDates: false });

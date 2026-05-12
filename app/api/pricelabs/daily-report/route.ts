@@ -149,9 +149,9 @@ export async function GET(req: NextRequest) {
 }
 
 // POST — manual portfolio report sync (uses the same Playwright setup that works for GET)
-// Manual sync downloads one segment at a time to avoid 5-min timeout.
-// The client sends ?segment=all (default), then ?segment=ph, etc.
-const VALID_SEGMENTS = ['all', 'ph', 'exclPh', 'building', 'weeks'] as const;
+// Downloadable segments (each has its own report URL, no filter interaction).
+// PH and Excl PH are derived from the Building report client-side.
+const VALID_SEGMENTS = ['all', 'building', 'weeks'] as const;
 
 function parsePortfolioXlsx(buffer: Buffer, segment: string) {
   const wb = XLSX.read(buffer, { type: 'buffer', cellDates: false });

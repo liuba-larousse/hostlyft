@@ -6784,8 +6784,9 @@ function SyncReportButton({ segment, onReportLoaded }) {
   const [error, setError] = useState('');
   const [done, setDone] = useState(false);
 
-  // Map Action Log segment names to API segment names
-  const apiSegment = segment === 'exclPh' ? 'exclPh' : segment;
+  // PH and Excl PH are derived from the Building report (which has Group Name column)
+  // so we download 'building' and parse it client-side
+  const apiSegment = (segment === 'ph' || segment === 'exclPh') ? 'building' : segment;
 
   const sync = async () => {
     setSyncing(true);
@@ -6820,8 +6821,22 @@ function SyncReportButton({ segment, onReportLoaded }) {
       }
 
       // Step 3: Parse rawRows into the format the Action Log expects
+      let rawRows = match.report_data.rawRows;
+
+      // For PH / Excl PH, filter the Building report rows by Group Name
+      if (segment === 'ph' || segment === 'exclPh') {
+        const groupCol = Object.keys(rawRows[0] || {}).find(k =>
+          /group\s*name/i.test(k) || /^group$/i.test(k)
+        );
+        if (groupCol) {
+          rawRows = segment === 'ph'
+            ? rawRows.filter(r => buildingToSegment(String(r[groupCol] || '')) === 'ph')
+            : rawRows.filter(r => buildingToSegment(String(r[groupCol] || '')) === 'exclPh');
+        }
+      }
+
       const wb = XLSX.utils.book_new();
-      const ws = XLSX.utils.json_to_sheet(match.report_data.rawRows);
+      const ws = XLSX.utils.json_to_sheet(rawRows);
       XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
       const arrayBuffer = XLSX.write(wb, { type: 'array' });
 
