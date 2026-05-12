@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { auth } from '@/lib/auth';
 import { createSupabaseAdmin } from '@/lib/supabase';
 import { getActiveClients } from '@/lib/supabase/clients';
 import { launchBrowser } from '@/lib/pricelabs/browser';
@@ -26,14 +27,7 @@ function parsePortfolioXlsx(buffer: Buffer, segment: string) {
   };
 }
 
-// GET — Vercel Cron only (Bearer token required)
-export async function GET(req: NextRequest) {
-  const secret = process.env.CRON_SECRET;
-  const authHeader = req.headers.get('authorization');
-  if (!secret || authHeader !== `Bearer ${secret}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
+async function runSync() {
   const clients = await getActiveClients();
   const client = clients.find(c =>
     c.client_name.toLowerCase().includes('marcus') ||
@@ -41,7 +35,7 @@ export async function GET(req: NextRequest) {
   );
 
   if (!client) {
-    return NextResponse.json({ error: 'Client not found' }, { status: 404 });
+    throw new Error('Client "Marcus Halawi" not found in active clients');
   }
 
   const browser = await launchBrowser();
@@ -73,18 +67,47 @@ export async function GET(req: NextRequest) {
         results.push({ segment, rowCount: reportData.rowCount });
       }
 
-      return NextResponse.json({
+      return {
         success: true,
         clientName: client.client_name,
         reportDate: today,
         reports: results,
-      });
+      };
     } finally {
       await context.close();
     }
-  } catch (err) {
-    return NextResponse.json({ error: String(err) }, { status: 500 });
   } finally {
     await browser.close();
+  }
+}
+
+// GET — Vercel Cron (Bearer token)
+export async function GET(req: NextRequest) {
+  const secret = process.env.CRON_SECRET;
+  const authHeader = req.headers.get('authorization');
+  if (!secret || authHeader !== `Bearer ${secret}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  try {
+    const result = await runSync();
+    return NextResponse.json(result);
+  } catch (err) {
+    return NextResponse.json({ error: String(err) }, { status: 500 });
+  }
+}
+
+// POST — manual sync from dashboard
+export async function POST() {
+  const session = await auth();
+  if (!session?.user?.email) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  try {
+    const result = await runSync();
+    return NextResponse.json(result);
+  } catch (err) {
+    return NextResponse.json({ error: String(err) }, { status: 500 });
   }
 }

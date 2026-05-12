@@ -6772,7 +6772,15 @@ function SyncReportButton({ onSynced }) {
     setError('');
     setResult(null);
     try {
-      // Fetch latest reports from Supabase (stored by the daily cron)
+      // Trigger a live sync from PriceLabs via Playwright
+      const syncRes = await fetch('/api/pricelabs/portfolio-sync', { method: 'POST' });
+      const syncData = await syncRes.json();
+      if (!syncRes.ok || syncData.error) {
+        // If Playwright fails (e.g. on Vercel), fall back to reading stored reports
+        console.warn('Live sync failed, falling back to stored reports:', syncData.error);
+      }
+
+      // Fetch reports from Supabase (either just synced or previously stored)
       const res = await fetch('/api/pricelabs/portfolio-report');
       const data = await res.json();
       if (!res.ok || data.error) {
@@ -6783,7 +6791,7 @@ function SyncReportButton({ onSynced }) {
 
       const reports = data.reports || [];
       if (reports.length === 0) {
-        setError('No reports synced yet — cron runs daily at 9am CET, or drop XLSX as fallback');
+        setError('No reports available — drop XLSX as fallback');
         setSyncing(false);
         return;
       }
