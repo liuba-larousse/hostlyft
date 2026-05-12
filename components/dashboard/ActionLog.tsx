@@ -6772,13 +6772,69 @@ function SyncReportButton({ onSynced }) {
     setError('');
     setResult(null);
     try {
-      const res = await fetch('/api/pricelabs/portfolio-report', { method: 'POST' });
+      // Fetch latest reports from Supabase (stored by the daily cron)
+      const res = await fetch('/api/pricelabs/portfolio-report');
       const data = await res.json();
       if (!res.ok || data.error) {
-        setError(data.error || 'Sync failed');
-      } else {
-        setResult(data);
+        setError(data.error || 'Failed to fetch reports');
+        setSyncing(false);
+        return;
       }
+
+      const reports = data.reports || [];
+      if (reports.length === 0) {
+        setError('No reports synced yet — cron runs daily at 9am CET, or drop XLSX as fallback');
+        setSyncing(false);
+        return;
+      }
+
+      // Group by date → segment, find the latest date
+      const byDate = {};
+      for (const r of reports) {
+        if (!byDate[r.report_date]) byDate[r.report_date] = {};
+        byDate[r.report_date][r.segment] = r.report_data;
+      }
+
+      // Load reports into the Action Log's portfolioReports store via window.storage
+      // The Action Log stores reports keyed by ISO date → { all, ph, exclPh }
+      const currentReports = await loadPortfolioReports();
+      let imported = 0;
+      for (const [date, segments] of Object.entries(byDate)) {
+        if (!currentReports[date]) currentReports[date] = {};
+        for (const [seg, data] of Object.entries(segments)) {
+          if (seg === 'all' || seg === 'ph') {
+            // Parse rawRows using the same parseReportFile logic
+            // The report_data already has rawRows — reconstruct into the format the component expects
+            const reportData = data;
+            if (reportData?.rawRows) {
+              try {
+                const parsed = parseReportFile(
+                  (() => {
+                    // Convert rawRows back to XLSX buffer for parseReportFile
+                    const wb = XLSX.utils.book_new();
+                    const ws = XLSX.utils.json_to_sheet(reportData.rawRows);
+                    XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+                    return XLSX.write(wb, { type: 'array' });
+                  })(),
+                  reportData.fileName || `report-${seg}.xlsx`
+                );
+                currentReports[date][seg] = parsed;
+                imported++;
+              } catch (e) {
+                console.error(`Failed to parse ${seg} report for ${date}:`, e);
+              }
+            }
+          }
+        }
+        // Compute exclPh if we have both all and ph
+        if (currentReports[date]?.all && currentReports[date]?.ph && !currentReports[date]?.exclPh) {
+          // exclPh = all minus ph (computed by the component's cascade logic)
+          // Leave it empty — the component will handle the cascade
+        }
+      }
+
+      await savePortfolioReports(currentReports);
+      setResult({ count: imported });
     } catch (e) {
       setError(String(e));
     }
@@ -6800,12 +6856,12 @@ function SyncReportButton({ onSynced }) {
       </button>
       {result && (
         <span className="text-[10px] text-emerald-700 flex items-center gap-1">
-          <Check className="w-3 h-3" /> {result.reports?.length ?? 0} reports synced
+          <Check className="w-3 h-3" /> {result.count} reports loaded
         </span>
       )}
       {error && (
         <span className="text-[10px] text-rose-700 flex items-center gap-1">
-          <AlertCircle className="w-3 h-3" /> {error.slice(0, 60)}
+          <AlertCircle className="w-3 h-3" /> {error.slice(0, 80)}
         </span>
       )}
     </div>
