@@ -9,7 +9,7 @@ import * as XLSX from 'xlsx';
 
 export const maxDuration = 300;
 
-const SEGMENTS = ['all', 'ph', 'building'] as const;
+const SEGMENTS = ['all', 'ph', 'building', 'weeks'] as const;
 
 /** Parse the downloaded XLSX into a structured report object */
 function parsePortfolioXlsx(buffer: Buffer, segment: string) {

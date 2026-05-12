@@ -3,7 +3,7 @@ import { readFileSync } from 'fs';
 
 const TIMEOUT = 60_000;
 
-export type ReportSegment = 'all' | 'ph' | 'building';
+export type ReportSegment = 'all' | 'ph' | 'building' | 'weeks';
 
 interface ReportConfig {
   url: string;
@@ -21,6 +21,10 @@ const REPORT_CONFIG: Record<ReportSegment, ReportConfig> = {
   },
   building: {
     url: 'https://app.pricelabs.co/report-builder/10420',
+    savedFilter: null,
+  },
+  weeks: {
+    url: 'https://app.pricelabs.co/report-builder/10678',
     savedFilter: null,
   },
 };
