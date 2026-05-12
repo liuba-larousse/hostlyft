@@ -8340,16 +8340,22 @@ export default function ActionLog() {
       {/* TAB: SUMMARY — cross-references Building report with Weeks report
           to surface compounding signals (problems and opportunities) ranked
           by absolute revenue gap vs STLY. */}
-      {activeTab === 'summary' && (
-        <SummaryTab
-          portfolioReports={portfolioReports}
-          weeksReport={weeksReport}
-          selectedISO={todayISO()}
-          setRows={setRows}
-          setActiveTab={setActiveTab}
-          rows={rows}
-        />
-      )}
+      {activeTab === 'summary' && (() => {
+        // Use today if reports exist, otherwise fall back to most recent date
+        const today = todayISO();
+        const reportDates = Object.keys(portfolioReports).sort().reverse();
+        const effectiveISO = portfolioReports[today] ? today : (reportDates[0] || today);
+        return (
+          <SummaryTab
+            portfolioReports={portfolioReports}
+            weeksReport={weeksReport}
+            selectedISO={effectiveISO}
+            setRows={setRows}
+            setActiveTab={setActiveTab}
+            rows={rows}
+          />
+        );
+      })()}
 
       {/* TAB: RULES — documentation of all rules applied to reports.
           Values are pulled from the actual constants in code (PICKUP_BEHIND_THRESHOLD
