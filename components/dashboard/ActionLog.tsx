@@ -5620,7 +5620,7 @@ function WeeksTab({ weeksReport, onUpload, onClear, onSyncLoaded }) {
    Empty states are handled gracefully — Summary depends on having BOTH reports
    uploaded; if either is missing, an explanatory empty state shows.
 */
-function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setActiveTab }) {
+function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setActiveTab, rows }) {
   // perPage: how many rows to show per bucket page (was 'topN' before pagination).
   // page: per-bucket current page index (1-based). Each bucket paginates independently
   // because the buckets have very different sizes — capping all three at the same
@@ -5646,6 +5646,12 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
   // Schema mirrors the existing onInvestigate row in FunnelView so the new row
   // looks native in the Action Log table. WHY mirror not extend: any divergence
   // between the two creation paths would force two parallel maintenance jobs.
+  const followUpMDY = () => {
+    const d = new Date();
+    d.setDate(d.getDate() + 7);
+    return formatMDY(d);
+  };
+
   const addActionFromPair = useCallback((pair, bucket) => {
     if (!setRows) return; // safety — setRows is required prop
     const allFlags = [...(pair.buildingFlags || []), ...(pair.weekFlags || [])];
@@ -5671,6 +5677,7 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
       valueAfter: '',
       notes: `From Summary tab · ${bucket} bucket · ${pair.buildingFlags.length} bldg flag${pair.buildingFlags.length === 1 ? '' : 's'}, ${pair.weekFlags.length} week flag${pair.weekFlags.length === 1 ? '' : 's'}${pair.mixedReason ? ' · ' + pair.mixedReason : ''}`,
       checkDone: false,
+      followUpDate: followUpMDY(),
     };
     setRows(prev => [newRow, ...prev]);
     setAddToast({ building: pair.building, week: pair.weekLabel, bucket });
@@ -6112,13 +6119,37 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
   const opportunitiesTop = sliceFor(opportunities, pageOpps);
   const mixedTop = sliceFor(mixed, pageMixed);
 
+  // Find last action logged for a building
+  const getLastAction = (building) => {
+    if (!rows?.length) return null;
+    return rows.find(r => r.affectedGroup === building && (r.action?.includes('Override') || r.action?.includes('changed') || r.action?.includes('Investigate'))) || null;
+  };
+
   // Reusable row component
-  const PairRow = ({ pair, isProblem, i, bucket, accent }) => (
+  const PairRow = ({ pair, isProblem, i, bucket, accent }) => {
+    const lastAction = getLastAction(pair.building);
+    return (
     <tr key={`${pair.building}-${pair.weekIso}`} className={`border-b border-stone-100 ${i % 2 === 1 ? 'bg-stone-50/50' : 'bg-white'}`}>
       <td className="px-3 py-2 text-stone-500 mono text-[11px]">{i + 1}</td>
       <td className="px-3 py-2">
         <div className="font-medium text-stone-900 text-[13px]">{pair.building}</div>
         <div className="text-[10px] text-stone-500 mono">{pair.monthLabel}</div>
+        {lastAction && (
+          <div className="mt-1.5 space-y-0.5">
+            <div className="text-[9px] px-1.5 py-0.5 bg-blue-50 border border-blue-200 rounded-sm text-blue-800 truncate max-w-[200px]" title={lastAction.action}>
+              Last: {lastAction.action} ({lastAction.date})
+            </div>
+            {lastAction.followUpDate && (
+              <div className={`text-[9px] px-1.5 py-0.5 rounded-sm truncate ${
+                parseMDY(lastAction.followUpDate) <= new Date()
+                  ? 'bg-rose-50 border border-rose-200 text-rose-800 font-semibold'
+                  : 'bg-amber-50 border border-amber-200 text-amber-800'
+              }`}>
+                F/U: {lastAction.followUpDate}{parseMDY(lastAction.followUpDate) <= new Date() ? ' ⚠ due' : ''}
+              </div>
+            )}
+          </div>
+        )}
       </td>
       <td className="px-3 py-2">
         <div className="text-[12px] text-stone-800">{pair.weekLabel}</div>
@@ -6164,6 +6195,7 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
       </td>
     </tr>
   );
+  };
 
   return (
     <div className="max-w-[1600px] mx-auto px-6 py-8">
@@ -6473,6 +6505,7 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
               valueAfter: info.after,
               notes: info.notes || '',
               checkDone: false,
+              followUpDate: followUpMDY(),
             };
             setRows(prev => [newRow, ...prev]);
             setAddToast({ building: pair.building, week: pair.weekLabel || '', bucket });
@@ -6501,6 +6534,7 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
               valueAfter: overrideInfo.after || '',
               notes: `Via PriceLabs API · listing ${overrideInfo.listingId}`,
               checkDone: false,
+              followUpDate: followUpMDY(),
             };
             setRows(prev => [newRow, ...prev]);
             setAddToast({ building: pair.building, week: pair.weekLabel || '', bucket });
@@ -8303,6 +8337,7 @@ export default function ActionLog() {
           selectedISO={todayISO()}
           setRows={setRows}
           setActiveTab={setActiveTab}
+          rows={rows}
         />
       )}
 
