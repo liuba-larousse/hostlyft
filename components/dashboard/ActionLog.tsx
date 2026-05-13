@@ -1675,6 +1675,44 @@ const computeContributingSegments = (portfolioData, flag, monthIso) => {
   return candidates;
 };
 
+// Compute contributing weeks for a flag in a given month.
+// A week "contributes" to a month if its ISO start falls in that month.
+// Uses the same FLAG_METRIC_MAP direction logic — only weeks moving
+// the same direction as the flag are included.
+const computeContributingWeeks = (weeksReport, flag, monthIso) => {
+  if (!weeksReport?.weeks || !flag || !monthIso) return [];
+  const cfg = FLAG_METRIC_MAP[flag.id];
+  if (!cfg) return [];
+
+  // Weeks have the same field names as months for pickup/ADR/occ/revpar
+  const flagWantsDown = cfg.direction === 'down';
+  const candidates = [];
+
+  weeksReport.weeks.forEach(w => {
+    // Check if week falls in the target month
+    const weekStart = isoWeekStartDate(w.y, w.w);
+    const weekMonthIso = `${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}`;
+    if (weekMonthIso !== monthIso) return;
+
+    const ty = w[cfg.ty];
+    const ly = w[cfg.ly];
+    if (ty == null || ly == null) return;
+    const gap = Number(ty) - Number(ly);
+    // Only include weeks moving the same direction as the flag
+    if (flagWantsDown && gap >= 0) return;
+    if (!flagWantsDown && gap <= 0) return;
+    candidates.push({
+      label: w.label,
+      dateRange: formatWeekDateRange(w.y, w.w),
+      event: w.eventsName,
+      gap, ty, ly,
+    });
+  });
+
+  candidates.sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap));
+  return candidates;
+};
+
 /* ---------- State capture (Before / After per action row) ---------- */
 
 // Schema: states is an object keyed by rowId, each containing:
@@ -3154,8 +3192,9 @@ function SimpleReportPanel({ levelLabel, levelHint, todayReport, priorReport, pr
   );
 }
 
-function PortfolioReportPanel({ portfolioData, onUpdate, isReadOnly, selectedISO, onInvestigate, buildingReport, dismissedFlags, setDismissedFlags }) {
+function PortfolioReportPanel({ portfolioData, onUpdate, isReadOnly, selectedISO, onInvestigate, buildingReport, dismissedFlags, setDismissedFlags, weeksReport }) {
   const [segment, setSegment] = useState('all');
+  const [expandedMonth, setExpandedMonth] = useState(null); // monthIso or null
   const segData = portfolioData[segment] || {};
   const todayReport = segData.todayReport || null;
   const priorReport = segData.priorReport || null;
@@ -3508,16 +3547,7 @@ function PortfolioReportPanel({ portfolioData, onUpdate, isReadOnly, selectedISO
                 {flaggedMonths.map(({ month, dba, flags }) => {
                   const problems = flags.filter(f => f.severity === 'problem');
                   const opportunities = flags.filter(f => f.severity === 'opportunity');
-                  const segLabel = PORTFOLIO_SEGMENTS.find(s => s.id === segment)?.label || 'Account';
-                  const handleInvestigate = () => {
-                    if (!onInvestigate) return;
-                    onInvestigate({
-                      segmentLabel: segLabel,
-                      monthLabel: month.label,
-                      dba,
-                      flags,
-                    });
-                  };
+                  const isExpanded = expandedMonth === month.iso;
                   return (
                     <div key={month.iso} className="bg-white border border-stone-200 rounded-sm px-3 py-2">
                       <div className="flex items-baseline justify-between gap-3 flex-wrap mb-1.5">
@@ -3536,15 +3566,16 @@ function PortfolioReportPanel({ portfolioData, onUpdate, isReadOnly, selectedISO
                               <Sparkles className="w-2.5 h-2.5" /> {opportunities.length} opportunit{opportunities.length === 1 ? 'y' : 'ies'}
                             </span>
                           )}
-                          {!isReadOnly && onInvestigate && (
-                            <button
-                              onClick={handleInvestigate}
-                              className="text-[10px] inline-flex items-center gap-1 px-2 py-0.5 bg-stone-900 hover:bg-stone-800 text-white rounded-sm font-medium transition-colors"
-                              title="Add an Investigation row to the Action Log for this flag"
-                            >
-                              <Plus className="w-2.5 h-2.5" /> Investigate
-                            </button>
-                          )}
+                          <button
+                            onClick={() => setExpandedMonth(isExpanded ? null : month.iso)}
+                            className={`text-[10px] inline-flex items-center gap-1 px-2 py-0.5 rounded-sm font-medium transition-colors ${
+                              isExpanded
+                                ? 'bg-stone-700 text-white'
+                                : 'bg-stone-900 hover:bg-stone-800 text-white'
+                            }`}
+                          >
+                            <ChevronDown className={`w-2.5 h-2.5 transition-transform ${isExpanded ? 'rotate-180' : ''}`} /> Investigate
+                          </button>
                         </div>
                       </div>
                       <div className="flex flex-col gap-1">
@@ -3576,6 +3607,100 @@ function PortfolioReportPanel({ portfolioData, onUpdate, isReadOnly, selectedISO
                           );
                         })}
                       </div>
+
+                      {/* Inline contributor drilldown */}
+                      {isExpanded && (
+                        <div className="mt-2 border-t border-stone-100 pt-2 space-y-3">
+                          {/* Per-flag contributor breakdown */}
+                          {flags.map(f => {
+                            const direction = f.severity === 'opportunity' ? 'up' : 'down';
+                            const isOpp = direction === 'up';
+                            const chipBg = isOpp ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-rose-50 border-rose-200 text-rose-900';
+                            const headerBg = isOpp ? 'bg-amber-50 border-amber-200' : 'bg-rose-50 border-rose-200';
+
+                            // Segments (PH / Excl PH) — only when viewing All
+                            const segContribs = segment === 'all'
+                              ? computeContributingSegments(portfolioData, f, month.iso)
+                              : [];
+
+                            // Buildings
+                            const buildingContribs = computeContributingBuildings(buildingReport, f, month.iso, segment);
+                            const sameBuildings = buildingContribs.sameDirection || [];
+
+                            // Weeks
+                            const weekContribs = computeContributingWeeks(weeksReport, f, month.iso);
+
+                            const hasAny = segContribs.length > 0 || sameBuildings.length > 0 || weekContribs.length > 0;
+
+                            return (
+                              <div key={f.id} className={`border rounded-sm ${headerBg}`}>
+                                <div className={`px-3 py-1.5 text-[11px] font-medium flex items-center gap-2 border-b ${headerBg}`}>
+                                  {isOpp ? <Sparkles className="w-3 h-3" /> : <Flag className="w-3 h-3" />}
+                                  {f.label} — contributors matching direction
+                                </div>
+
+                                {!hasAny ? (
+                                  <div className="px-3 py-2 text-[10px] text-stone-400 italic">No contributor data available for this flag.</div>
+                                ) : (
+                                  <div className="px-3 py-2 space-y-2">
+                                    {/* Segment contributors */}
+                                    {segContribs.length > 0 && (
+                                      <div>
+                                        <div className="text-[9px] uppercase tracking-wider text-stone-500 font-semibold mb-1">Segments</div>
+                                        <div className="flex gap-1.5 flex-wrap">
+                                          {segContribs.map(c => (
+                                            <span key={c.segment} className={`inline-flex items-center gap-1 px-2 py-0.5 text-[10px] mono font-medium rounded-sm border ${chipBg}`}
+                                              title={`TY ${fmtFlagValue(f.id, c.ty)} vs STLY ${fmtFlagValue(f.id, c.ly)} · gap ${fmtFlagGap(f.id, c.gap)}`}
+                                            >
+                                              {c.segment === 'ph' ? 'PH' : c.segment === 'exclPh' ? 'Excl PH' : c.segment}
+                                              <span className="text-[9px] opacity-70">({fmtFlagGap(f.id, c.gap)})</span>
+                                            </span>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {/* Building contributors */}
+                                    {sameBuildings.length > 0 && (
+                                      <div>
+                                        <div className="text-[9px] uppercase tracking-wider text-stone-500 font-semibold mb-1">Buildings {isOpp ? 'driving up' : 'pulling down'}</div>
+                                        <div className="flex gap-1.5 flex-wrap">
+                                          {sameBuildings.map(c => (
+                                            <span key={c.group} className={`inline-flex items-center gap-1 px-2 py-0.5 text-[10px] mono font-medium rounded-sm border ${chipBg}`}
+                                              title={`TY ${fmtFlagValue(f.id, c.ty)} vs STLY ${fmtFlagValue(f.id, c.ly)} · gap ${fmtFlagGap(f.id, c.gap)}`}
+                                            >
+                                              {c.group}
+                                              <span className="text-[9px] opacity-70">({fmtFlagGap(f.id, c.gap)})</span>
+                                            </span>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {/* Week contributors */}
+                                    {weekContribs.length > 0 && (
+                                      <div>
+                                        <div className="text-[9px] uppercase tracking-wider text-stone-500 font-semibold mb-1">Weeks {isOpp ? 'driving up' : 'pulling down'}</div>
+                                        <div className="flex gap-1.5 flex-wrap">
+                                          {weekContribs.map(c => (
+                                            <span key={c.label} className={`inline-flex items-center gap-1 px-2 py-0.5 text-[10px] mono font-medium rounded-sm border ${chipBg}`}
+                                              title={`${c.dateRange}${c.event ? ' · ' + c.event : ''} · TY ${fmtFlagValue(f.id, c.ty)} vs STLY ${fmtFlagValue(f.id, c.ly)} · gap ${fmtFlagGap(f.id, c.gap)}`}
+                                            >
+                                              {c.label.replace(' · ', ' ')}
+                                              {c.event && <span className="text-[9px] opacity-60 truncate max-w-[100px]">{c.event}</span>}
+                                              <span className="text-[9px] opacity-70">({fmtFlagGap(f.id, c.gap)})</span>
+                                            </span>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -3847,7 +3972,7 @@ function PortfolioReportPanel({ portfolioData, onUpdate, isReadOnly, selectedISO
   );
 }
 
-function LevelEditor({ level, dayData, onUpdate, onSetStatus, isReadOnly, portfolioData, onUpdatePortfolio, selectedISO, onInvestigate, levelReport, onUpdateLevelReport, buildingReport, onParseNotes, dismissedFlags, setDismissedFlags }) {
+function LevelEditor({ level, dayData, onUpdate, onSetStatus, isReadOnly, portfolioData, onUpdatePortfolio, selectedISO, onInvestigate, levelReport, onUpdateLevelReport, buildingReport, onParseNotes, dismissedFlags, setDismissedFlags, weeksReport }) {
   const data = dayData?.[level.id] || { status: null, fields: {}, notes: '' };
 
   return (
@@ -3864,6 +3989,7 @@ function LevelEditor({ level, dayData, onUpdate, onSetStatus, isReadOnly, portfo
             buildingReport={buildingReport}
             dismissedFlags={dismissedFlags}
             setDismissedFlags={setDismissedFlags}
+            weeksReport={weeksReport}
           />
         </div>
       )}
@@ -3956,7 +4082,7 @@ function LevelEditor({ level, dayData, onUpdate, onSetStatus, isReadOnly, portfo
   );
 }
 
-function FunnelView({ funnel, setFunnel, portfolioReports, setPortfolioReports, rows, setRows, loaded, dismissedFlags, setDismissedFlags }) {
+function FunnelView({ funnel, setFunnel, portfolioReports, setPortfolioReports, rows, setRows, loaded, dismissedFlags, setDismissedFlags, weeksReport }) {
   const [selectedISO, setSelectedISO] = useState(todayISO());
   const [openLevelId, setOpenLevelId] = useState('portfolio');
   const [view, setView] = useState('today'); // 'today' | 'history'
@@ -4303,6 +4429,7 @@ function FunnelView({ funnel, setFunnel, portfolioReports, setPortfolioReports, 
                   onParseNotes={() => setParseModalOpen(true)}
                   dismissedFlags={dismissedFlags}
                   setDismissedFlags={setDismissedFlags}
+                  weeksReport={weeksReport}
                 />
               );
             })}
@@ -8933,6 +9060,7 @@ export default function ActionLog() {
           loaded={loaded}
           dismissedFlags={dismissedFlags}
           setDismissedFlags={setDismissedFlags}
+          weeksReport={weeksReport}
         />
       )}
 
