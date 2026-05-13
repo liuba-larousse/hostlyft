@@ -705,10 +705,15 @@ const parseReportFile = (arrayBuffer, fileName) => {
     /^property\s*group$/i,
   ];
   const allCols = Object.keys(sample);
-  const buildingCol = allCols.find(c => {
-    const trimmed = String(c).trim();
+  let buildingCol = allCols.find(c => {
+    // Normalize: strip non-printable chars, collapse whitespace, trim
+    const trimmed = String(c).replace(/[^\x20-\x7E]/g, ' ').replace(/\s+/g, ' ').trim();
     return BUILDING_COL_PATTERNS.some(rx => rx.test(trimmed));
   }) || null;
+  // Fallback: if no pattern matched, check for column containing "listing" and "name"
+  if (!buildingCol) {
+    buildingCol = allCols.find(c => /listing/i.test(c) && /name/i.test(c)) || null;
+  }
   const groupValues = buildingCol
     ? json.map(r => r[buildingCol]).filter(g => g != null && String(g).trim() !== '')
     : [];
@@ -2870,7 +2875,7 @@ function SimpleReportPanel({ levelLabel, levelHint, todayReport, priorReport, pr
                     <span className="mono text-[10px]">{todayReport._detectionInfo.availableColumns.join(' · ')}</span>
                   </div>
                   <div className="leading-snug mt-1 italic">
-                    Expected one of: <span className="mono text-[10px]">Group Name · Group · Sub Group · Customization Group · Listing Group · Building</span>
+                    Expected one of: <span className="mono text-[10px]">Group Name · Group · Sub Group · Customization Group · Listing Group · Listing Name · Building</span>
                   </div>
                 </>
               ) : (
