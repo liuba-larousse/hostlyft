@@ -7660,12 +7660,19 @@ function OverrideModal({ pair, bucket, onClose, onRecordAction }) {
   };
 
   const handleDelete = async (date) => {
+    // Delete from all selected listings (or manual listingId if no group)
+    const targets = selectedListings.size > 0
+      ? groupListings.filter(l => selectedListings.has(l.listing_id)).map(l => ({ id: l.listing_id, pms: l.pms || 'guesty' }))
+      : listingId ? [{ id: listingId, pms }] : [];
+    if (targets.length === 0) return;
     try {
-      await fetch('/api/pricelabs/overrides', {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ listingId, pms, overrides: [{ date }] }),
-      });
+      for (const target of targets) {
+        await fetch('/api/pricelabs/overrides', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ listingId: target.id, pms: target.pms, overrides: [{ date }] }),
+        });
+      }
       setExisting(prev => prev.filter(o => o.date !== date));
     } catch {}
   };
