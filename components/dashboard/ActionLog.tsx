@@ -7522,6 +7522,12 @@ function OverrideModal({ pair, bucket, onClose, onRecordAction }) {
           console.warn('Listing prices error:', data.error);
           setError(data.error);
         }
+        if (data.pricesDebug) {
+          console.warn('Listing prices debug (all attempts failed):', data.pricesDebug);
+        }
+        if (data.pricesSource) {
+          console.log('Listing prices loaded via:', data.pricesSource);
+        }
         if (data.overrides) setExisting(data.overrides);
         if (data.listing) setPricingData(data.listing);
         setLoading(false);
