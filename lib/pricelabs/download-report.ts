@@ -5,12 +5,13 @@ const TIMEOUT = 45_000;
 
 // Only segments that have their own report URL — no filter interaction needed.
 // PH and Excl PH are derived from the Building report client-side.
-export type ReportSegment = 'all' | 'building' | 'weeks';
+export type ReportSegment = 'all' | 'building' | 'weeks' | 'listing';
 
 const REPORT_URLS: Record<ReportSegment, string> = {
   all: 'https://app.pricelabs.co/report-builder/9276',
   building: 'https://app.pricelabs.co/report-builder/10420',
   weeks: 'https://app.pricelabs.co/report-builder/10678',
+  listing: 'https://app.pricelabs.co/report-builder/10744',
 };
 
 /**

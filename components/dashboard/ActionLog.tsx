@@ -8281,8 +8281,8 @@ function SyncReportButton({ segment, onReportLoaded }) {
 
   // PH and Excl PH are derived from the Building report (which has Group Name column)
   // so we download 'building' and parse it client-side.
-  // Listing uses 'building' too — same report, parsed per-row as individual listings.
-  const apiSegment = (segment === 'ph' || segment === 'exclPh' || segment === 'listing') ? 'building' : segment;
+  // Listing has its own report URL in PriceLabs Report Builder.
+  const apiSegment = (segment === 'ph' || segment === 'exclPh') ? 'building' : segment;
 
   const sync = async () => {
     setSyncing(true);
