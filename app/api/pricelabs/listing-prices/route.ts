@@ -50,8 +50,10 @@ export async function GET(req: NextRequest) {
       fetch(`${PRICELABS_API}/listings/${firstId}/overrides?pms=${pms}`, {
         headers: { 'X-API-Key': result.apiKey },
       }),
-      fetch(`${PRICELABS_API}/listing_prices?listing_id=${firstId}&pms=${pms}`, {
-        headers: { 'X-API-Key': result.apiKey },
+      fetch(`${PRICELABS_API}/listing_prices`, {
+        method: 'POST',
+        headers: { 'X-API-Key': result.apiKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ listing_id: firstId, pms }),
       }),
     ]);
 
@@ -62,7 +64,8 @@ export async function GET(req: NextRequest) {
 
     const pricesRaw = await pricesRes.json().catch(() => null);
     if (!pricesRes.ok) {
-      pricesError = `PriceLabs listing_prices returned ${pricesRes.status}`;
+      const errBody = typeof pricesRaw === 'object' ? JSON.stringify(pricesRaw) : String(pricesRaw);
+      pricesError = `PriceLabs listing_prices ${pricesRes.status}: ${errBody}`;
       console.warn('Listing prices fetch failed:', pricesRes.status, pricesRaw);
     } else if (pricesRaw) {
       // pricesRaw is an array of listings
