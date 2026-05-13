@@ -6283,7 +6283,8 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
     if (dismissedFlags.removed?.[key]) return 'removed';
     const snoozed = dismissedFlags.snoozed?.[key];
     if (snoozed) {
-      const expiresAt = new Date(snoozed.at).getTime() + 24 * 60 * 60 * 1000;
+      // Pairs snooze for 7 days (flags snooze for 24h)
+      const expiresAt = new Date(snoozed.at).getTime() + 7 * 24 * 60 * 60 * 1000;
       if (Date.now() < expiresAt) return 'snoozed';
     }
     return false;
@@ -6574,7 +6575,7 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
         <button
           onClick={() => handleSnoozePair(pair)}
           className="inline-flex items-center gap-1 px-2 py-1 text-[10px] mono border border-stone-200 hover:border-amber-400 text-stone-400 hover:text-amber-700 hover:bg-amber-50 rounded-sm bg-white transition-colors"
-          title="Snooze this row for 24 hours"
+          title="Snooze this row for 1 week"
         >
           <Clock className="w-3 h-3" /> Snooze
         </button>
