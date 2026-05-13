@@ -6150,8 +6150,12 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
     return `${months[m - 1]} ${y}`;
   };
 
-  // Get building report for today (or most recent)
-  const buildingReport = portfolioReports[selectedISO]?.['building'] || null;
+  // Get building report for today, falling back to the most recent prior date
+  const buildingReport = portfolioReports[selectedISO]?.['building']
+    || (() => {
+      const priorDate = findPriorReportDate(portfolioReports, selectedISO, 'building');
+      return priorDate ? portfolioReports[priorDate]['building'] : null;
+    })();
 
   // ---- Add a row to the Action Log from a Summary pair ----
   // Schema mirrors the existing onInvestigate row in FunnelView so the new row
