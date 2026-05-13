@@ -3620,16 +3620,37 @@ function PortfolioReportPanel({ portfolioData, onUpdate, isReadOnly, selectedISO
                               ? computeContributingSegments(portfolioData, f, month.iso)
                               : [];
 
-                            // Buildings
-                            const buildingContribs = computeContributingBuildings(buildingReport, f, month.iso, segment);
+                            // Buildings — show for Excl PH and All
+                            const buildingContribs = (segment === 'exclPh' || segment === 'all')
+                              ? computeContributingBuildings(buildingReport, f, month.iso, segment)
+                              : { sameDirection: [], oppositeDirection: [] };
                             const sameBuildings = buildingContribs.sameDirection || [];
 
-                            // Weeks
-                            const weekContribs = computeContributingWeeks(weeksReport, f, month.iso);
+                            // Weeks — only for All segment
+                            const weekContribs = segment === 'all'
+                              ? computeContributingWeeks(weeksReport, f, month.iso)
+                              : [];
 
-                            // Listings — all listings in the month (no direction filter)
-                            const listingReport = portfolioData['listing']?.todayReport;
+                            // Listings — for PH show PH-tagged buildings from building report;
+                            // for All/Excl PH show from listing drilldown report if available
                             const listingContribs = (() => {
+                              // For PH: use building report filtered to PH buildings (these ARE the listings)
+                              if (segment === 'ph' && buildingReport?.byBuilding && cfg) {
+                                const items = [];
+                                Object.entries(buildingReport.byBuilding).forEach(([name, monthsArr]) => {
+                                  if (buildingToSegment(name) !== 'ph') return;
+                                  const monthRow = monthsArr.find(m => m.iso === month.iso);
+                                  if (!monthRow) return;
+                                  const ty = monthRow[cfg.ty];
+                                  const ly = monthRow[cfg.ly];
+                                  if (ty == null || ly == null) return;
+                                  items.push({ name, gap: Number(ty) - Number(ly), ty, ly });
+                                });
+                                items.sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap));
+                                return items;
+                              }
+                              // For others: use the listing drilldown report
+                              const listingReport = portfolioData['listing']?.todayReport;
                               if (!listingReport?.byBuilding || !cfg) return [];
                               const items = [];
                               Object.entries(listingReport.byBuilding).forEach(([name, monthsArr]) => {
@@ -3712,7 +3733,9 @@ function PortfolioReportPanel({ portfolioData, onUpdate, isReadOnly, selectedISO
                                     {/* Listing contributors — all listings, no direction filter */}
                                     {listingContribs.length > 0 && (
                                       <div>
-                                        <div className="text-[9px] uppercase tracking-wider text-stone-500 font-semibold mb-1">Listings (all)</div>
+                                        <div className="text-[9px] uppercase tracking-wider text-stone-500 font-semibold mb-1">
+                                          {segment === 'ph' ? 'PH Listings' : 'Listings (all)'}
+                                        </div>
                                         <div className="flex gap-1.5 flex-wrap">
                                           {listingContribs.map(c => {
                                             const isSameDir = isOpp ? c.gap > 0 : c.gap < 0;
@@ -4460,7 +4483,12 @@ function FunnelView({ funnel, setFunnel, portfolioReports, setPortfolioReports, 
               }
               // Building report for cross-referencing at Portfolio level
               // (used to show "which buildings are pulling this segment down/up").
-              const buildingReportToday = portfolioReports[selectedISO]?.['building'] || null;
+              // Fall back to the most recent prior building report if today's isn't uploaded yet.
+              const buildingReportToday = portfolioReports[selectedISO]?.['building']
+                || (() => {
+                  const priorDate = findPriorReportDate(portfolioReports, selectedISO, 'building');
+                  return priorDate ? portfolioReports[priorDate]['building'] : null;
+                })();
               return (
                 <LevelEditor
                   key={L.id}
