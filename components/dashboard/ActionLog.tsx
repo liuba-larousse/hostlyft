@@ -7183,7 +7183,7 @@ function SettingModal({ pair, bucket, onClose, onRecord }) {
         <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-stone-200">
           <div>
             <h2 className="text-[14px] font-semibold text-stone-900">Adjust Setting</h2>
-            <p className="text-[11px] text-stone-500">{pair.building} · {pair.weekLabel || pair.monthLabel}</p>
+            <p className="text-[11px] text-stone-500">{pair.building} · {pair.weekLabel || pair.monthLabel}{pair.weekDateRange ? ` · ${pair.weekDateRange}` : ''}</p>
           </div>
           <button onClick={onClose} className="text-stone-400 hover:text-stone-600 text-lg">✕</button>
         </div>
