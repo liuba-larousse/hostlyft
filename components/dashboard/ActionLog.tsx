@@ -6662,13 +6662,13 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
     const lastAction = getLastAction(pair.building, pair.weekLabel);
     return (
     <tr key={`${pair.building}-${pair.weekIso}`} className={`border-b border-stone-100 ${i % 2 === 1 ? 'bg-stone-50/50' : 'bg-white'}`}>
-      <td className="px-3 py-2 text-stone-500 mono text-[11px]">{i + 1}</td>
-      <td className="px-3 py-2">
-        <div className="font-medium text-stone-900 text-[13px]">{pair.building}</div>
-        <div className="text-[10px] text-stone-500 mono">{pair.monthLabel}</div>
+      <td className="px-2 py-1.5 text-stone-500 mono text-[10px]">{i + 1}</td>
+      <td className="px-2 py-1.5">
+        <div className="font-medium text-stone-900 text-[12px]">{pair.building}</div>
+        <div className="text-[9px] text-stone-500 mono">{pair.monthLabel}</div>
         {lastAction && (
-          <div className="mt-1.5 space-y-0.5">
-            <div className="text-[9px] px-1.5 py-0.5 bg-blue-50 border border-blue-200 rounded-sm text-blue-800 truncate max-w-[200px]" title={lastAction.action}>
+          <div className="mt-1 space-y-0.5">
+            <div className="text-[9px] px-1.5 py-0.5 bg-blue-50 border border-blue-200 rounded-sm text-blue-800 truncate max-w-[140px]" title={lastAction.action}>
               Last: {lastAction.action} ({lastAction.date})
             </div>
             {lastAction.followUpDate && (
@@ -6683,27 +6683,27 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
           </div>
         )}
       </td>
-      <td className="px-3 py-2">
-        <div className="text-[12px] text-stone-800">{pair.weekLabel}</div>
-        <div className="text-[10px] text-stone-500 mono">{pair.weekDateRange}</div>
+      <td className="px-2 py-2 max-w-[130px]">
+        <div className="text-[11px] text-stone-800 font-medium">W{pair.weekIso?.split('-W')[1] || pair.weekLabel}</div>
+        <div className="text-[9px] text-stone-500 mono">{pair.weekDateRange}</div>
         {pair.eventName && (
-          <div className="text-[10px] text-purple-700 mt-0.5 italic truncate max-w-[180px]" title={pair.eventName}>
-            📅 {pair.eventName}
+          <div className="text-[9px] text-purple-700 mt-0.5 italic truncate max-w-[120px]" title={pair.eventName}>
+            {pair.eventName}
           </div>
         )}
       </td>
-      <td className="px-3 py-2 mono text-[11px]">
+      <td className="px-2 py-1.5 mono text-[10px]">
         <div className={isProblem ? 'text-rose-800 font-semibold' : 'text-emerald-800 font-semibold'}>
           {fmtSignedMoney(pair.revenueGap)}
         </div>
-        <div className="text-[10px] text-stone-500">
-          {fmtMoney(pair.tyRev)} vs STLY {fmtMoney(pair.stlyRev)}
+        <div className="text-[9px] text-stone-500">
+          {fmtMoney(pair.tyRev)} vs {fmtMoney(pair.stlyRev)}
         </div>
       </td>
-      <td className="px-3 py-2">
-        <div className="flex flex-wrap gap-1">
+      <td className="px-2 py-1.5">
+        <div className="flex flex-wrap gap-0.5">
           {pair.buildingFlags.map((f, fi) => (
-            <span key={fi} className={`inline-flex items-center px-1.5 py-0.5 rounded-sm text-[10px] mono ${
+            <span key={fi} className={`inline-flex items-center px-1 py-0.5 rounded-sm text-[9px] mono ${
               isProblem ? 'bg-rose-100 text-rose-900 border border-rose-300' : 'bg-amber-100 text-amber-900 border border-amber-300'
             }`} title={f.detail}>
               {f.label}
@@ -6711,10 +6711,10 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
           ))}
         </div>
       </td>
-      <td className="px-3 py-2">
-        <div className="flex flex-wrap gap-1">
+      <td className="px-2 py-1.5">
+        <div className="flex flex-wrap gap-0.5">
           {pair.weekFlags.map((f, fi) => (
-            <span key={fi} className={`inline-flex items-center px-1.5 py-0.5 rounded-sm text-[10px] mono ${
+            <span key={fi} className={`inline-flex items-center px-1 py-0.5 rounded-sm text-[9px] mono ${
               isProblem ? 'bg-rose-100 text-rose-900 border border-rose-300' : 'bg-amber-100 text-amber-900 border border-amber-300'
             }`} title={f.detail}>
               {f.label}
@@ -6722,7 +6722,7 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
           ))}
         </div>
       </td>
-      <td className="px-3 py-2 whitespace-nowrap">
+      <td className="px-2 py-1.5 whitespace-nowrap">
         <AddActionButton pair={pair} bucket={bucket} accent={accent} />
       </td>
     </tr>
@@ -6798,13 +6798,13 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
               <table className="w-full text-[12px] border-collapse">
                 <thead>
                   <tr className="bg-rose-100/60 border-b border-rose-200">
-                    <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider text-rose-900 font-semibold">#</th>
-                    <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider text-rose-900 font-semibold">Building · Month</th>
-                    <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider text-rose-900 font-semibold">Week</th>
-                    <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider text-rose-900 font-semibold">Rev gap (mo.)</th>
-                    <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider text-rose-900 font-semibold">Building flags</th>
-                    <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider text-rose-900 font-semibold">Week flags</th>
-                    <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider text-rose-900 font-semibold">Action</th>
+                    <th className="text-left px-2 py-1.5 text-[9px] uppercase tracking-wider text-rose-900 font-semibold">#</th>
+                    <th className="text-left px-2 py-1.5 text-[9px] uppercase tracking-wider text-rose-900 font-semibold">Building</th>
+                    <th className="text-left px-2 py-1.5 text-[9px] uppercase tracking-wider text-rose-900 font-semibold">Week</th>
+                    <th className="text-left px-2 py-1.5 text-[9px] uppercase tracking-wider text-rose-900 font-semibold">Rev gap</th>
+                    <th className="text-left px-2 py-1.5 text-[9px] uppercase tracking-wider text-rose-900 font-semibold">Bldg flags</th>
+                    <th className="text-left px-2 py-1.5 text-[9px] uppercase tracking-wider text-rose-900 font-semibold">Week flags</th>
+                    <th className="text-left px-2 py-1.5 text-[9px] uppercase tracking-wider text-rose-900 font-semibold">Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -6857,13 +6857,13 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
               <table className="w-full text-[12px] border-collapse">
                 <thead>
                   <tr className="bg-amber-100/60 border-b border-amber-200">
-                    <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider text-amber-900 font-semibold">#</th>
-                    <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider text-amber-900 font-semibold">Building · Month</th>
-                    <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider text-amber-900 font-semibold">Week</th>
-                    <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider text-amber-900 font-semibold">Rev gap (mo.)</th>
-                    <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider text-amber-900 font-semibold">Building flags</th>
-                    <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider text-amber-900 font-semibold">Week flags</th>
-                    <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider text-amber-900 font-semibold">Action</th>
+                    <th className="text-left px-2 py-1.5 text-[9px] uppercase tracking-wider text-amber-900 font-semibold">#</th>
+                    <th className="text-left px-2 py-1.5 text-[9px] uppercase tracking-wider text-amber-900 font-semibold">Building</th>
+                    <th className="text-left px-2 py-1.5 text-[9px] uppercase tracking-wider text-amber-900 font-semibold">Week</th>
+                    <th className="text-left px-2 py-1.5 text-[9px] uppercase tracking-wider text-amber-900 font-semibold">Rev gap</th>
+                    <th className="text-left px-2 py-1.5 text-[9px] uppercase tracking-wider text-amber-900 font-semibold">Bldg flags</th>
+                    <th className="text-left px-2 py-1.5 text-[9px] uppercase tracking-wider text-amber-900 font-semibold">Week flags</th>
+                    <th className="text-left px-2 py-1.5 text-[9px] uppercase tracking-wider text-amber-900 font-semibold">Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -6916,14 +6916,14 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
             <table className="w-full text-[12px] border-collapse">
               <thead>
                 <tr className="bg-indigo-100/60 border-b border-indigo-200">
-                  <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider text-indigo-900 font-semibold">#</th>
-                  <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider text-indigo-900 font-semibold">Building · Month</th>
-                  <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider text-indigo-900 font-semibold">Week</th>
-                  <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider text-indigo-900 font-semibold">Rev gap (mo.)</th>
-                  <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider text-indigo-900 font-semibold">Building flags</th>
-                  <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider text-indigo-900 font-semibold">Week flags</th>
-                  <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider text-indigo-900 font-semibold">Why mixed</th>
-                  <th className="text-left px-3 py-2 text-[10px] uppercase tracking-wider text-indigo-900 font-semibold">Action</th>
+                  <th className="text-left px-2 py-1.5 text-[9px] uppercase tracking-wider text-indigo-900 font-semibold">#</th>
+                  <th className="text-left px-2 py-1.5 text-[9px] uppercase tracking-wider text-indigo-900 font-semibold">Building</th>
+                  <th className="text-left px-2 py-1.5 text-[9px] uppercase tracking-wider text-indigo-900 font-semibold">Week</th>
+                  <th className="text-left px-2 py-1.5 text-[9px] uppercase tracking-wider text-indigo-900 font-semibold">Rev gap</th>
+                  <th className="text-left px-2 py-1.5 text-[9px] uppercase tracking-wider text-indigo-900 font-semibold">Bldg flags</th>
+                  <th className="text-left px-2 py-1.5 text-[9px] uppercase tracking-wider text-indigo-900 font-semibold">Week flags</th>
+                  <th className="text-left px-2 py-1.5 text-[9px] uppercase tracking-wider text-indigo-900 font-semibold">Why mixed</th>
+                  <th className="text-left px-2 py-1.5 text-[9px] uppercase tracking-wider text-indigo-900 font-semibold">Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -6935,50 +6935,50 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
                   const flagBg = flagSev === 'problem' ? 'bg-rose-100 text-rose-900 border border-rose-300' : 'bg-amber-100 text-amber-900 border border-amber-300';
                   return (
                     <tr key={`m-${p.building}-${p.weekIso}-${i}`} className={`border-b border-stone-100 ${idx % 2 === 1 ? 'bg-stone-50/50' : 'bg-white'}`}>
-                      <td className="px-3 py-2 text-stone-500 mono text-[11px]">{i + 1}</td>
-                      <td className="px-3 py-2">
-                        <div className="font-medium text-stone-900 text-[13px]">{p.building}</div>
-                        <div className="text-[10px] text-stone-500 mono">{p.monthLabel}</div>
+                      <td className="px-2 py-1.5 text-stone-500 mono text-[10px]">{i + 1}</td>
+                      <td className="px-2 py-1.5">
+                        <div className="font-medium text-stone-900 text-[12px]">{p.building}</div>
+                        <div className="text-[9px] text-stone-500 mono">{p.monthLabel}</div>
                       </td>
-                      <td className="px-3 py-2">
-                        <div className="text-[12px] text-stone-800">{p.weekLabel}</div>
-                        <div className="text-[10px] text-stone-500 mono">{p.weekDateRange}</div>
+                      <td className="px-2 py-1.5 max-w-[130px]">
+                        <div className="text-[11px] text-stone-800 font-medium">W{p.weekIso?.split('-W')[1] || p.weekLabel}</div>
+                        <div className="text-[9px] text-stone-500 mono">{p.weekDateRange}</div>
                         {p.eventName && (
-                          <div className="text-[10px] text-purple-700 mt-0.5 italic truncate max-w-[180px]" title={p.eventName}>
-                            📅 {p.eventName}
+                          <div className="text-[9px] text-purple-700 mt-0.5 italic truncate max-w-[120px]" title={p.eventName}>
+                            {p.eventName}
                           </div>
                         )}
                       </td>
-                      <td className="px-3 py-2 mono text-[11px]">
+                      <td className="px-2 py-1.5 mono text-[10px]">
                         <div className={p.revenueGap != null && p.revenueGap < 0 ? 'text-rose-800 font-semibold' : 'text-emerald-800 font-semibold'}>
                           {fmtSignedMoney(p.revenueGap)}
                         </div>
-                        <div className="text-[10px] text-stone-500">
-                          {fmtMoney(p.tyRev)} vs STLY {fmtMoney(p.stlyRev)}
+                        <div className="text-[9px] text-stone-500">
+                          {fmtMoney(p.tyRev)} vs {fmtMoney(p.stlyRev)}
                         </div>
                       </td>
-                      <td className="px-3 py-2">
-                        <div className="flex flex-wrap gap-1">
+                      <td className="px-2 py-1.5">
+                        <div className="flex flex-wrap gap-0.5">
                           {p.buildingFlags.map((f, fi) => (
-                            <span key={fi} className={`inline-flex items-center px-1.5 py-0.5 rounded-sm text-[10px] mono ${flagBg}`} title={f.detail}>
+                            <span key={fi} className={`inline-flex items-center px-1 py-0.5 rounded-sm text-[9px] mono ${flagBg}`} title={f.detail}>
                               {f.label}
                             </span>
                           ))}
                         </div>
                       </td>
-                      <td className="px-3 py-2">
-                        <div className="flex flex-wrap gap-1">
+                      <td className="px-2 py-1.5">
+                        <div className="flex flex-wrap gap-0.5">
                           {p.weekFlags.map((f, fi) => (
-                            <span key={fi} className={`inline-flex items-center px-1.5 py-0.5 rounded-sm text-[10px] mono ${flagBg}`} title={f.detail}>
+                            <span key={fi} className={`inline-flex items-center px-1 py-0.5 rounded-sm text-[9px] mono ${flagBg}`} title={f.detail}>
                               {f.label}
                             </span>
                           ))}
                         </div>
                       </td>
-                      <td className="px-3 py-2 text-[11px] text-indigo-900 italic">
+                      <td className="px-2 py-1.5 text-[10px] text-indigo-900 italic">
                         {p.mixedReason}
                       </td>
-                      <td className="px-3 py-2 whitespace-nowrap">
+                      <td className="px-2 py-1.5 whitespace-nowrap">
                         <AddActionButton pair={p} bucket="mixed" accent="indigo" />
                       </td>
                     </tr>
