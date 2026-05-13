@@ -7694,42 +7694,77 @@ function OverrideModal({ pair, bucket, onClose, onRecordAction }) {
             );
           })()}
 
-          {/* Existing overrides */}
-          {existing.length > 0 && (
+          {/* Existing overrides — enriched with listing_prices data */}
+          {existing.length > 0 && (() => {
+            // Build date → pricing day lookup from listing_prices data
+            const pricingByDate = {};
+            if (pricingData?.data) {
+              pricingData.data.forEach(d => { pricingByDate[d.date] = d; });
+            }
+            return (
             <div>
               <label className="text-[10px] uppercase tracking-wider text-stone-500 block mb-1">
                 Existing Overrides ({existing.length})
               </label>
-              <div className="max-h-32 overflow-y-auto border border-stone-200 rounded-sm">
-                <table className="w-full text-[11px]">
-                  <thead>
-                    <tr className="bg-stone-50 text-stone-500">
-                      <th className="text-left px-2 py-1">Date</th>
-                      <th className="text-left px-2 py-1">Price</th>
-                      <th className="text-left px-2 py-1">Type</th>
-                      <th className="text-left px-2 py-1">Min Stay</th>
+              <div className="max-h-48 overflow-y-auto border border-stone-200 rounded-sm">
+                <table className="w-full text-[10px]">
+                  <thead className="sticky top-0 bg-stone-50">
+                    <tr className="text-stone-500">
+                      <th className="text-left px-2 py-1 font-semibold">Date</th>
+                      <th className="text-right px-2 py-1 font-semibold">Override</th>
+                      <th className="text-left px-2 py-1 font-semibold">Type</th>
+                      <th className="text-right px-2 py-1 font-semibold">PL Price</th>
+                      <th className="text-right px-2 py-1 font-semibold">User Price</th>
+                      <th className="text-right px-2 py-1 font-semibold">Min Stay</th>
+                      <th className="text-left px-2 py-1 font-semibold">Demand</th>
+                      <th className="text-right px-2 py-1 font-semibold">Occ</th>
+                      <th className="text-right px-2 py-1 font-semibold">ADR STLY</th>
                       <th className="px-2 py-1"></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {existing.map(o => (
-                      <tr key={o.date} className="border-t border-stone-100">
-                        <td className="px-2 py-1 mono">{o.date}</td>
-                        <td className="px-2 py-1">{o.price || '—'}</td>
-                        <td className="px-2 py-1">{o.price_type}</td>
-                        <td className="px-2 py-1">{o.min_stay || '—'}</td>
+                    {existing.map((o, idx) => {
+                      const pd = pricingByDate[o.date];
+                      return (
+                      <tr key={o.date} className={`border-t border-stone-100 ${idx % 2 === 1 ? 'bg-stone-50/30' : ''}`}>
+                        <td className="px-2 py-1 mono text-stone-700">{o.date}</td>
+                        <td className="px-2 py-1 text-right mono font-medium text-stone-900">{o.price || '—'}</td>
+                        <td className="px-2 py-1 text-stone-600">{o.price_type || '—'}</td>
+                        <td className="px-2 py-1 text-right mono text-stone-700">{pd?.price != null ? `$${pd.price}` : '—'}</td>
+                        <td className={`px-2 py-1 text-right mono ${pd?.user_price && pd.user_price !== pd.price ? 'text-indigo-700 font-medium' : 'text-stone-400'}`}>
+                          {pd?.user_price != null ? `$${pd.user_price}` : '—'}
+                        </td>
+                        <td className="px-2 py-1 text-right mono text-stone-600">{o.min_stay || pd?.min_stay || '—'}</td>
+                        <td className="px-2 py-1">
+                          {pd?.demand_desc ? (
+                            <span className="inline-flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: pd.demand_color || '#ccc' }} />
+                              <span className="text-stone-600 truncate max-w-[70px]" title={pd.demand_desc}>{pd.demand_desc}</span>
+                            </span>
+                          ) : '—'}
+                        </td>
+                        <td className="px-2 py-1 text-right mono text-stone-600">
+                          {pd?.reason?.listing_info?.occupancy != null
+                            ? `${(Number(pd.reason.listing_info.occupancy) * 100).toFixed(0)}%`
+                            : '—'}
+                        </td>
+                        <td className="px-2 py-1 text-right mono text-stone-600">
+                          {pd?.ADR_STLY != null && pd.ADR_STLY !== -1 ? `$${pd.ADR_STLY}` : '—'}
+                        </td>
                         <td className="px-2 py-1">
                           <button onClick={() => handleDelete(o.date)} className="text-rose-500 hover:text-rose-700">
                             <Trash2 className="w-3 h-3" />
                           </button>
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
             </div>
-          )}
+            );
+          })()}
 
           {/* Date range */}
           <div>
