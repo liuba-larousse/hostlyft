@@ -7508,14 +7508,23 @@ function OverrideModal({ pair, bucket, onClose, onRecordAction }) {
     setLoadingPricing(true);
     const ids = groupListings.map(l => l.listing_id).join(',');
     const firstPms = groupListings[0].pms || 'guesty';
-    fetch(`/api/pricelabs/listing-prices?listingIds=${ids}&pms=${firstPms}`)
+    // Fetch pricing data — limit to first 5 listings to avoid timeout
+    const limitedIds = groupListings.slice(0, 5).map(l => l.listing_id).join(',');
+    fetch(`/api/pricelabs/listing-prices?listingIds=${limitedIds}&pms=${firstPms}`)
       .then(r => r.json())
       .then(data => {
+        if (data.error) {
+          console.warn('Listing prices error:', data.error);
+          setError(data.error);
+        }
         if (data.overrides) setExisting(data.overrides);
         if (data.listing) setPricingData(data.listing);
         setLoading(false);
       })
-      .catch(() => {})
+      .catch(e => {
+        console.error('Listing prices fetch failed:', e);
+        setError(`Failed to fetch pricing data: ${e.message}`);
+      })
       .finally(() => setLoadingPricing(false));
   }, [loadingListings, groupListings]);
 
