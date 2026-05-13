@@ -4232,7 +4232,11 @@ function FunnelView({ funnel, setFunnel, portfolioReports, setPortfolioReports, 
   }, [selectedISO, setPortfolioReports]);
 
   // Sorted history (most recent first), excluding today
-  const historyDays = Object.keys(funnel).filter(d => d !== todayISO()).sort().reverse();
+  // History includes days from both funnel state and portfolio reports
+  const historyDays = [...new Set([
+    ...Object.keys(funnel),
+    ...Object.keys(portfolioReports),
+  ])].filter(d => d !== todayISO() && /^\d{4}-\d{2}-\d{2}$/.test(d)).sort().reverse();
 
   // Quick day-summary for history list
   const summarizeDay = (iso) => {
@@ -4243,7 +4247,10 @@ function FunnelView({ funnel, setFunnel, portfolioReports, setPortfolioReports, 
       if (s && counts[s] !== undefined) counts[s]++;
     });
     const touched = counts.reviewed + counts.flagged + counts.action;
-    return { ...counts, touched };
+    // Count reports uploaded for this date
+    const dayReports = portfolioReports[iso] || {};
+    const reportSegments = Object.keys(dayReports).filter(k => dayReports[k]);
+    return { ...counts, touched, reportSegments };
   };
 
   // Copy a past day's content forward to today
@@ -4331,9 +4338,15 @@ function FunnelView({ funnel, setFunnel, portfolioReports, setPortfolioReports, 
                       <div className="text-[10px] text-stone-400">{new Date(iso + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short' })}</div>
                     </div>
                     <div className="flex-1 flex items-center gap-3 text-[11px] mono">
-                      <span className="text-stone-500">
-                        {summary.touched} / 5 levels touched
-                      </span>
+                      {summary.reportSegments.length > 0 ? (
+                        <span className="text-emerald-700 inline-flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
+                          {summary.reportSegments.length} report{summary.reportSegments.length === 1 ? '' : 's'}
+                          <span className="text-stone-400 text-[10px]">({summary.reportSegments.join(', ')})</span>
+                        </span>
+                      ) : (
+                        <span className="text-stone-400">no reports</span>
+                      )}
                       {summary.reviewed > 0 && (
                         <span className="inline-flex items-center gap-1 text-emerald-800">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" /> {summary.reviewed} OK
