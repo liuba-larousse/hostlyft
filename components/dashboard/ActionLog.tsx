@@ -2551,10 +2551,11 @@ const DismissedFlagsList = ({ dismissedFlagsList, segment, onRestore, buildingRe
   );
 };
 
-function SimpleReportPanel({ levelLabel, levelHint, todayReport, priorReport, priorDate, onUpload, onClear, isReadOnly, selectedISO, onInvestigate, segmentLabel, syncSegment, dismissedFlags, setDismissedFlags }) {
+function SimpleReportPanel({ levelLabel, levelHint, todayReport, priorReport, priorDate, onUpload, onClear, isReadOnly, selectedISO, onInvestigate, segmentLabel, syncSegment, dismissedFlags, setDismissedFlags, listingReport }) {
   const inputRef = useRef(null);
   const [parsing, setParsing] = useState(false);
   const [uploadError, setUploadError] = useState(null);
+  const [expandedMonth, setExpandedMonth] = useState(null);
 
   const handle = async (file) => {
     if (!file) return;
@@ -2923,15 +2924,7 @@ function SimpleReportPanel({ levelLabel, levelHint, todayReport, priorReport, pr
               {flaggedMonths.map(({ month, dba, flags }) => {
                 const problems = flags.filter(f => f.severity === 'problem');
                 const opportunities = flags.filter(f => f.severity === 'opportunity');
-                const handleInvestigate = () => {
-                  if (!onInvestigate) return;
-                  onInvestigate({
-                    segmentLabel: segmentLabel || levelLabel,
-                    monthLabel: month.label,
-                    dba,
-                    flags,
-                  });
-                };
+                const isExpanded = expandedMonth === month.iso;
                 return (
                   <div key={month.iso} className="bg-white border border-stone-200 rounded-sm px-3 py-2">
                     <div className="flex items-baseline justify-between gap-3 flex-wrap mb-1.5">
@@ -2950,13 +2943,14 @@ function SimpleReportPanel({ levelLabel, levelHint, todayReport, priorReport, pr
                             <Sparkles className="w-2.5 h-2.5" /> {opportunities.length}
                           </span>
                         )}
-                        {!isReadOnly && onInvestigate && (
+                        {listingReport?.byBuilding && (
                           <button
-                            onClick={handleInvestigate}
-                            className="text-[10px] inline-flex items-center gap-1 px-2 py-0.5 bg-stone-900 hover:bg-stone-800 text-white rounded-sm font-medium transition-colors"
-                            title="Add an Investigation row to the Action Log for this flag"
+                            onClick={() => setExpandedMonth(isExpanded ? null : month.iso)}
+                            className={`text-[10px] inline-flex items-center gap-1 px-2 py-0.5 rounded-sm font-medium transition-colors ${
+                              isExpanded ? 'bg-stone-700 text-white' : 'bg-stone-900 hover:bg-stone-800 text-white'
+                            }`}
                           >
-                            <Plus className="w-2.5 h-2.5" /> Investigate
+                            <ChevronDown className={`w-2.5 h-2.5 transition-transform ${isExpanded ? 'rotate-180' : ''}`} /> Investigate
                           </button>
                         )}
                       </div>
@@ -2973,6 +2967,86 @@ function SimpleReportPanel({ levelLabel, levelHint, todayReport, priorReport, pr
                         />
                       ))}
                     </div>
+
+                    {/* Listing breakdown drilldown */}
+                    {isExpanded && listingReport?.byBuilding && (() => {
+                      // Find listings that belong to building groups shown in this panel
+                      // Match by extracting the building number from listing name (e.g. "730.2304" → 730)
+                      const listingRows = [];
+                      Object.entries(listingReport.byBuilding).forEach(([name, monthsArr]) => {
+                        const monthRow = monthsArr.find(m => m.iso === month.iso);
+                        if (!monthRow) return;
+                        const listingFlags = [];
+                        flags.forEach(f => {
+                          const cfg = FLAG_METRIC_MAP[f.id];
+                          if (!cfg) return;
+                          const ty = monthRow[cfg.ty];
+                          const ly = monthRow[cfg.ly];
+                          if (ty == null || ly == null) return;
+                          const gap = Number(ty) - Number(ly);
+                          const isSameDir = cfg.direction === 'down' ? gap < 0 : gap > 0;
+                          listingFlags.push({ flag: f, ty, ly, gap, isSameDir });
+                        });
+                        if (listingFlags.length === 0) return;
+                        const rev = monthRow.rentalRevenue != null ? Number(monthRow.rentalRevenue) : 0;
+                        listingRows.push({ name, monthRow, listingFlags, rev });
+                      });
+                      listingRows.sort((a, b) => b.rev - a.rev);
+                      if (listingRows.length === 0) return <div className="mt-2 text-[10px] text-stone-400 italic">No listing data for this month.</div>;
+                      return (
+                        <div className="mt-2 border-t border-stone-100 pt-2">
+                          <div className="border border-stone-200 rounded-sm bg-white">
+                            <div className="px-3 py-1.5 text-[9px] uppercase tracking-wider text-stone-600 font-semibold border-b border-stone-200 bg-stone-50">
+                              Listings — {month.label} ({listingRows.length})
+                            </div>
+                            <div className="max-h-64 overflow-y-auto">
+                              <table className="w-full text-[10px]">
+                                <thead className="sticky top-0 bg-stone-50">
+                                  <tr className="text-stone-500">
+                                    <th className="text-left px-2 py-1 font-semibold">Listing</th>
+                                    <th className="text-right px-2 py-1 font-semibold">Revenue</th>
+                                    {flags.map(f => (
+                                      <th key={f.id} className="text-right px-2 py-1 font-semibold" title={f.detail}>
+                                        {f.label.replace(/ (behind|ahead of|<|>) .*/, '')}
+                                      </th>
+                                    ))}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {listingRows.map((lr, idx) => (
+                                    <tr key={lr.name} className={`border-t border-stone-100 ${idx % 2 === 1 ? 'bg-stone-50/30' : ''}`}>
+                                      <td className="px-2 py-1 text-stone-800 font-medium truncate max-w-[200px]" title={lr.name}>
+                                        {lr.name.split(' -- ')[0]}
+                                        {lr.name.includes(' -- ') && (
+                                          <span className="text-stone-400 font-normal ml-1 text-[9px]">{lr.name.split(' -- ')[1]?.slice(0, 25)}</span>
+                                        )}
+                                      </td>
+                                      <td className="px-2 py-1 text-right mono text-stone-700">
+                                        {lr.monthRow.rentalRevenue != null ? `$${Math.round(Number(lr.monthRow.rentalRevenue)).toLocaleString('en-US')}` : '—'}
+                                      </td>
+                                      {flags.map(f => {
+                                        const match = lr.listingFlags.find(lf => lf.flag.id === f.id);
+                                        if (!match) return <td key={f.id} className="px-2 py-1 text-right text-stone-300">—</td>;
+                                        const color = match.isSameDir
+                                          ? (f.severity === 'opportunity' ? 'text-amber-800 bg-amber-50' : 'text-rose-800 bg-rose-50')
+                                          : (f.severity === 'opportunity' ? 'text-rose-700' : 'text-emerald-700');
+                                        return (
+                                          <td key={f.id} className={`px-2 py-1 text-right mono font-medium ${color}`}
+                                            title={`TY ${fmtFlagValue(f.id, match.ty)} vs STLY ${fmtFlagValue(f.id, match.ly)}`}
+                                          >
+                                            {fmtFlagGap(f.id, match.gap)}
+                                          </td>
+                                        );
+                                      })}
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 );
               })}
@@ -3399,6 +3473,7 @@ function PortfolioReportPanel({ portfolioData, onUpdate, isReadOnly, selectedISO
             syncSegment={segment}
             dismissedFlags={dismissedFlags}
             setDismissedFlags={setDismissedFlags}
+            listingReport={segment === 'building' ? (portfolioData['listing']?.todayReport || null) : null}
           />
         );
       })()}
