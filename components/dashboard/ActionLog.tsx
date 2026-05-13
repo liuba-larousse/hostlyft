@@ -6838,8 +6838,9 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
         <div className="text-[9px] text-stone-500 mono">{pair.monthLabel}</div>
         {lastAction && (
           <div className="mt-1 space-y-0.5">
-            <div className="text-[9px] px-1.5 py-0.5 bg-blue-50 border border-blue-200 rounded-sm text-blue-800 truncate max-w-[140px]" title={lastAction.action}>
-              Last: {lastAction.action} ({lastAction.date})
+            <div className="text-[9px] px-1.5 py-0.5 bg-blue-50 border border-blue-200 rounded-sm text-blue-800 max-w-[160px]" title={`${lastAction.action} (${lastAction.date})`}>
+              <div className="truncate">Last: {lastAction.action}</div>
+              <div className="text-blue-600 mono">{lastAction.date}</div>
             </div>
             {lastAction.followUpDate && (
               <div className={`text-[9px] px-1.5 py-0.5 rounded-sm truncate ${
