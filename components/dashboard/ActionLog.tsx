@@ -8192,8 +8192,9 @@ function SyncReportButton({ segment, onReportLoaded }) {
   const [done, setDone] = useState(false);
 
   // PH and Excl PH are derived from the Building report (which has Group Name column)
-  // so we download 'building' and parse it client-side
-  const apiSegment = (segment === 'ph' || segment === 'exclPh') ? 'building' : segment;
+  // so we download 'building' and parse it client-side.
+  // Listing uses 'building' too — same report, parsed per-row as individual listings.
+  const apiSegment = (segment === 'ph' || segment === 'exclPh' || segment === 'listing') ? 'building' : segment;
 
   const sync = async () => {
     setSyncing(true);
