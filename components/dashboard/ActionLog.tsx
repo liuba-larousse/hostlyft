@@ -3205,9 +3205,6 @@ function PortfolioReportPanel({ portfolioData, onUpdate, isReadOnly, selectedISO
     onUpdate(segment, kind, null);
   };
 
-  // 1-day pickup is only meaningful when the prior report is from exactly
-  // yesterday — otherwise the diff captures multiple days of revenue change
-  // and labeling it "1-day" would mislead.
   const priorIsYesterday = !!priorReport && isExactlyYesterday(selectedISO, priorDate);
   const pickup1d = computeOneDayPickup(todayReport, priorReport, selectedISO, priorDate);
   const havePriorForDiff = !!priorReport;
@@ -4468,18 +4465,21 @@ function FunnelView({ funnel, setFunnel, portfolioReports, setPortfolioReports, 
               // Each entry shape: { todayReport, priorReport, priorDate }.
               const portfolioLookup = {};
               if (L.isReportDriven) {
-                PORTFOLIO_SEGMENTS.forEach(s => {
-                  const todayReport = portfolioReports[selectedISO]?.[s.id] || null;
-                  const priorDate = findPriorReportDate(portfolioReports, selectedISO, s.id);
-                  const priorReport = priorDate ? portfolioReports[priorDate][s.id] : null;
-                  portfolioLookup[s.id] = { todayReport, priorReport, priorDate };
-                });
-                PORTFOLIO_DRILLDOWNS.forEach(s => {
-                  const todayReport = portfolioReports[selectedISO]?.[s.id] || null;
-                  const priorDate = findPriorReportDate(portfolioReports, selectedISO, s.id);
-                  const priorReport = priorDate ? portfolioReports[priorDate][s.id] : null;
-                  portfolioLookup[s.id] = { todayReport, priorReport, priorDate };
-                });
+                const buildLookup = (segId) => {
+                  const todayReport = portfolioReports[selectedISO]?.[segId] || null;
+                  const priorDate = findPriorReportDate(portfolioReports, selectedISO, segId);
+                  const priorReport = priorDate ? portfolioReports[priorDate][segId] : null;
+                  // When no report for selectedISO, shift: use most recent as "today"
+                  // and find a second-prior for the diff so 1-day pickup works
+                  if (!todayReport && priorReport && priorDate) {
+                    const secondPriorDate = findPriorReportDate(portfolioReports, priorDate, segId);
+                    const secondPrior = secondPriorDate ? portfolioReports[secondPriorDate][segId] : null;
+                    return { todayReport: priorReport, priorReport: secondPrior, priorDate: secondPriorDate };
+                  }
+                  return { todayReport, priorReport, priorDate };
+                };
+                PORTFOLIO_SEGMENTS.forEach(s => { portfolioLookup[s.id] = buildLookup(s.id); });
+                PORTFOLIO_DRILLDOWNS.forEach(s => { portfolioLookup[s.id] = buildLookup(s.id); });
               }
               // Building report for cross-referencing at Portfolio level
               // (used to show "which buildings are pulling this segment down/up").
