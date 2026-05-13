@@ -894,8 +894,6 @@ const isExactlyYesterday = (todayISO, priorISO) => {
 
 const computeOneDayPickup = (todayReport, priorReport, todayISO, priorISO) => {
   if (!todayReport || !priorReport) return {};
-  // Adjacency check: only compute when prior is exactly 1 calendar day before today
-  if (todayISO && priorISO && !isExactlyYesterday(todayISO, priorISO)) return {};
   // Schema check: refuse to diff when today and prior use different revenue
   // definitions. Returns empty so the UI shows N/A instead of garbage.
   const todaySchema = reportRevenueSchema(todayReport);
@@ -921,7 +919,6 @@ const computeOneDayPickup = (todayReport, priorReport, todayISO, priorISO) => {
 // Same yesterday-only and schema-mismatch protection as computeOneDayPickup.
 const computeOneDayPickupByBuilding = (todayReport, priorReport, todayISO, priorISO) => {
   if (!todayReport?.byBuilding || !priorReport?.byBuilding) return {};
-  if (todayISO && priorISO && !isExactlyYesterday(todayISO, priorISO)) return {};
   const todaySchema = reportRevenueSchema(todayReport);
   const priorSchema = reportRevenueSchema(priorReport);
   if (todaySchema && priorSchema && todaySchema !== priorSchema) return {};
@@ -2582,7 +2579,7 @@ function SimpleReportPanel({ levelLabel, levelHint, todayReport, priorReport, pr
   // and labeling it "1-day" would mislead.
   const priorIsYesterday = !!priorReport && isExactlyYesterday(selectedISO, priorDate);
   const pickup1d = computeOneDayPickup(todayReport, priorReport, selectedISO, priorDate);
-  const havePriorForDiff = priorIsYesterday;
+  const havePriorForDiff = !!priorReport;
   const reportForDisplay = todayReport || priorReport;
   const allMonths = reportForDisplay?.months || [];
   const isShowingPriorOnly = !todayReport && !!priorReport;
@@ -3213,7 +3210,7 @@ function PortfolioReportPanel({ portfolioData, onUpdate, isReadOnly, selectedISO
   // and labeling it "1-day" would mislead.
   const priorIsYesterday = !!priorReport && isExactlyYesterday(selectedISO, priorDate);
   const pickup1d = computeOneDayPickup(todayReport, priorReport, selectedISO, priorDate);
-  const havePriorForDiff = priorIsYesterday;
+  const havePriorForDiff = !!priorReport;
 
   // Display rows come from today's report (or prior if today not yet uploaded — read-only browse mode)
   const reportForDisplay = todayReport || priorReport;
