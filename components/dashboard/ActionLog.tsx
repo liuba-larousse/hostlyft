@@ -7717,7 +7717,8 @@ function OverrideModal({ pair, bucket, onClose, onRecordAction }) {
                       <th className="text-right px-2 py-1 font-semibold">User Price</th>
                       <th className="text-right px-2 py-1 font-semibold">Min Stay</th>
                       <th className="text-left px-2 py-1 font-semibold">Demand</th>
-                      <th className="text-right px-2 py-1 font-semibold">Occ</th>
+                      <th className="text-right px-2 py-1 font-semibold" title="Listing occupancy">Occ</th>
+                      <th className="text-right px-2 py-1 font-semibold" title="Neighborhood occupancy">Nhood</th>
                       <th className="text-right px-2 py-1 font-semibold">ADR STLY</th>
                       <th className="px-2 py-1"></th>
                     </tr>
@@ -7745,8 +7746,11 @@ function OverrideModal({ pair, bucket, onClose, onRecordAction }) {
                         </td>
                         <td className="px-2 py-1 text-right mono text-stone-600">
                           {pd?.reason?.listing_info?.occupancy != null
-                            ? `${(Number(pd.reason.listing_info.occupancy) * 100).toFixed(0)}%`
+                            ? `${Math.round(Number(pd.reason.listing_info.occupancy) * 100)}%`
                             : '—'}
+                        </td>
+                        <td className="px-2 py-1 text-right mono text-stone-600">
+                          {pd?.reason?.listing_info?.nhood_occ || '—'}
                         </td>
                         <td className="px-2 py-1 text-right mono text-stone-600">
                           {pd?.ADR_STLY != null && pd.ADR_STLY !== -1 ? `$${pd.ADR_STLY}` : '—'}
