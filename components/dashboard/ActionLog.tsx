@@ -7528,7 +7528,9 @@ function OverrideModal({ pair, bucket, onClose, onRecordAction }) {
         if (data.pricesSource) {
           console.log('Listing prices loaded via:', data.pricesSource);
         }
-        if (data.overrides) setExisting(data.overrides);
+        // Only show overrides when single listing — per-listing overrides
+        // are misleading when shown for a multi-listing group
+        if (data.overrides && groupListings.length <= 1) setExisting(data.overrides);
         if (data.listing) setPricingData(data.listing);
         setLoading(false);
       })
