@@ -5593,6 +5593,15 @@ function WeeksTab({ weeksReport, onUpload, onClear, onSyncLoaded }) {
     : allWeeks.filter(w => daysToEndOfWeek(w.y, w.w) > 0);
   const pastWeekCount = allWeeks.length - weeks.length;
 
+  // 1-day pickup: diff between today's and yesterday's pickup3d per week
+  const priorWeeks = weeksReport?._prior?.weeks || [];
+  const priorPickupMap = useMemo(() => {
+    const map = new Map();
+    priorWeeks.forEach(w => map.set(w.iso, { pickup3d: w.pickup3d, pickup7d: w.pickup7d }));
+    return map;
+  }, [priorWeeks]);
+  const hasPickup1d = priorWeeks.length > 0;
+
   // Roll up flags across forward weeks for the summary panel
   const flaggedWeeks = weeks
     .map(w => {
@@ -5820,6 +5829,7 @@ function WeeksTab({ weeksReport, onUpload, onClear, onSyncLoaded }) {
                   <th className="text-right px-3 py-2 font-semibold" title="Market Penetration Index — your occupancy / market occupancy × 100">MPI</th>
                   <th className="text-right px-3 py-2 font-semibold" title="ADR Index — your ADR / market ADR × 100">ADR Idx</th>
                   <th className="text-right px-3 py-2 font-semibold" title="RevPAR Index — your RevPAR / market RevPAR × 100">RevPAR Idx</th>
+                  <th className="text-right px-3 py-2 font-semibold" title="1-day pickup: change in 3d pickup since prior report">1d</th>
                   <th className="text-right px-3 py-2 font-semibold">3d</th>
                   <th className="text-right px-3 py-2 font-semibold">7d</th>
                   <th className="text-right px-3 py-2 font-semibold">ADR</th>
@@ -5862,6 +5872,19 @@ function WeeksTab({ weeksReport, onUpload, onClear, onSyncLoaded }) {
                       <td className={`text-right px-3 py-2 mono ${tint('revpar-index-low') || 'text-stone-700'}`}>
                         {fmtIndex(w.revparIndex)}
                       </td>
+                      {(() => {
+                        if (!hasPickup1d) return <td className="text-right px-3 py-2 mono text-stone-300 italic">N/A</td>;
+                        const prior = priorPickupMap.get(w.iso);
+                        if (!prior || w.pickup3d == null || prior.pickup3d == null) return <td className="text-right px-3 py-2 mono text-stone-300">—</td>;
+                        const diff = Number(w.pickup3d) - Number(prior.pickup3d);
+                        return (
+                          <td className={`text-right px-3 py-2 mono ${diff > 0 ? 'text-emerald-700 font-medium' : diff < 0 ? 'text-rose-700 font-medium' : 'text-stone-500'}`}
+                            title={`Today 3d: ${fmtSignedRev(w.pickup3d)} · Prior 3d: ${fmtSignedRev(prior.pickup3d)}`}
+                          >
+                            {diff === 0 ? '$0' : `${diff > 0 ? '+' : '−'}$${Math.abs(Math.round(diff)).toLocaleString('en-US')}`}
+                          </td>
+                        );
+                      })()}
                       <td className={`text-right px-3 py-2 mono ${
                         tint('pickup3d-zero') || tint('pickup3d-behind') || tint('pickup3d-ahead', 'opportunity') ||
                         (w.pickup3d > 0 ? 'text-emerald-700 font-medium' : 'text-stone-700')
@@ -8917,9 +8940,29 @@ export default function ActionLog() {
       {activeTab === 'weeks' && (
         <WeeksTab
           weeksReport={weeksReport}
-          onUpload={(parsed) => setWeeksReport(parsed)}
+          onUpload={(parsed) => setWeeksReport(prev => {
+            // Preserve the prior report for 1-day pickup diff.
+            // Only keep _prior from a different day to avoid self-reference.
+            const priorUploadDate = prev?.uploadedAt?.slice(0, 10);
+            const newUploadDate = parsed?.uploadedAt?.slice(0, 10);
+            if (prev && priorUploadDate !== newUploadDate) {
+              // Strip _prior from the old report to avoid recursive nesting
+              const { _prior: _, ...cleanPrev } = prev;
+              return { ...parsed, _prior: cleanPrev };
+            }
+            // Same day re-upload — keep existing _prior
+            return { ...parsed, _prior: prev?._prior || null };
+          })}
           onClear={() => setWeeksReport(null)}
-          onSyncLoaded={(parsed) => setWeeksReport(parsed)}
+          onSyncLoaded={(parsed) => setWeeksReport(prev => {
+            const priorUploadDate = prev?.uploadedAt?.slice(0, 10);
+            const newUploadDate = parsed?.uploadedAt?.slice(0, 10);
+            if (prev && priorUploadDate !== newUploadDate) {
+              const { _prior: _, ...cleanPrev } = prev;
+              return { ...parsed, _prior: cleanPrev };
+            }
+            return { ...parsed, _prior: prev?._prior || null };
+          })}
         />
       )}
 
