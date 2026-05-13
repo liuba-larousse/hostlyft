@@ -5900,7 +5900,7 @@ function WeeksTab({ weeksReport, onUpload, onClear, onSyncLoaded }) {
    Empty states are handled gracefully — Summary depends on having BOTH reports
    uploaded; if either is missing, an explanatory empty state shows.
 */
-function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setActiveTab, rows }) {
+function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setActiveTab, rows, dismissedFlags, setDismissedFlags }) {
   // perPage: how many rows to show per bucket page (was 'topN' before pagination).
   // page: per-bucket current page index (1-based). Each bucket paginates independently
   // because the buckets have very different sizes — capping all three at the same
@@ -5909,6 +5909,7 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
   const [page, setPage] = useState({ problems: 1, opportunities: 1, mixed: 1 });
   // Toast confirms an action log row was created from this view. Auto-clears after 3s.
   const [addToast, setAddToast] = useState(null);
+  const [showDismissed, setShowDismissed] = useState(false);
   // Override modal state
   const [overrideModal, setOverrideModal] = useState(null); // { pair, bucket }
   const [settingModal, setSettingModal] = useState(null); // { pair, bucket }
@@ -6083,6 +6084,49 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
 
     return { problems: problemPairs, opportunities: opportunityPairs, mixed: mixedPairs, hasBuildingData, hasWeekData };
   }, [buildingReport, weeksReport]);
+
+  // Summary pair dismiss helpers
+  const summaryPairKey = (pair) => `summary:${pair.building}:${pair.weekIso}`;
+  const isPairDismissed = (pair) => {
+    if (!dismissedFlags) return false;
+    const key = summaryPairKey(pair);
+    if (dismissedFlags.removed?.[key]) return 'removed';
+    const snoozed = dismissedFlags.snoozed?.[key];
+    if (snoozed) {
+      const expiresAt = new Date(snoozed.at).getTime() + 24 * 60 * 60 * 1000;
+      if (Date.now() < expiresAt) return 'snoozed';
+    }
+    return false;
+  };
+  const handleSnoozePair = useCallback((pair) => {
+    setDismissedFlags?.(prev => {
+      const key = summaryPairKey(pair);
+      return { ...prev, snoozed: { ...prev.snoozed, [key]: { at: new Date().toISOString() } } };
+    });
+  }, [setDismissedFlags]);
+  const handleRemovePair = useCallback((pair) => {
+    setDismissedFlags?.(prev => {
+      const key = summaryPairKey(pair);
+      return { ...prev, removed: { ...prev.removed, [key]: { at: new Date().toISOString() } } };
+    });
+  }, [setDismissedFlags]);
+  const handleRestorePair = useCallback((pair) => {
+    setDismissedFlags?.(prev => {
+      const key = summaryPairKey(pair);
+      const { [key]: _s, ...snoozed } = prev.snoozed || {};
+      const { [key]: _r, ...removed } = prev.removed || {};
+      return { snoozed, removed };
+    });
+  }, [setDismissedFlags]);
+
+  // Filter dismissed pairs
+  const activeProblems = problems.filter(p => !isPairDismissed(p));
+  const activeOpportunities = opportunities.filter(p => !isPairDismissed(p));
+  const activeMixed = mixed.filter(p => !isPairDismissed(p));
+  const dismissedProblems = problems.filter(p => isPairDismissed(p));
+  const dismissedOpportunities = opportunities.filter(p => isPairDismissed(p));
+  const dismissedMixed = mixed.filter(p => isPairDismissed(p));
+  const totalDismissed = dismissedProblems.length + dismissedOpportunities.length + dismissedMixed.length;
 
   const fmtMoney = (v) => v == null ? '—' : `$${Math.round(v).toLocaleString('en-US')}`;
   const fmtSignedMoney = (v) => {
@@ -6322,7 +6366,7 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
       indigo: 'border-indigo-300 hover:border-indigo-500 text-indigo-800 hover:bg-indigo-100',
     }[accent] || 'border-stone-300 hover:border-stone-500 text-stone-700 hover:bg-stone-100';
     return (
-      <div className="inline-flex items-center gap-1">
+      <div className="inline-flex items-center gap-1 flex-wrap">
         <button
           onClick={() => setSettingModal({ pair, bucket })}
           className={`inline-flex items-center gap-1 px-2 py-1 text-[10px] mono border rounded-sm bg-white transition-colors ${accentClasses}`}
@@ -6336,6 +6380,20 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
           title="Change date-level price override via API"
         >
           <Plus className="w-3 h-3" /> Override
+        </button>
+        <button
+          onClick={() => handleSnoozePair(pair)}
+          className="inline-flex items-center gap-1 px-2 py-1 text-[10px] mono border border-stone-200 hover:border-amber-400 text-stone-400 hover:text-amber-700 hover:bg-amber-50 rounded-sm bg-white transition-colors"
+          title="Snooze this row for 24 hours"
+        >
+          <Clock className="w-3 h-3" /> Snooze
+        </button>
+        <button
+          onClick={() => handleRemovePair(pair)}
+          className="inline-flex items-center gap-1 px-2 py-1 text-[10px] mono border border-stone-200 hover:border-rose-400 text-stone-400 hover:text-rose-700 hover:bg-rose-50 rounded-sm bg-white transition-colors"
+          title="Remove this row from the list"
+        >
+          <EyeOff className="w-3 h-3" /> Remove
         </button>
       </div>
     );
@@ -6392,12 +6450,12 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
   // snap to the last available page. Computed inline rather than as effect to keep the
   // render deterministic on perPage changes.
   const clamp = (p, total) => Math.max(1, Math.min(p, pageCount(total)));
-  const pageProblems = clamp(page.problems, problems.length);
-  const pageOpps     = clamp(page.opportunities, opportunities.length);
-  const pageMixed    = clamp(page.mixed, mixed.length);
-  const problemsTop = sliceFor(problems, pageProblems);
-  const opportunitiesTop = sliceFor(opportunities, pageOpps);
-  const mixedTop = sliceFor(mixed, pageMixed);
+  const pageProblems = clamp(page.problems, activeProblems.length);
+  const pageOpps     = clamp(page.opportunities, activeOpportunities.length);
+  const pageMixed    = clamp(page.mixed, activeMixed.length);
+  const problemsTop = sliceFor(activeProblems, pageProblems);
+  const opportunitiesTop = sliceFor(activeOpportunities, pageOpps);
+  const mixedTop = sliceFor(activeMixed, pageMixed);
 
   // Find last action logged for a specific building + week
   const getLastAction = (building, weekLabel) => {
@@ -6510,11 +6568,17 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
 
       {/* Summary header counts */}
       <div className="mb-4 flex items-center gap-4 text-[11px] text-stone-600 flex-wrap">
-        <span><span className="font-medium text-rose-800">{problems.length}</span> compounding problems</span>
+        <span><span className="font-medium text-rose-800">{activeProblems.length}</span> compounding problems</span>
         <span className="text-stone-300">·</span>
-        <span><span className="font-medium text-amber-800">{opportunities.length}</span> compounding opportunities</span>
+        <span><span className="font-medium text-amber-800">{activeOpportunities.length}</span> compounding opportunities</span>
         <span className="text-stone-300">·</span>
-        <span><span className="font-medium text-indigo-800">{mixed.length}</span> mixed signals</span>
+        <span><span className="font-medium text-indigo-800">{activeMixed.length}</span> mixed signals</span>
+        {totalDismissed > 0 && (
+          <>
+            <span className="text-stone-300">·</span>
+            <span className="text-stone-400">{totalDismissed} snoozed/removed</span>
+          </>
+        )}
         <span className="text-stone-300">·</span>
         <span className="text-stone-500 italic">across {Object.keys(buildingReport.byBuilding).length} buildings × {weeksReport.weeks.length} weeks</span>
       </div>
@@ -6529,7 +6593,7 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
             </div>
             <div className="flex items-center gap-2">
               <span className="text-[10px] text-rose-700 mono">
-                {problemsTop.length} of {problems.length}
+                {problemsTop.length} of {activeProblems.length}
               </span>
               <CopyButton bucketName="problems" pairs={problemsTop} accent="rose" format="tsv" />
               <CopyButton bucketName="problems" pairs={problemsTop} accent="rose" format="markdown" />
@@ -6567,12 +6631,12 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
                 </tbody>
               </table>
               {/* Pager — appears only when there's more than one page */}
-              {problems.length > perPage && (
+              {activeProblems.length > perPage && (
                 <div className="px-4 py-2 border-t border-rose-200 bg-rose-50/40 flex items-center justify-between gap-2">
                   <span className="text-[10px] text-rose-700 mono">
-                    Showing {(pageProblems - 1) * perPage + 1}–{Math.min(pageProblems * perPage, problems.length)} of {problems.length}
+                    Showing {(pageProblems - 1) * perPage + 1}–{Math.min(pageProblems * perPage, activeProblems.length)} of {activeProblems.length}
                   </span>
-                  <Pager bucketName="problems" currentPage={pageProblems} totalItems={problems.length} accent="rose" />
+                  <Pager bucketName="problems" currentPage={pageProblems} totalItems={activeProblems.length} accent="rose" />
                 </div>
               )}
             </div>
@@ -6588,7 +6652,7 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
             </div>
             <div className="flex items-center gap-2">
               <span className="text-[10px] text-amber-700 mono">
-                {opportunitiesTop.length} of {opportunities.length}
+                {opportunitiesTop.length} of {activeOpportunities.length}
               </span>
               <CopyButton bucketName="opportunities" pairs={opportunitiesTop} accent="amber" format="tsv" />
               <CopyButton bucketName="opportunities" pairs={opportunitiesTop} accent="amber" format="markdown" />
@@ -6625,12 +6689,12 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
                   ))}
                 </tbody>
               </table>
-              {opportunities.length > perPage && (
+              {activeOpportunities.length > perPage && (
                 <div className="px-4 py-2 border-t border-amber-200 bg-amber-50/40 flex items-center justify-between gap-2">
                   <span className="text-[10px] text-amber-700 mono">
-                    Showing {(pageOpps - 1) * perPage + 1}–{Math.min(pageOpps * perPage, opportunities.length)} of {opportunities.length}
+                    Showing {(pageOpps - 1) * perPage + 1}–{Math.min(pageOpps * perPage, activeOpportunities.length)} of {activeOpportunities.length}
                   </span>
-                  <Pager bucketName="opportunities" currentPage={pageOpps} totalItems={opportunities.length} accent="amber" />
+                  <Pager bucketName="opportunities" currentPage={pageOpps} totalItems={activeOpportunities.length} accent="amber" />
                 </div>
               )}
             </div>
@@ -6642,7 +6706,7 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
           revenue direction. These are worth investigating: flag is a leading
           indicator, revenue is the cumulative result, so they tell different
           stories. */}
-      {mixed.length > 0 && (
+      {activeMixed.length > 0 && (
         <div className="mt-4 border border-indigo-300 rounded-sm bg-white overflow-hidden">
           <div className="bg-indigo-50 border-b border-indigo-200 px-4 py-2.5 flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
@@ -6652,7 +6716,7 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
             </div>
             <div className="flex items-center gap-2">
               <span className="text-[10px] text-indigo-700 mono">
-                {mixedTop.length} of {mixed.length}
+                {mixedTop.length} of {activeMixed.length}
               </span>
               <CopyButton bucketName="mixed" pairs={mixedTop} accent="indigo" format="tsv" />
               <CopyButton bucketName="mixed" pairs={mixedTop} accent="indigo" format="markdown" />
@@ -6732,16 +6796,71 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
                 })}
               </tbody>
             </table>
-            {mixed.length > perPage && (
+            {activeMixed.length > perPage && (
               <div className="px-4 py-2 border-t border-indigo-200 bg-indigo-50/40 flex items-center justify-between gap-2">
                 <span className="text-[10px] text-indigo-700 mono">
-                  Showing {(pageMixed - 1) * perPage + 1}–{Math.min(pageMixed * perPage, mixed.length)} of {mixed.length}
+                  Showing {(pageMixed - 1) * perPage + 1}–{Math.min(pageMixed * perPage, activeMixed.length)} of {activeMixed.length}
                 </span>
-                <Pager bucketName="mixed" currentPage={pageMixed} totalItems={mixed.length} accent="indigo" />
+                <Pager bucketName="mixed" currentPage={pageMixed} totalItems={activeMixed.length} accent="indigo" />
               </div>
             )}
           </div>
         </div>
+      )}
+
+      {/* Dismissed pairs (snoozed + removed) */}
+      {totalDismissed > 0 && (
+          <div className="mt-4 border border-stone-200 rounded-sm bg-stone-50/50">
+            <button
+              onClick={() => setShowDismissed(prev => !prev)}
+              className="w-full flex items-center gap-2 px-4 py-2 text-[11px] text-stone-500 hover:text-stone-700 transition-colors"
+            >
+              <ChevronDown className={`w-3 h-3 transition-transform ${showDismissed ? '' : '-rotate-90'}`} />
+              {totalDismissed} snoozed/removed row{totalDismissed === 1 ? '' : 's'}
+            </button>
+            {showDismissed && (
+              <div className="border-t border-stone-200 overflow-x-auto">
+                <table className="w-full text-[11px] border-collapse">
+                  <thead>
+                    <tr className="bg-stone-100/60">
+                      <th className="text-left px-3 py-1.5 text-[9px] uppercase tracking-wider text-stone-500">Status</th>
+                      <th className="text-left px-3 py-1.5 text-[9px] uppercase tracking-wider text-stone-500">Building</th>
+                      <th className="text-left px-3 py-1.5 text-[9px] uppercase tracking-wider text-stone-500">Week</th>
+                      <th className="text-left px-3 py-1.5 text-[9px] uppercase tracking-wider text-stone-500">Bucket</th>
+                      <th className="px-3 py-1.5"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...dismissedProblems, ...dismissedOpportunities, ...dismissedMixed].map((p, i) => {
+                      const status = isPairDismissed(p);
+                      return (
+                        <tr key={`d-${p.building}-${p.weekIso}-${i}`} className="border-t border-stone-100">
+                          <td className="px-3 py-1.5">
+                            <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-sm text-[9px] font-medium ${
+                              status === 'snoozed' ? 'bg-amber-100 text-amber-700' : 'bg-stone-100 text-stone-500'
+                            }`}>
+                              {status === 'snoozed' ? <><Clock className="w-2.5 h-2.5" /> Snoozed</> : <><EyeOff className="w-2.5 h-2.5" /> Removed</>}
+                            </span>
+                          </td>
+                          <td className="px-3 py-1.5 text-stone-500">{p.building} · {p.monthLabel}</td>
+                          <td className="px-3 py-1.5 text-stone-500">{p.weekLabel}</td>
+                          <td className="px-3 py-1.5 text-stone-400 capitalize">{p.bucket}</td>
+                          <td className="px-3 py-1.5">
+                            <button
+                              onClick={() => handleRestorePair(p)}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] text-stone-500 hover:text-stone-800 hover:bg-stone-100 rounded-sm transition-colors"
+                            >
+                              <Undo2 className="w-2.5 h-2.5" /> Restore
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
       )}
 
       <div className="mt-6 text-[11px] text-stone-500 leading-relaxed max-w-3xl italic">
@@ -8820,6 +8939,8 @@ export default function ActionLog() {
             setRows={setRows}
             setActiveTab={setActiveTab}
             rows={rows}
+            dismissedFlags={dismissedFlags}
+            setDismissedFlags={setDismissedFlags}
           />
         );
       })()}
