@@ -1,8 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Link2, Link2Off, Eye, EyeOff, ToggleLeft, ToggleRight, Loader2, CheckCircle2, ChevronDown, ChevronUp, Upload, FileSpreadsheet } from "lucide-react";
-import { useRef } from "react";
+import { Link2, Link2Off, Eye, EyeOff, ToggleLeft, ToggleRight, Loader2, CheckCircle2, ChevronDown, ChevronUp, RefreshCw } from "lucide-react";
 import { clsx } from "clsx";
 import OtaListingsEditor from "./OtaListingsEditor";
 
@@ -338,7 +337,7 @@ export default function PriceLabsClients({ contacts, initialClients }: Props) {
 
               {/* Listing Mapping for connected clients */}
               {linked && (
-                <ListingMappingUpload clientId={linked.id} clientName={linked.client_name} />
+                <ListingMappingUpload clientId={linked.id} clientName={linked.client_name} hasApiKey={linked.has_api_key ?? false} />
               )}
 
               {/* Inline connect form */}
@@ -418,33 +417,31 @@ export default function PriceLabsClients({ contacts, initialClients }: Props) {
   );
 }
 
-function ListingMappingUpload({ clientId, clientName }: { clientId: string; clientName: string }) {
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [uploading, setUploading] = useState(false);
-  const [result, setResult] = useState<{ imported: number; groups: Record<string, number> } | null>(null);
+function ListingMappingUpload({ clientId, clientName, hasApiKey }: { clientId: string; clientName: string; hasApiKey: boolean }) {
+  const [syncing, setSyncing] = useState(false);
+  const [result, setResult] = useState<{ imported: number; total: number; hidden: number; groups: Record<string, number> } | null>(null);
   const [error, setError] = useState('');
 
-  const handleFile = async (file: File) => {
-    setUploading(true);
+  const handleSync = async () => {
+    setSyncing(true);
     setError('');
     setResult(null);
     try {
-      const csvText = await file.text();
       const res = await fetch('/api/pricelabs/listings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ csvText, clientName }),
+        body: JSON.stringify({ clientName }),
       });
       const data = await res.json();
       if (!res.ok || data.error) {
-        setError(data.error || 'Import failed');
+        setError(data.error || 'Sync failed');
       } else {
         setResult(data);
       }
     } catch (e) {
       setError(String(e));
     }
-    setUploading(false);
+    setSyncing(false);
   };
 
   return (
@@ -456,35 +453,30 @@ function ListingMappingUpload({ clientId, clientName }: { clientId: string; clie
       <div>
         <div className="flex items-center gap-3">
           <button
-            onClick={() => fileRef.current?.click()}
-            disabled={uploading}
+            onClick={handleSync}
+            disabled={syncing || !hasApiKey}
+            title={!hasApiKey ? 'Add an API key first' : 'Sync listings from PriceLabs API'}
             className={clsx(
               "flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors",
-              uploading ? "bg-gray-100 text-gray-400" : "bg-yellow-400 hover:bg-yellow-300 text-gray-900"
+              syncing || !hasApiKey ? "bg-gray-100 text-gray-400" : "bg-yellow-400 hover:bg-yellow-300 text-gray-900"
             )}
           >
-            {uploading ? (
-              <><Loader2 size={14} className="animate-spin" /> Importing...</>
+            {syncing ? (
+              <><Loader2 size={14} className="animate-spin" /> Syncing...</>
             ) : (
-              <><Upload size={14} /> Upload CSV</>
+              <><RefreshCw size={14} /> Sync from API</>
             )}
           </button>
           {result && (
             <span className="text-sm text-emerald-600 flex items-center gap-1.5">
-              <CheckCircle2 size={14} /> {result.imported} listings imported
+              <CheckCircle2 size={14} /> {result.imported} synced
+              {result.hidden > 0 && <span className="text-gray-400">({result.hidden} hidden/disabled skipped)</span>}
             </span>
           )}
           {error && (
             <span className="text-sm text-red-500">{error}</span>
           )}
         </div>
-        <input
-          ref={fileRef}
-          type="file"
-          accept=".csv"
-          className="hidden"
-          onChange={e => { if (e.target.files?.[0]) handleFile(e.target.files[0]); e.target.value = ''; }}
-        />
 
         {result && result.groups && (
           <div className="mt-3 flex flex-wrap gap-1.5">
@@ -496,7 +488,11 @@ function ListingMappingUpload({ clientId, clientName }: { clientId: string; clie
           </div>
         )}
       </div>
-      <p className="text-xs text-gray-400 mt-1.5">Upload PriceLabs "Manage Listings" CSV. Used for bulk overrides by building.</p>
+      <p className="text-xs text-gray-400 mt-1.5">
+        {hasApiKey
+          ? 'Pulls listings from PriceLabs /v1/listings API. Groups, subgroups, and tags are synced automatically.'
+          : 'Add an API key above to enable listing sync from PriceLabs API.'}
+      </p>
     </div>
   );
 }

@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { createSupabaseAdmin } from '@/lib/supabase';
-import Papa from 'papaparse';
+import { decrypt } from '@/lib/crypto/encrypt';
+
+const PRICELABS_API_BASE = 'https://api.pricelabs.co';
 
 // Building number patterns → building group name
 // Used to resolve "Combined Listings" to their actual building
@@ -90,7 +92,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ listings: data ?? [] });
 }
 
-// POST — import listings from CSV
+// POST — sync listings from PriceLabs API (/v1/listings)
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.email) {
@@ -98,17 +100,13 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { csvText, clientName } = body;
+  const { clientName } = body;
 
-  if (!csvText) {
-    return NextResponse.json({ error: 'csvText is required' }, { status: 400 });
-  }
-
-  // Find client
+  // Find client with API key
   const supabase = createSupabaseAdmin();
   const { data: clientData } = await supabase
     .from('pricelabs_clients')
-    .select('id')
+    .select('id, api_key_encrypted')
     .ilike('client_name', `%${clientName || 'marcus'}%`)
     .eq('active', true)
     .limit(1)
@@ -118,32 +116,65 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Client not found' }, { status: 404 });
   }
 
-  // Parse CSV
-  const parsed = Papa.parse(csvText, { header: true, skipEmptyLines: true });
-  if (parsed.errors.length > 0) {
-    return NextResponse.json({ error: `CSV parse error: ${parsed.errors[0].message}` }, { status: 400 });
+  if (!clientData.api_key_encrypted) {
+    return NextResponse.json({ error: 'No API key configured for this client. Add one in the API Key field above.' }, { status: 400 });
   }
 
-  const rows = parsed.data as Record<string, string>[];
-  const listings = rows
-    .filter(r => r['Listing ID'] && r['Listing Sync'] === 'TRUE')
-    .map(r => {
-      const custGroup = (r['Customization Group'] || '').trim();
-      const tags = (r['Tags'] || '').trim();
-      const listingName = (r['Listing Name'] || '').trim();
+  const apiKey = decrypt(clientData.api_key_encrypted);
+
+  // Fetch listings from PriceLabs API
+  let allListings: any[] = [];
+  try {
+    const res = await fetch(`${PRICELABS_API_BASE}/v1/listings`, {
+      headers: {
+        'X-API-Key': apiKey,
+        'Accept': 'application/json',
+      },
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      return NextResponse.json(
+        { error: `PriceLabs API error (${res.status}): ${text}` },
+        { status: 502 },
+      );
+    }
+
+    const data = await res.json();
+    allListings = data.listings || [];
+  } catch (e: any) {
+    return NextResponse.json(
+      { error: `Failed to reach PriceLabs API: ${e.message}` },
+      { status: 502 },
+    );
+  }
+
+  if (allListings.length === 0) {
+    return NextResponse.json({ error: 'No listings returned from PriceLabs API' }, { status: 404 });
+  }
+
+  // Map API response to listing_groups rows
+  // API fields: id, pms, name, group, subgroup, tags, no_of_bedrooms,
+  //             base, min, max, isHidden, push_enabled, ...
+  const listings = allListings
+    .filter(l => !l.isHidden && l.push_enabled !== false)
+    .map(l => {
+      const custGroup = (l.group || '').trim();
+      const tags = (l.tags || '').trim();
+      const listingName = (l.name || '').trim();
       return {
         client_id: clientData.id,
-        listing_id: r['Listing ID'].trim(),
+        listing_id: String(l.id),
         listing_name: listingName,
-        pms: (r['PMS Name'] || 'guesty').trim().toLowerCase(),
+        pms: (l.pms || 'guesty').trim().toLowerCase(),
         building_group: resolveBuildingGroup(custGroup, tags, listingName),
         customization_group: custGroup || null,
         tags: tags || null,
-        base_price: r['Base Price'] ? parseFloat(r['Base Price']) : null,
-        min_price: r['Min Price'] ? parseFloat(r['Min Price']) : null,
-        bedroom_count: r['Bedroom Count'] ? parseInt(r['Bedroom Count']) : null,
-        listing_sync: r['Listing Sync'] === 'TRUE',
-        airbnb_id: r['Airbnb ID']?.trim() || null,
+        base_price: l.base != null ? Number(l.base) : null,
+        min_price: l.min != null ? Number(l.min) : null,
+        bedroom_count: l.no_of_bedrooms != null ? Number(l.no_of_bedrooms) : null,
+        listing_sync: true,
+        airbnb_id: null,
       };
     });
 
@@ -162,6 +193,8 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     imported: listings.length,
+    total: allListings.length,
+    hidden: allListings.length - listings.length,
     groups,
   });
 }

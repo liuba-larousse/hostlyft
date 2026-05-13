@@ -2,7 +2,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Plus, Download, Copy, Trash2, Check, AlertCircle, FileText, Sparkles, X, StickyNote, ImagePlus, ZoomIn, FileSpreadsheet, Loader2, Camera, Filter, ChevronRight, History, Flag, CheckCircle2, AlertTriangle, Calendar, Upload, RefreshCw, BookOpen, TrendingUp, Pencil } from 'lucide-react';
+import { Plus, Download, Copy, Trash2, Check, AlertCircle, FileText, Sparkles, X, StickyNote, ImagePlus, ZoomIn, FileSpreadsheet, Loader2, Camera, Filter, ChevronRight, History, Flag, CheckCircle2, AlertTriangle, Calendar, Upload, RefreshCw, BookOpen, TrendingUp, Pencil, Clock, Undo2, ChevronDown, EyeOff } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 /* ---------- Constants ---------- */
@@ -35,6 +35,7 @@ const PORTFOLIO_REPORTS_KEY = 'pricelabs:action_log:portfolio_reports:v1';
 // Weeks report is a single document (most-recent upload wins) — no per-date
 // archive because the weekly view doesn't have a day-over-day comparison.
 const WEEKS_REPORT_KEY = 'pricelabs:action_log:weeks_report:v1';
+const DISMISSED_FLAGS_KEY = 'pricelabs:action_log:dismissed_flags:v1';
 
 /* ---------- Storage shim (Supabase-backed via /api/action-log) ---------- */
 
@@ -48,6 +49,7 @@ const KEY_TO_FIELD: Record<string, string> = {
   [STATES_KEY]: 'states',
   [PORTFOLIO_REPORTS_KEY]: 'portfolio_reports',
   [WEEKS_REPORT_KEY]: 'weeks_report',
+  [DISMISSED_FLAGS_KEY]: 'dismissed_flags',
 };
 
 // In-memory cache so reads are instant after first load
@@ -69,6 +71,7 @@ async function _ensureCache() {
       if (data.states) _cache[STATES_KEY] = JSON.stringify(data.states);
       if (data.portfolio_reports) _cache[PORTFOLIO_REPORTS_KEY] = JSON.stringify(data.portfolio_reports);
       if (data.weeks_report) _cache[WEEKS_REPORT_KEY] = JSON.stringify(data.weeks_report);
+      if (data.dismissed_flags) _cache[DISMISSED_FLAGS_KEY] = JSON.stringify(data.dismissed_flags);
     }
   } catch (e) {
     console.error('Failed to load action log from API:', e);
@@ -438,6 +441,43 @@ const saveWeeksReport = async (report) => {
     console.error('Weeks report save failed:', e);
     return false;
   }
+};
+
+const loadDismissedFlags = async () => {
+  try {
+    const result = await window.storage.get(DISMISSED_FLAGS_KEY);
+    if (result && result.value) {
+      const parsed = JSON.parse(result.value);
+      if (parsed && typeof parsed === 'object') return parsed;
+    }
+  } catch (e) { /* not set yet */ }
+  return { snoozed: {}, removed: {} };
+};
+
+const saveDismissedFlags = async (flags) => {
+  try {
+    await window.storage.set(DISMISSED_FLAGS_KEY, JSON.stringify(flags));
+    return true;
+  } catch (e) {
+    console.error('Dismissed flags save failed:', e);
+    return false;
+  }
+};
+
+// Build a unique key for a dismissed flag: segment:monthIso:flagId
+const dismissedFlagKey = (segment, monthIso, flagId) => `${segment}:${monthIso}:${flagId}`;
+
+// Check if a flag is currently dismissed (snoozed and not expired, or removed)
+const isFlagDismissed = (dismissedFlags, segment, monthIso, flagId) => {
+  const key = dismissedFlagKey(segment, monthIso, flagId);
+  if (dismissedFlags.removed?.[key]) return 'removed';
+  const snoozed = dismissedFlags.snoozed?.[key];
+  if (snoozed) {
+    // Snooze expires after 24 hours
+    const expiresAt = new Date(snoozed.at).getTime() + 24 * 60 * 60 * 1000;
+    if (Date.now() < expiresAt) return 'snoozed';
+  }
+  return false;
 };
 
 // Find the most recent date BEFORE the given ISO that has a report for the
@@ -2282,7 +2322,7 @@ function ReportUploadSlot({ label, kind, report, onUpload, onClear, isReadOnly, 
       segment. Single chip row of segments moving in the same direction as
       the flag, with the most-impactful segment first.
 */
-const FlagDetailRow = ({ flag, contribs, direction }) => {
+const FlagDetailRow = ({ flag, contribs, direction, onSnooze, onRemove, onRestore, dismissedStatus }) => {
   const isOpp = direction === 'up';
   const Icon = isOpp ? Sparkles : Flag;
   const sameColor = isOpp
@@ -2306,12 +2346,44 @@ const FlagDetailRow = ({ flag, contribs, direction }) => {
 
   return (
     <div className="flex flex-col gap-0.5">
-      <div className="flex items-baseline gap-2 text-[11px]">
+      <div className="flex items-baseline gap-2 text-[11px] group/flag">
         <span className={`inline-flex items-center justify-center w-4 h-4 ${iconBg} text-white rounded-sm shrink-0`}>
           <Icon className="w-2.5 h-2.5" />
         </span>
-        <span className="font-medium text-stone-900 w-32 shrink-0">{flag.label}</span>
-        <span className="mono text-stone-600">{flag.detail}</span>
+        <span className={`font-medium w-32 shrink-0 ${dismissedStatus ? 'text-stone-400 line-through' : 'text-stone-900'}`}>{flag.label}</span>
+        <span className={`mono ${dismissedStatus ? 'text-stone-400' : 'text-stone-600'}`}>{flag.detail}</span>
+        {dismissedStatus ? (
+          onRestore && (
+            <button
+              onClick={() => onRestore(flag.id)}
+              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[9px] font-medium text-stone-500 hover:text-stone-800 hover:bg-stone-100 rounded-sm transition-colors"
+              title="Restore this flag"
+            >
+              <Undo2 className="w-2.5 h-2.5" /> Restore
+            </button>
+          )
+        ) : (
+          <span className="inline-flex items-center gap-1 opacity-0 group-hover/flag:opacity-100 transition-opacity">
+            {onSnooze && (
+              <button
+                onClick={() => onSnooze(flag.id)}
+                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[9px] font-medium text-stone-400 hover:text-amber-700 hover:bg-amber-50 rounded-sm transition-colors"
+                title="Snooze this flag for 24 hours"
+              >
+                <Clock className="w-2.5 h-2.5" /> Snooze
+              </button>
+            )}
+            {onRemove && (
+              <button
+                onClick={() => onRemove(flag.id)}
+                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[9px] font-medium text-stone-400 hover:text-rose-700 hover:bg-rose-50 rounded-sm transition-colors"
+                title="Remove this flag from the active list"
+              >
+                <EyeOff className="w-2.5 h-2.5" /> Remove
+              </button>
+            )}
+          </span>
+        )}
       </div>
 
       {/* Bidirectional building chips (PH / Excl PH segments) */}
@@ -2372,7 +2444,75 @@ const FlagDetailRow = ({ flag, contribs, direction }) => {
   );
 };
 
-function SimpleReportPanel({ levelLabel, levelHint, todayReport, priorReport, priorDate, onUpload, onClear, isReadOnly, selectedISO, onInvestigate, segmentLabel, syncSegment }) {
+// Collapsible list of snoozed and removed flags shown below the active flags panel
+const DismissedFlagsList = ({ dismissedFlagsList, segment, onRestore, buildingReport }) => {
+  const [open, setOpen] = useState(false);
+  const snoozed = dismissedFlagsList.filter(d => d.status === 'snoozed');
+  const removed = dismissedFlagsList.filter(d => d.status === 'removed');
+
+  return (
+    <div className="mt-3">
+      <button
+        onClick={() => setOpen(prev => !prev)}
+        className="flex items-center gap-1 text-[10px] text-stone-400 hover:text-stone-600 transition-colors"
+      >
+        <ChevronDown className={`w-3 h-3 transition-transform ${open ? '' : '-rotate-90'}`} />
+        {snoozed.length > 0 && <span>{snoozed.length} snoozed</span>}
+        {snoozed.length > 0 && removed.length > 0 && <span>·</span>}
+        {removed.length > 0 && <span>{removed.length} removed</span>}
+      </button>
+
+      {open && (
+        <div className="mt-2 space-y-3">
+          {snoozed.length > 0 && (
+            <div>
+              <div className="text-[9px] uppercase tracking-[0.15em] text-amber-600 font-semibold mb-1 flex items-center gap-1">
+                <Clock className="w-2.5 h-2.5" /> Snoozed (24h)
+              </div>
+              <div className="space-y-1 pl-1 border-l-2 border-amber-200">
+                {snoozed.map(({ month, flag }) => (
+                  <div key={`${month.iso}-${flag.id}`} className="flex items-baseline gap-2 text-[10px] text-stone-400 px-2 py-0.5">
+                    <span className="text-stone-500 font-medium w-20 shrink-0">{month.label}</span>
+                    <FlagDetailRow
+                      flag={flag}
+                      contribs={buildingReport ? computeContributingBuildings(buildingReport, flag, month.iso, segment) : null}
+                      direction={flag.severity === 'opportunity' ? 'up' : 'down'}
+                      onRestore={(fid) => onRestore(month.iso, fid)}
+                      dismissedStatus="snoozed"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {removed.length > 0 && (
+            <div>
+              <div className="text-[9px] uppercase tracking-[0.15em] text-stone-400 font-semibold mb-1 flex items-center gap-1">
+                <EyeOff className="w-2.5 h-2.5" /> Removed
+              </div>
+              <div className="space-y-1 pl-1 border-l-2 border-stone-200">
+                {removed.map(({ month, flag }) => (
+                  <div key={`${month.iso}-${flag.id}`} className="flex items-baseline gap-2 text-[10px] text-stone-400 px-2 py-0.5">
+                    <span className="text-stone-500 font-medium w-20 shrink-0">{month.label}</span>
+                    <FlagDetailRow
+                      flag={flag}
+                      contribs={buildingReport ? computeContributingBuildings(buildingReport, flag, month.iso, segment) : null}
+                      direction={flag.severity === 'opportunity' ? 'up' : 'down'}
+                      onRestore={(fid) => onRestore(month.iso, fid)}
+                      dismissedStatus="removed"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+function SimpleReportPanel({ levelLabel, levelHint, todayReport, priorReport, priorDate, onUpload, onClear, isReadOnly, selectedISO, onInvestigate, segmentLabel, syncSegment, dismissedFlags, setDismissedFlags }) {
   const inputRef = useRef(null);
   const [parsing, setParsing] = useState(false);
   const [uploadError, setUploadError] = useState(null);
@@ -2451,19 +2591,32 @@ function SimpleReportPanel({ levelLabel, levelHint, todayReport, priorReport, pr
     return acc;
   }, { rentalRevenue: 0, pickup3d: 0, pickup7d: 0, pickup1d: 0, goal: 0 });
 
-  const flagSummary = months.reduce((acc, m) => {
-    const dba = daysToEndOfMonth(m.y, m.m);
-    if (dba === 0) return acc;
-    const flags = computeMonthFlags(m); // No cascade at non-portfolio levels
-    flags.forEach(f => {
-      if (f.severity === 'opportunity') acc.opportunities++;
-      else acc.problems++;
+  // Dismiss helpers scoped to this panel's segment label
+  const dismissSegment = segmentLabel || levelLabel || 'simple';
+  const handleSnoozeSimple = useCallback((monthIso, flagId) => {
+    setDismissedFlags?.(prev => {
+      const key = dismissedFlagKey(dismissSegment, monthIso, flagId);
+      return { ...prev, snoozed: { ...prev.snoozed, [key]: { at: new Date().toISOString() } } };
     });
-    if (flags.length > 0) acc.flaggedMonths++;
-    return acc;
-  }, { problems: 0, opportunities: 0, flaggedMonths: 0 });
+  }, [dismissSegment, setDismissedFlags]);
 
-  const flaggedMonths = months
+  const handleRemoveSimple = useCallback((monthIso, flagId) => {
+    setDismissedFlags?.(prev => {
+      const key = dismissedFlagKey(dismissSegment, monthIso, flagId);
+      return { ...prev, removed: { ...prev.removed, [key]: { at: new Date().toISOString() } } };
+    });
+  }, [dismissSegment, setDismissedFlags]);
+
+  const handleRestoreSimple = useCallback((monthIso, flagId) => {
+    setDismissedFlags?.(prev => {
+      const key = dismissedFlagKey(dismissSegment, monthIso, flagId);
+      const { [key]: _s, ...snoozed } = prev.snoozed || {};
+      const { [key]: _r, ...removed } = prev.removed || {};
+      return { snoozed, removed };
+    });
+  }, [dismissSegment, setDismissedFlags]);
+
+  const allFlaggedMonths = months
     .map(m => {
       const dba = daysToEndOfMonth(m.y, m.m);
       if (dba === 0) return null;
@@ -2472,6 +2625,37 @@ function SimpleReportPanel({ levelLabel, levelHint, todayReport, priorReport, pr
       return { month: m, dba, flags };
     })
     .filter(Boolean);
+
+  const flaggedMonths = dismissedFlags
+    ? allFlaggedMonths
+        .map(entry => {
+          const active = entry.flags.filter(f => !isFlagDismissed(dismissedFlags, dismissSegment, entry.month.iso, f.id));
+          if (active.length === 0) return null;
+          return { ...entry, flags: active };
+        })
+        .filter(Boolean)
+    : allFlaggedMonths;
+
+  const dismissedFlagsList = dismissedFlags
+    ? allFlaggedMonths.flatMap(entry =>
+        entry.flags
+          .map(f => {
+            const status = isFlagDismissed(dismissedFlags, dismissSegment, entry.month.iso, f.id);
+            if (!status) return null;
+            return { month: entry.month, dba: entry.dba, flag: f, status };
+          })
+          .filter(Boolean)
+      )
+    : [];
+
+  const flagSummary = flaggedMonths.reduce((acc, entry) => {
+    entry.flags.forEach(f => {
+      if (f.severity === 'opportunity') acc.opportunities++;
+      else acc.problems++;
+    });
+    acc.flaggedMonths++;
+    return acc;
+  }, { problems: 0, opportunities: 0, flaggedMonths: 0 });
 
   const fmtMoney = (v) => v == null || v === '' ? '—' : `$${Number(v).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
   const fmtPct = (v) => v == null || v === '' ? '—' : `${Number(v).toFixed(1)}%`;
@@ -2745,6 +2929,8 @@ function SimpleReportPanel({ levelLabel, levelHint, todayReport, priorReport, pr
                           flag={f}
                           contribs={null}
                           direction={f.severity === 'opportunity' ? 'up' : 'down'}
+                          onSnooze={setDismissedFlags ? (fid) => handleSnoozeSimple(month.iso, fid) : undefined}
+                          onRemove={setDismissedFlags ? (fid) => handleRemoveSimple(month.iso, fid) : undefined}
                         />
                       ))}
                     </div>
@@ -2752,6 +2938,28 @@ function SimpleReportPanel({ levelLabel, levelHint, todayReport, priorReport, pr
                 );
               })}
             </div>
+
+            {dismissedFlagsList.length > 0 && (
+              <DismissedFlagsList
+                dismissedFlagsList={dismissedFlagsList}
+                segment={dismissSegment}
+                onRestore={handleRestoreSimple}
+                buildingReport={null}
+              />
+            )}
+          </div>
+        ) : flaggedMonths.length === 0 && dismissedFlagsList.length > 0 ? (
+          <div className="border-b border-stone-200 bg-stone-50/40 p-4">
+            <div className="bg-emerald-50/40 px-4 py-3 flex items-center gap-2 text-[12px] text-emerald-900 rounded-sm mb-3">
+              <CheckCircle2 className="w-4 h-4 text-emerald-700" />
+              <span><span className="font-medium">All clear.</span> All flags have been snoozed or removed.</span>
+            </div>
+            <DismissedFlagsList
+              dismissedFlagsList={dismissedFlagsList}
+              segment={dismissSegment}
+              onRestore={handleRestoreSimple}
+              buildingReport={null}
+            />
           </div>
         ) : (
           <div className="border-b border-stone-200 bg-emerald-50/40 px-4 py-3 flex items-center gap-2 text-[12px] text-emerald-900">
@@ -2946,7 +3154,7 @@ function SimpleReportPanel({ levelLabel, levelHint, todayReport, priorReport, pr
   );
 }
 
-function PortfolioReportPanel({ portfolioData, onUpdate, isReadOnly, selectedISO, onInvestigate, buildingReport }) {
+function PortfolioReportPanel({ portfolioData, onUpdate, isReadOnly, selectedISO, onInvestigate, buildingReport, dismissedFlags, setDismissedFlags }) {
   const [segment, setSegment] = useState('all');
   const segData = portfolioData[segment] || {};
   const todayReport = segData.todayReport || null;
@@ -2994,23 +3202,32 @@ function PortfolioReportPanel({ portfolioData, onUpdate, isReadOnly, selectedISO
   // Roll up flags across all forward months (skip past months — closed)
   // Flag counts are based on cascade-filtered flags so the headline numbers
   // reflect what's actually shown to the user.
-  const flagSummary = months.reduce((acc, m) => {
-    const dba = daysToEndOfMonth(m.y, m.m);
-    if (dba === 0) return acc;
-    const raw = computeMonthFlags(m);
-    const flags = cascadeFilterFlags(raw, m.iso, segment, portfolioData);
-    flags.forEach(f => {
-      if (f.severity === 'opportunity') acc.opportunities++;
-      else acc.problems++;
+  // Dismiss helpers scoped to current segment
+  const handleSnooze = useCallback((monthIso, flagId) => {
+    setDismissedFlags(prev => {
+      const key = dismissedFlagKey(segment, monthIso, flagId);
+      return { ...prev, snoozed: { ...prev.snoozed, [key]: { at: new Date().toISOString() } } };
     });
-    if (flags.length > 0) acc.flaggedMonths++;
-    return acc;
-  }, { problems: 0, opportunities: 0, flaggedMonths: 0 });
+  }, [segment, setDismissedFlags]);
 
-  // Per-month flag breakdown for the summary panel below the table.
-  // Each entry: { month, dba, flags: [...] } — only forward months with flags.
-  // Flags are filtered through the cascade rule across All / PH / Excl PH.
-  const flaggedMonths = months
+  const handleRemove = useCallback((monthIso, flagId) => {
+    setDismissedFlags(prev => {
+      const key = dismissedFlagKey(segment, monthIso, flagId);
+      return { ...prev, removed: { ...prev.removed, [key]: { at: new Date().toISOString() } } };
+    });
+  }, [segment, setDismissedFlags]);
+
+  const handleRestore = useCallback((monthIso, flagId) => {
+    setDismissedFlags(prev => {
+      const key = dismissedFlagKey(segment, monthIso, flagId);
+      const { [key]: _s, ...snoozed } = prev.snoozed || {};
+      const { [key]: _r, ...removed } = prev.removed || {};
+      return { snoozed, removed };
+    });
+  }, [segment, setDismissedFlags]);
+
+  // All flags (before dismiss filtering) for computing dismissed lists
+  const allFlaggedMonths = months
     .map(m => {
       const dba = daysToEndOfMonth(m.y, m.m);
       if (dba === 0) return null;
@@ -3020,6 +3237,34 @@ function PortfolioReportPanel({ portfolioData, onUpdate, isReadOnly, selectedISO
       return { month: m, dba, flags };
     })
     .filter(Boolean);
+
+  // Split active vs dismissed
+  const flaggedMonths = allFlaggedMonths
+    .map(entry => {
+      const active = entry.flags.filter(f => !isFlagDismissed(dismissedFlags, segment, entry.month.iso, f.id));
+      if (active.length === 0) return null;
+      return { ...entry, flags: active };
+    })
+    .filter(Boolean);
+
+  const dismissedFlagsList = allFlaggedMonths.flatMap(entry =>
+    entry.flags
+      .map(f => {
+        const status = isFlagDismissed(dismissedFlags, segment, entry.month.iso, f.id);
+        if (!status) return null;
+        return { month: entry.month, dba: entry.dba, flag: f, status };
+      })
+      .filter(Boolean)
+  );
+
+  const flagSummary = flaggedMonths.reduce((acc, entry) => {
+    entry.flags.forEach(f => {
+      if (f.severity === 'opportunity') acc.opportunities++;
+      else acc.problems++;
+    });
+    acc.flaggedMonths++;
+    return acc;
+  }, { problems: 0, opportunities: 0, flaggedMonths: 0 });
 
   // Cascade is "active" only when all three segments have today's reports.
   // Used to show a hint in the UI so the user understands why some flags moved.
@@ -3115,6 +3360,8 @@ function PortfolioReportPanel({ portfolioData, onUpdate, isReadOnly, selectedISO
             onInvestigate={onInvestigate}
             segmentLabel={drilldown.label}
             syncSegment={segment}
+            dismissedFlags={dismissedFlags}
+            setDismissedFlags={setDismissedFlags}
           />
         );
       })()}
@@ -3310,6 +3557,8 @@ function PortfolioReportPanel({ portfolioData, onUpdate, isReadOnly, selectedISO
                               flag={f}
                               contribs={contribs}
                               direction="down"
+                              onSnooze={(fid) => handleSnooze(month.iso, fid)}
+                              onRemove={(fid) => handleRemove(month.iso, fid)}
                             />
                           );
                         })}
@@ -3321,6 +3570,8 @@ function PortfolioReportPanel({ portfolioData, onUpdate, isReadOnly, selectedISO
                               flag={f}
                               contribs={contribs}
                               direction="up"
+                              onSnooze={(fid) => handleSnooze(month.iso, fid)}
+                              onRemove={(fid) => handleRemove(month.iso, fid)}
                             />
                           );
                         })}
@@ -3329,6 +3580,29 @@ function PortfolioReportPanel({ portfolioData, onUpdate, isReadOnly, selectedISO
                   );
                 })}
               </div>
+
+              {/* Dismissed flags (snoozed + removed) */}
+              {dismissedFlagsList.length > 0 && (
+                <DismissedFlagsList
+                  dismissedFlagsList={dismissedFlagsList}
+                  segment={segment}
+                  onRestore={handleRestore}
+                  buildingReport={buildingReport}
+                />
+              )}
+            </div>
+          ) : flaggedMonths.length === 0 && dismissedFlagsList.length > 0 ? (
+            <div className="border-b border-stone-200 bg-stone-50/40 p-4">
+              <div className="border-b border-stone-200 bg-emerald-50/40 px-4 py-3 flex items-center gap-2 text-[12px] text-emerald-900 rounded-sm mb-3">
+                <CheckCircle2 className="w-4 h-4 text-emerald-700" />
+                <span><span className="font-medium">All clear.</span> All flags have been snoozed or removed.</span>
+              </div>
+              <DismissedFlagsList
+                dismissedFlagsList={dismissedFlagsList}
+                segment={segment}
+                onRestore={handleRestore}
+                buildingReport={buildingReport}
+              />
             </div>
           ) : (
             <div className="border-b border-stone-200 bg-emerald-50/40 px-4 py-3 flex items-center gap-2 text-[12px] text-emerald-900">
@@ -3573,7 +3847,7 @@ function PortfolioReportPanel({ portfolioData, onUpdate, isReadOnly, selectedISO
   );
 }
 
-function LevelEditor({ level, dayData, onUpdate, onSetStatus, isReadOnly, portfolioData, onUpdatePortfolio, selectedISO, onInvestigate, levelReport, onUpdateLevelReport, buildingReport, onParseNotes }) {
+function LevelEditor({ level, dayData, onUpdate, onSetStatus, isReadOnly, portfolioData, onUpdatePortfolio, selectedISO, onInvestigate, levelReport, onUpdateLevelReport, buildingReport, onParseNotes, dismissedFlags, setDismissedFlags }) {
   const data = dayData?.[level.id] || { status: null, fields: {}, notes: '' };
 
   return (
@@ -3588,6 +3862,8 @@ function LevelEditor({ level, dayData, onUpdate, onSetStatus, isReadOnly, portfo
             selectedISO={selectedISO}
             onInvestigate={onInvestigate}
             buildingReport={buildingReport}
+            dismissedFlags={dismissedFlags}
+            setDismissedFlags={setDismissedFlags}
           />
         </div>
       )}
@@ -3607,6 +3883,8 @@ function LevelEditor({ level, dayData, onUpdate, onSetStatus, isReadOnly, portfo
             selectedISO={selectedISO}
             onInvestigate={onInvestigate}
             segmentLabel={level.title}
+            dismissedFlags={dismissedFlags}
+            setDismissedFlags={setDismissedFlags}
           />
         </div>
       )}
@@ -3678,7 +3956,7 @@ function LevelEditor({ level, dayData, onUpdate, onSetStatus, isReadOnly, portfo
   );
 }
 
-function FunnelView({ funnel, setFunnel, portfolioReports, setPortfolioReports, rows, setRows, loaded }) {
+function FunnelView({ funnel, setFunnel, portfolioReports, setPortfolioReports, rows, setRows, loaded, dismissedFlags, setDismissedFlags }) {
   const [selectedISO, setSelectedISO] = useState(todayISO());
   const [openLevelId, setOpenLevelId] = useState('portfolio');
   const [view, setView] = useState('today'); // 'today' | 'history'
@@ -4023,6 +4301,8 @@ function FunnelView({ funnel, setFunnel, portfolioReports, setPortfolioReports, 
                   onUpdateLevelReport={null}
                   buildingReport={buildingReportToday}
                   onParseNotes={() => setParseModalOpen(true)}
+                  dismissedFlags={dismissedFlags}
+                  setDismissedFlags={setDismissedFlags}
                 />
               );
             })}
@@ -6678,6 +6958,9 @@ function OverrideModal({ pair, bucket, onClose, onRecordAction }) {
   // Listings for this building group
   const [groupListings, setGroupListings] = useState([]);
   const [loadingListings, setLoadingListings] = useState(true);
+  // Pricing context from PriceLabs API
+  const [pricingData, setPricingData] = useState(null);
+  const [loadingPricing, setLoadingPricing] = useState(false);
 
   // Form fields
   const [dateFrom, setDateFrom] = useState('');
@@ -6705,6 +6988,24 @@ function OverrideModal({ pair, bucket, onClose, onRecordAction }) {
         .finally(() => setLoadingListings(false));
     }
   }, [pair.building]);
+
+  // Auto-fetch pricing context (overrides + listing prices) when listings are loaded
+  // Sends all listing IDs — API averages values when multiple listings in a group
+  useEffect(() => {
+    if (loadingListings || groupListings.length === 0) return;
+    setLoadingPricing(true);
+    const ids = groupListings.map(l => l.listing_id).join(',');
+    const firstPms = groupListings[0].pms || 'guesty';
+    fetch(`/api/pricelabs/listing-prices?listingIds=${ids}&pms=${firstPms}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.overrides) setExisting(data.overrides);
+        if (data.listing) setPricingData(data.listing);
+        setLoading(false);
+      })
+      .catch(() => {})
+      .finally(() => setLoadingPricing(false));
+  }, [loadingListings, groupListings]);
 
   // Pre-fill dates from the pair's week range if available
   useEffect(() => {
@@ -6839,7 +7140,7 @@ function OverrideModal({ pair, bucket, onClose, onRecordAction }) {
 
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="bg-white rounded-lg shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+      <div className="bg-white rounded-lg shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-stone-200">
           <div>
             <h2 className="text-[14px] font-semibold text-stone-900">Price Override</h2>
@@ -6930,6 +7231,158 @@ function OverrideModal({ pair, bucket, onClose, onRecordAction }) {
               </div>
             </div>
           )}
+
+          {/* Pricing context from PriceLabs API */}
+          {loadingPricing && (
+            <div className="text-[11px] text-stone-400 flex items-center gap-1.5">
+              <Loader2 className="w-3 h-3 animate-spin" /> Loading pricing data from PriceLabs...
+            </div>
+          )}
+          {pricingData && pricingData.data && pricingData.data.length > 0 && (() => {
+            // Filter pricing data to the selected date range (or show first 14 days)
+            const allDays = pricingData.data;
+            const filteredDays = dateFrom && dateTo
+              ? allDays.filter(d => d.date >= dateFrom && d.date <= dateTo)
+              : allDays.slice(0, 14);
+            const displayDays = filteredDays.length > 0 ? filteredDays : allDays.slice(0, 7);
+            // Extract listing-level info — use averaged info if available, else first day with reason data
+            const dayWithReason = allDays.find(d => d.reason?.listing_info);
+            const listingInfo = pricingData._averaged_listing_info || dayWithReason?.reason?.listing_info;
+            return (
+              <div className="border border-indigo-200 rounded-sm bg-indigo-50/30">
+                <div className="px-3 py-2 border-b border-indigo-200 bg-indigo-50">
+                  <div className="text-[10px] uppercase tracking-wider text-indigo-700 font-semibold">
+                    Pricing Context — {pricingData.id || groupListings[0]?.listing_id}
+                    {pricingData._listing_count > 1 && (
+                      <span className="text-indigo-500 font-normal ml-1">(averaged across {pricingData._listing_count} listings)</span>
+                    )}
+                  </div>
+                  {pricingData.currency && (
+                    <span className="text-[10px] text-indigo-500 ml-1">({pricingData.currency})</span>
+                  )}
+                </div>
+
+                {/* Listing-level metrics */}
+                {listingInfo && (
+                  <div className="px-3 py-2 border-b border-indigo-100 grid grid-cols-3 gap-x-4 gap-y-1 text-[11px]">
+                    <div>
+                      <span className="text-stone-500">Base Price:</span>{' '}
+                      <span className="font-medium text-stone-900">${listingInfo.base_price}</span>
+                      {listingInfo.base_price_type && (
+                        <span className="text-[9px] text-stone-400 ml-1">({listingInfo.base_price_type})</span>
+                      )}
+                    </div>
+                    <div>
+                      <span className="text-stone-500">Min:</span>{' '}
+                      <span className="font-medium text-stone-900">${listingInfo.minimum_price}</span>
+                    </div>
+                    <div>
+                      <span className="text-stone-500">Max:</span>{' '}
+                      <span className="font-medium text-stone-900">${listingInfo.maximum_price}</span>
+                    </div>
+                    <div>
+                      <span className="text-stone-500">Occupancy:</span>{' '}
+                      <span className="font-medium text-stone-900">{typeof listingInfo.occupancy === 'number' ? `${(listingInfo.occupancy * 100).toFixed(0)}%` : listingInfo.occupancy || '—'}</span>
+                    </div>
+                    <div>
+                      <span className="text-stone-500">Nhood Occ:</span>{' '}
+                      <span className="font-medium text-stone-900">{listingInfo.nhood_occ || '—'}</span>
+                    </div>
+                    <div>
+                      <span className="text-stone-500">ADR STLY:</span>{' '}
+                      <span className="font-medium text-stone-900">{listingInfo.ADR_STLY != null && listingInfo.ADR_STLY !== -1 ? `$${listingInfo.ADR_STLY}` : '—'}</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* LOS pricing if available */}
+                {pricingData.los_pricing && Object.keys(pricingData.los_pricing).length > 0 && (
+                  <div className="px-3 py-1.5 border-b border-indigo-100">
+                    <div className="text-[9px] uppercase tracking-wider text-stone-400 mb-1">LOS Adjustments</div>
+                    <div className="flex gap-2 flex-wrap">
+                      {Object.values(pricingData.los_pricing).map((los: any) => (
+                        <span key={los.los_night} className="text-[10px] mono px-1.5 py-0.5 bg-white border border-stone-200 rounded-sm">
+                          {los.los_night}n: <span className={Number(los.los_adjustment) < 0 ? 'text-rose-700' : 'text-emerald-700'}>{Number(los.los_adjustment) > 0 ? '+' : ''}{los.los_adjustment}%</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Daily pricing breakdown */}
+                <div className="max-h-48 overflow-y-auto">
+                  <table className="w-full text-[10px]">
+                    <thead className="sticky top-0 bg-indigo-50">
+                      <tr className="text-indigo-800">
+                        <th className="text-left px-2 py-1 font-semibold">Date</th>
+                        <th className="text-right px-2 py-1 font-semibold">PL Price</th>
+                        <th className="text-right px-2 py-1 font-semibold">User Price</th>
+                        <th className="text-right px-2 py-1 font-semibold">Min Stay</th>
+                        <th className="text-left px-2 py-1 font-semibold">Demand</th>
+                        <th className="text-left px-2 py-1 font-semibold">Status STLY</th>
+                        <th className="text-right px-2 py-1 font-semibold">ADR STLY</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {displayDays.map((d, i) => {
+                        const hasUserOverride = d.user_price && d.user_price !== d.price;
+                        return (
+                          <tr key={d.date} className={`border-t border-indigo-100 ${i % 2 === 1 ? 'bg-indigo-50/20' : ''}`}>
+                            <td className="px-2 py-1 mono text-stone-700">{d.date}</td>
+                            <td className="px-2 py-1 text-right mono font-medium text-stone-900">${d.price}</td>
+                            <td className={`px-2 py-1 text-right mono font-medium ${hasUserOverride ? 'text-indigo-700' : 'text-stone-400'}`}>
+                              {d.user_price ? `$${d.user_price}` : '—'}
+                            </td>
+                            <td className="px-2 py-1 text-right mono text-stone-600">{d.min_stay || '—'}</td>
+                            <td className="px-2 py-1">
+                              {d.demand_desc && (
+                                <span className="inline-flex items-center gap-1">
+                                  <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: d.demand_color || '#ccc' }} />
+                                  <span className="text-stone-600 truncate max-w-[80px]" title={d.demand_desc}>{d.demand_desc}</span>
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-2 py-1 text-stone-600">
+                              {d.booking_status_STLY || '—'}
+                            </td>
+                            <td className="px-2 py-1 text-right mono text-stone-600">
+                              {d.ADR_STLY != null && d.ADR_STLY !== -1 ? `$${d.ADR_STLY}` : '—'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Pricing factors for first day with reason data */}
+                {dayWithReason?.market_factors && (
+                  <div className="px-3 py-1.5 border-t border-indigo-100">
+                    <div className="text-[9px] uppercase tracking-wider text-stone-400 mb-1">Market Factors (sample: {dayWithReason.date})</div>
+                    <div className="flex gap-2 flex-wrap">
+                      {Object.values(dayWithReason.market_factors).map((f: any, i) => (
+                        <span key={i} className="text-[10px] px-1.5 py-0.5 bg-white border border-stone-200 rounded-sm">
+                          {f.title}: <span className={f.value?.startsWith('-') ? 'text-rose-700 font-medium' : 'text-emerald-700 font-medium'}>{f.value}</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {dayWithReason?.pricing_customizations && (
+                  <div className="px-3 py-1.5 border-t border-indigo-100">
+                    <div className="text-[9px] uppercase tracking-wider text-stone-400 mb-1">Pricing Customizations</div>
+                    <div className="flex gap-2 flex-wrap">
+                      {Object.values(dayWithReason.pricing_customizations).map((f: any, i) => (
+                        <span key={i} className="text-[10px] px-1.5 py-0.5 bg-white border border-stone-200 rounded-sm">
+                          {f.title}: <span className={f.value?.startsWith('-') ? 'text-rose-700 font-medium' : 'text-emerald-700 font-medium'}>{f.value}</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Existing overrides */}
           {existing.length > 0 && (
@@ -7497,6 +7950,7 @@ export default function ActionLog() {
   const [funnel, setFunnel] = useState({}); // { 'YYYY-MM-DD': { levelId: { status, fields, notes } } }
   const [portfolioReports, setPortfolioReports] = useState({}); // { 'YYYY-MM-DD': { all, ph, exclPh } }
   const [weeksReport, setWeeksReport] = useState(null); // single Weeks Report (replaced on upload)
+  const [dismissedFlags, setDismissedFlags] = useState({ snoozed: {}, removed: {} });
   const [stateModal, setStateModal] = useState(null); // { rowId, side: 'before'|'after' }
   const [lightboxShot, setLightboxShot] = useState(null);
   const [uploadError, setUploadError] = useState(null);
@@ -7515,11 +7969,12 @@ export default function ActionLog() {
   const funnelTimer = useRef(null);
   const portfolioReportsTimer = useRef(null);
   const weeksReportTimer = useRef(null);
+  const dismissedFlagsTimer = useRef(null);
 
   // Load on mount
   useEffect(() => {
     (async () => {
-      const [storedRows, storedScratch, storedNotes, storedShots, storedStates, storedFunnel, storedReports, storedWeeks] = await Promise.all([
+      const [storedRows, storedScratch, storedNotes, storedShots, storedStates, storedFunnel, storedReports, storedWeeks, storedDismissed] = await Promise.all([
         loadRows(),
         loadScratchpad(),
         loadNotes(),
@@ -7528,6 +7983,7 @@ export default function ActionLog() {
         loadFunnel(),
         loadPortfolioReports(),
         loadWeeksReport(),
+        loadDismissedFlags(),
       ]);
       setRows(storedRows);
       setScratchpad(storedScratch);
@@ -7537,6 +7993,7 @@ export default function ActionLog() {
       setFunnel(storedFunnel);
       setPortfolioReports(storedReports);
       setWeeksReport(storedWeeks);
+      setDismissedFlags(storedDismissed);
       setLoaded(true);
     })();
   }, []);
@@ -7609,6 +8066,14 @@ export default function ActionLog() {
     weeksReportTimer.current = setTimeout(() => { saveWeeksReport(weeksReport); }, 400);
     return () => clearTimeout(weeksReportTimer.current);
   }, [weeksReport, loaded]);
+
+  // Debounced save for dismissed flags
+  useEffect(() => {
+    if (!loaded) return;
+    clearTimeout(dismissedFlagsTimer.current);
+    dismissedFlagsTimer.current = setTimeout(() => { saveDismissedFlags(dismissedFlags); }, 400);
+    return () => clearTimeout(dismissedFlagsTimer.current);
+  }, [dismissedFlags, loaded]);
 
   const updateCell = useCallback((id, key, value) => {
     setRows(prev => prev.map(r => r.id === id ? { ...r, [key]: value } : r));
@@ -8324,6 +8789,8 @@ export default function ActionLog() {
           rows={rows}
           setRows={setRows}
           loaded={loaded}
+          dismissedFlags={dismissedFlags}
+          setDismissedFlags={setDismissedFlags}
         />
       )}
 
