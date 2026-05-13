@@ -574,6 +574,9 @@ const buildingToSegment = (group) => {
   const s = String(group).trim().toUpperCase();
   if (s === 'PH') return 'ph';
   if (/[.\s\/-]PH$/.test(s)) return 'ph'; // e.g. "1000.PH", "1000 PH", "1000-PH"
+  // Listing name format: "730.2304 -- Scenic 3BR PH for To..."
+  // Check the description part (after --) for PH or Penthouse
+  if (/--.*\bPH\b/i.test(s) || /penthouse/i.test(s)) return 'ph';
   return 'exclPh';
 };
 
@@ -697,6 +700,7 @@ const parseReportFile = (arrayBuffer, fileName) => {
     /^customization\s*sub\s*group$/i,
     /^listing\s*group$/i,
     /^listing\s*sub\s*group$/i,
+    /^listing\s*name$/i,
     /^building(\s*name)?$/i,
     /^property\s*group$/i,
   ];
