@@ -3632,41 +3632,7 @@ function PortfolioReportPanel({ portfolioData, onUpdate, isReadOnly, selectedISO
                               ? computeContributingWeeks(weeksReport, f, month.iso)
                               : [];
 
-                            // Listings — for PH show PH-tagged buildings from building report;
-                            // for All/Excl PH show from listing drilldown report if available
-                            const listingContribs = (() => {
-                              // For PH: use building report filtered to PH buildings (these ARE the listings)
-                              if (segment === 'ph' && buildingReport?.byBuilding && cfg) {
-                                const items = [];
-                                Object.entries(buildingReport.byBuilding).forEach(([name, monthsArr]) => {
-                                  if (buildingToSegment(name) !== 'ph') return;
-                                  const monthRow = monthsArr.find(m => m.iso === month.iso);
-                                  if (!monthRow) return;
-                                  const ty = monthRow[cfg.ty];
-                                  const ly = monthRow[cfg.ly];
-                                  if (ty == null || ly == null) return;
-                                  items.push({ name, gap: Number(ty) - Number(ly), ty, ly });
-                                });
-                                items.sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap));
-                                return items;
-                              }
-                              // For others: use the listing drilldown report
-                              const listingReport = portfolioData['listing']?.todayReport;
-                              if (!listingReport?.byBuilding || !cfg) return [];
-                              const items = [];
-                              Object.entries(listingReport.byBuilding).forEach(([name, monthsArr]) => {
-                                const monthRow = monthsArr.find(m => m.iso === month.iso);
-                                if (!monthRow) return;
-                                const ty = monthRow[cfg.ty];
-                                const ly = monthRow[cfg.ly];
-                                if (ty == null || ly == null) return;
-                                items.push({ name, gap: Number(ty) - Number(ly), ty, ly });
-                              });
-                              items.sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap));
-                              return items;
-                            })();
-
-                            const hasAny = segContribs.length > 0 || sameBuildings.length > 0 || weekContribs.length > 0 || listingContribs.length > 0;
+                            const hasAny = segContribs.length > 0 || sameBuildings.length > 0 || weekContribs.length > 0;
 
                             return (
                               <div key={f.id} className={`border rounded-sm ${headerBg}`}>
@@ -3731,35 +3697,100 @@ function PortfolioReportPanel({ portfolioData, onUpdate, isReadOnly, selectedISO
                                       </div>
                                     )}
 
-                                    {/* Listing contributors — all listings, no direction filter */}
-                                    {listingContribs.length > 0 && (
-                                      <div>
-                                        <div className="text-[9px] uppercase tracking-wider text-stone-500 font-semibold mb-1">
-                                          {segment === 'ph' ? 'PH Listings' : 'Listings (all)'}
-                                        </div>
-                                        <div className="flex gap-1.5 flex-wrap">
-                                          {listingContribs.map(c => {
-                                            const isSameDir = isOpp ? c.gap > 0 : c.gap < 0;
-                                            const listingChipBg = isSameDir
-                                              ? chipBg
-                                              : (isOpp ? 'bg-rose-50 border-rose-200 text-rose-900' : 'bg-emerald-50 border-emerald-200 text-emerald-900');
-                                            return (
-                                              <span key={c.name} className={`inline-flex items-center gap-1 px-2 py-0.5 text-[10px] mono font-medium rounded-sm border ${listingChipBg}`}
-                                                title={`TY ${fmtFlagValue(f.id, c.ty)} vs STLY ${fmtFlagValue(f.id, c.ly)} · gap ${fmtFlagGap(f.id, c.gap)}`}
-                                              >
-                                                <span className="truncate max-w-[160px]">{c.name}</span>
-                                                <span className="text-[9px] opacity-70">({fmtFlagGap(f.id, c.gap)})</span>
-                                              </span>
-                                            );
-                                          })}
-                                        </div>
-                                      </div>
-                                    )}
                                   </div>
                                 )}
                               </div>
                             );
                           })}
+
+                          {/* Consolidated listing table — all listings for this month across all flags */}
+                          {(() => {
+                            const listingSource = segment === 'ph'
+                              ? buildingReport
+                              : (portfolioData['listing']?.todayReport);
+                            if (!listingSource?.byBuilding) return null;
+
+                            const listingRows = [];
+                            Object.entries(listingSource.byBuilding).forEach(([name, monthsArr]) => {
+                              // For PH segment, only show PH-tagged listings
+                              if (segment === 'ph' && buildingToSegment(name) !== 'ph') return;
+                              const monthRow = monthsArr.find(m => m.iso === month.iso);
+                              if (!monthRow) return;
+
+                              // Compute all flag metrics for this listing
+                              const listingFlags = [];
+                              flags.forEach(f => {
+                                const cfg = FLAG_METRIC_MAP[f.id];
+                                if (!cfg) return;
+                                const ty = monthRow[cfg.ty];
+                                const ly = monthRow[cfg.ly];
+                                if (ty == null || ly == null) return;
+                                const gap = Number(ty) - Number(ly);
+                                const isSameDir = cfg.direction === 'down' ? gap < 0 : gap > 0;
+                                listingFlags.push({ flag: f, ty, ly, gap, isSameDir });
+                              });
+                              if (listingFlags.length === 0) return;
+
+                              // Revenue for sorting
+                              const rev = monthRow.rentalRevenue != null ? Number(monthRow.rentalRevenue) : 0;
+                              listingRows.push({ name, monthRow, listingFlags, rev });
+                            });
+
+                            if (listingRows.length === 0) return null;
+                            listingRows.sort((a, b) => b.rev - a.rev);
+
+                            return (
+                              <div className="border border-stone-200 rounded-sm bg-white mt-2">
+                                <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-stone-600 font-semibold border-b border-stone-200 bg-stone-50">
+                                  {segment === 'ph' ? 'PH Listings' : 'Listings'} — {month.label} ({listingRows.length})
+                                </div>
+                                <div className="max-h-64 overflow-y-auto">
+                                  <table className="w-full text-[10px]">
+                                    <thead className="sticky top-0 bg-stone-50">
+                                      <tr className="text-stone-500">
+                                        <th className="text-left px-2 py-1 font-semibold">Listing</th>
+                                        <th className="text-right px-2 py-1 font-semibold">Revenue</th>
+                                        {flags.map(f => (
+                                          <th key={f.id} className="text-right px-2 py-1 font-semibold" title={f.detail}>
+                                            {f.label.replace(/ (behind|ahead of|<|>) .*/, '')}
+                                          </th>
+                                        ))}
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {listingRows.map((lr, idx) => (
+                                        <tr key={lr.name} className={`border-t border-stone-100 ${idx % 2 === 1 ? 'bg-stone-50/30' : ''}`}>
+                                          <td className="px-2 py-1 text-stone-800 font-medium truncate max-w-[200px]" title={lr.name}>
+                                            {lr.name.split(' -- ')[0]}
+                                            {lr.name.includes(' -- ') && (
+                                              <span className="text-stone-400 font-normal ml-1 text-[9px]">{lr.name.split(' -- ')[1]?.slice(0, 25)}</span>
+                                            )}
+                                          </td>
+                                          <td className="px-2 py-1 text-right mono text-stone-700">
+                                            {lr.monthRow.rentalRevenue != null ? `$${Math.round(Number(lr.monthRow.rentalRevenue)).toLocaleString('en-US')}` : '—'}
+                                          </td>
+                                          {flags.map(f => {
+                                            const match = lr.listingFlags.find(lf => lf.flag.id === f.id);
+                                            if (!match) return <td key={f.id} className="px-2 py-1 text-right text-stone-300">—</td>;
+                                            const color = match.isSameDir
+                                              ? (f.severity === 'opportunity' ? 'text-amber-800 bg-amber-50' : 'text-rose-800 bg-rose-50')
+                                              : (f.severity === 'opportunity' ? 'text-rose-700' : 'text-emerald-700');
+                                            return (
+                                              <td key={f.id} className={`px-2 py-1 text-right mono font-medium ${color}`}
+                                                title={`TY ${fmtFlagValue(f.id, match.ty)} vs STLY ${fmtFlagValue(f.id, match.ly)}`}
+                                              >
+                                                {fmtFlagGap(f.id, match.gap)}
+                                              </td>
+                                            );
+                                          })}
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            );
+                          })()}
                         </div>
                       )}
                     </div>
