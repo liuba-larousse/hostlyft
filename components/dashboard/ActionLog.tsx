@@ -2001,6 +2001,43 @@ const downloadCSV = (rows) => {
 // sandboxed iframe that Claude artifacts run in. We try the modern API first
 // and fall back to the legacy execCommand('copy') with a hidden textarea,
 // which works in nearly all iframe contexts. Returns true on success.
+// Copy rich HTML + plain text fallback to clipboard
+const copyHtml = async (html, plainText) => {
+  try {
+    if (navigator.clipboard && window.isSecureContext && typeof ClipboardItem !== 'undefined') {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          'text/html': new Blob([html], { type: 'text/html' }),
+          'text/plain': new Blob([plainText], { type: 'text/plain' }),
+        }),
+      ]);
+      return true;
+    }
+  } catch (e) {
+    console.warn('Rich copy failed, falling back to plain text:', e);
+  }
+  // Fallback: copy plain text
+  return copyText(plainText);
+};
+
+// Build an HTML table from action log rows
+const buildHTMLTable = (rows) => {
+  const cols = [...COLUMNS, { key: '_checkBack', label: 'Check-Back' }, { key: '_done', label: 'Done' }];
+  const th = cols.map(c => `<th style="border:1px solid #d4d4d4;padding:4px 8px;background:#f5f5f4;font-size:11px;text-align:left;white-space:nowrap">${c.label}</th>`).join('');
+  const trs = rows.map((r, i) => {
+    const status = checkBackStatus(r);
+    const bg = i % 2 === 1 ? '#fafaf9' : '#fff';
+    const cells = COLUMNS.map(c => {
+      const v = String(r[c.key] ?? '').replace(/</g, '&lt;');
+      return `<td style="border:1px solid #e7e5e4;padding:3px 8px;font-size:11px;vertical-align:top">${v}</td>`;
+    });
+    cells.push(`<td style="border:1px solid #e7e5e4;padding:3px 8px;font-size:11px">${status?.dueStr || ''}</td>`);
+    cells.push(`<td style="border:1px solid #e7e5e4;padding:3px 8px;font-size:11px">${r.checkDone ? 'Yes' : ''}</td>`);
+    return `<tr style="background:${bg}">${cells.join('')}</tr>`;
+  }).join('');
+  return `<table style="border-collapse:collapse;font-family:ui-monospace,monospace"><thead><tr>${th}</tr></thead><tbody>${trs}</tbody></table>`;
+};
+
 const copyText = async (text) => {
   // Try modern API first
   try {
@@ -8678,6 +8715,16 @@ export default function ActionLog() {
     setRows(prev => [...prev].sort((a, b) => sortKeyForDate(b.date).localeCompare(sortKeyForDate(a.date))));
   }, []);
 
+  const copyAsHtml = useCallback(async () => {
+    const html = buildHTMLTable(rows);
+    const tsv = buildTSV(rows);
+    const ok = await copyHtml(html, tsv);
+    if (ok) {
+      setCopyStatus('copied');
+      setTimeout(() => setCopyStatus('idle'), 1800);
+    }
+  }, [rows]);
+
   const copyToClipboard = useCallback(async () => {
     const tsv = buildTSV(rows);
     const ok = await copyText(tsv);
@@ -9046,10 +9093,18 @@ export default function ActionLog() {
               disabled={rows.length === 0}
               className="px-3 py-2 text-[12px] font-medium border border-stone-300 bg-white text-stone-700 hover:border-stone-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5 rounded-sm"
             >
-              {copyStatus === 'copied' && <><Check className="w-3.5 h-3.5 text-emerald-700" /> Copied for Excel</>}
+              {copyStatus === 'copied' && <><Check className="w-3.5 h-3.5 text-emerald-700" /> Copied</>}
               {copyStatus === 'downloaded' && <><Download className="w-3.5 h-3.5 text-amber-700" /> Downloaded .tsv</>}
               {copyStatus === 'failed' && <><AlertCircle className="w-3.5 h-3.5 text-rose-700" /> Copy failed</>}
-              {copyStatus === 'idle' && <><Copy className="w-3.5 h-3.5" /> Copy (paste to Excel)</>}
+              {copyStatus === 'idle' && <><Copy className="w-3.5 h-3.5" /> Copy (Excel)</>}
+            </button>
+            <button
+              onClick={copyAsHtml}
+              disabled={rows.length === 0}
+              className="px-3 py-2 text-[12px] font-medium border border-stone-300 bg-white text-stone-700 hover:border-stone-500 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5 rounded-sm"
+              title="Copy as rich HTML table — paste into email, Notion, ClickUp, Slack"
+            >
+              <Copy className="w-3.5 h-3.5" /> Copy (HTML)
             </button>
             <button
               onClick={() => downloadCSV(rows)}
