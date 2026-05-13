@@ -3630,7 +3630,24 @@ function PortfolioReportPanel({ portfolioData, onUpdate, isReadOnly, selectedISO
                             // Weeks
                             const weekContribs = computeContributingWeeks(weeksReport, f, month.iso);
 
-                            const hasAny = segContribs.length > 0 || sameBuildings.length > 0 || weekContribs.length > 0;
+                            // Listings — all listings in the month (no direction filter)
+                            const listingReport = portfolioData['listing']?.todayReport;
+                            const listingContribs = (() => {
+                              if (!listingReport?.byBuilding || !cfg) return [];
+                              const items = [];
+                              Object.entries(listingReport.byBuilding).forEach(([name, monthsArr]) => {
+                                const monthRow = monthsArr.find(m => m.iso === month.iso);
+                                if (!monthRow) return;
+                                const ty = monthRow[cfg.ty];
+                                const ly = monthRow[cfg.ly];
+                                if (ty == null || ly == null) return;
+                                items.push({ name, gap: Number(ty) - Number(ly), ty, ly });
+                              });
+                              items.sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap));
+                              return items;
+                            })();
+
+                            const hasAny = segContribs.length > 0 || sameBuildings.length > 0 || weekContribs.length > 0 || listingContribs.length > 0;
 
                             return (
                               <div key={f.id} className={`border rounded-sm ${headerBg}`}>
@@ -3691,6 +3708,29 @@ function PortfolioReportPanel({ portfolioData, onUpdate, isReadOnly, selectedISO
                                               <span className="text-[9px] opacity-70">({fmtFlagGap(f.id, c.gap)})</span>
                                             </span>
                                           ))}
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {/* Listing contributors — all listings, no direction filter */}
+                                    {listingContribs.length > 0 && (
+                                      <div>
+                                        <div className="text-[9px] uppercase tracking-wider text-stone-500 font-semibold mb-1">Listings (all)</div>
+                                        <div className="flex gap-1.5 flex-wrap">
+                                          {listingContribs.map(c => {
+                                            const isSameDir = isOpp ? c.gap > 0 : c.gap < 0;
+                                            const listingChipBg = isSameDir
+                                              ? chipBg
+                                              : (isOpp ? 'bg-rose-50 border-rose-200 text-rose-900' : 'bg-emerald-50 border-emerald-200 text-emerald-900');
+                                            return (
+                                              <span key={c.name} className={`inline-flex items-center gap-1 px-2 py-0.5 text-[10px] mono font-medium rounded-sm border ${listingChipBg}`}
+                                                title={`TY ${fmtFlagValue(f.id, c.ty)} vs STLY ${fmtFlagValue(f.id, c.ly)} · gap ${fmtFlagGap(f.id, c.gap)}`}
+                                              >
+                                                <span className="truncate max-w-[160px]">{c.name}</span>
+                                                <span className="text-[9px] opacity-70">({fmtFlagGap(f.id, c.gap)})</span>
+                                              </span>
+                                            );
+                                          })}
                                         </div>
                                       </div>
                                     )}
