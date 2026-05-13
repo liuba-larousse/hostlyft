@@ -6135,6 +6135,8 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
   // page index would waste space on small buckets and undershow large ones.
   const [perPage, setPerPage] = useState(10);
   const [page, setPage] = useState({ problems: 1, opportunities: 1, mixed: 1 });
+  // Month filter — null = all months, Set of monthIso strings when filtering
+  const [monthFilter, setMonthFilter] = useState(null);
   // Toast confirms an action log row was created from this view. Auto-clears after 3s.
   const [addToast, setAddToast] = useState(null);
   const [showDismissed, setShowDismissed] = useState(false);
@@ -6349,9 +6351,19 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
   }, [setDismissedFlags]);
 
   // Filter dismissed pairs
-  const activeProblems = problems.filter(p => !isPairDismissed(p));
-  const activeOpportunities = opportunities.filter(p => !isPairDismissed(p));
-  const activeMixed = mixed.filter(p => !isPairDismissed(p));
+  // Collect all unique months across all pairs for the filter
+  const allMonthOptions = useMemo(() => {
+    const seen = new Map();
+    [...problems, ...opportunities, ...mixed].forEach(p => {
+      if (p.monthIso && !seen.has(p.monthIso)) seen.set(p.monthIso, p.monthLabel);
+    });
+    return [...seen.entries()].sort(([a], [b]) => a.localeCompare(b));
+  }, [problems, opportunities, mixed]);
+
+  const monthPass = (p) => !monthFilter || monthFilter.has(p.monthIso);
+  const activeProblems = problems.filter(p => !isPairDismissed(p) && monthPass(p));
+  const activeOpportunities = opportunities.filter(p => !isPairDismissed(p) && monthPass(p));
+  const activeMixed = mixed.filter(p => !isPairDismissed(p) && monthPass(p));
   const dismissedProblems = problems.filter(p => isPairDismissed(p));
   const dismissedOpportunities = opportunities.filter(p => isPairDismissed(p));
   const dismissedMixed = mixed.filter(p => isPairDismissed(p));
@@ -6775,23 +6787,61 @@ function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setAc
         <p className="text-[13px] text-stone-700 leading-relaxed max-w-3xl">
           Buildings flagged in months that overlap with weeks also flagged on their own metrics. The compounding signal — a building underperforming during a week that's also underperforming on the comp set — points to the most actionable problems and opportunities. Ranked by absolute revenue gap vs STLY for the building × month.
         </p>
-        <div className="flex items-center gap-2 text-[11px]">
-          <label className="text-stone-500">Per page</label>
-          <input
-            type="number"
-            min="1"
-            max="100"
-            value={perPage}
-            onChange={(e) => {
-              const v = Math.max(1, Math.min(100, parseInt(e.target.value, 10) || 1));
-              setPerPage(v);
-              // Reset all pages to 1 — otherwise page state may now point past
-              // the new last page. clamp() handles this in render too, but
-              // resetting feels more predictable for the user changing perPage.
-              setPage({ problems: 1, opportunities: 1, mixed: 1 });
-            }}
-            className="w-16 px-2 py-1 border border-stone-300 rounded-sm mono text-stone-900"
-          />
+        <div className="flex items-center gap-3 flex-wrap text-[11px]">
+          {/* Month filter */}
+          <div className="flex items-center gap-1.5">
+            <label className="text-stone-500">Month</label>
+            <div className="flex gap-1 flex-wrap">
+              <button
+                onClick={() => { setMonthFilter(null); setPage({ problems: 1, opportunities: 1, mixed: 1 }); }}
+                className={`px-2 py-1 rounded-sm border transition-colors ${
+                  !monthFilter ? 'bg-stone-900 text-white border-stone-900' : 'bg-white text-stone-600 border-stone-300 hover:border-stone-500'
+                }`}
+              >
+                All
+              </button>
+              {allMonthOptions.map(([iso, label]) => {
+                const isActive = monthFilter?.has(iso);
+                return (
+                  <button
+                    key={iso}
+                    onClick={() => {
+                      setMonthFilter(prev => {
+                        if (!prev) {
+                          return new Set([iso]);
+                        }
+                        const next = new Set(prev);
+                        if (next.has(iso)) { next.delete(iso); } else { next.add(iso); }
+                        return next.size === 0 ? null : next;
+                      });
+                      setPage({ problems: 1, opportunities: 1, mixed: 1 });
+                    }}
+                    className={`px-2 py-1 rounded-sm border transition-colors ${
+                      isActive ? 'bg-stone-800 text-white border-stone-800' : 'bg-white text-stone-600 border-stone-300 hover:border-stone-500'
+                    }`}
+                  >
+                    {label.split(' ')[0]}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <span className="text-stone-200">|</span>
+          <div className="flex items-center gap-2">
+            <label className="text-stone-500">Per page</label>
+            <input
+              type="number"
+              min="1"
+              max="100"
+              value={perPage}
+              onChange={(e) => {
+                const v = Math.max(1, Math.min(100, parseInt(e.target.value, 10) || 1));
+                setPerPage(v);
+                setPage({ problems: 1, opportunities: 1, mixed: 1 });
+              }}
+              className="w-16 px-2 py-1 border border-stone-300 rounded-sm mono text-stone-900"
+            />
+          </div>
         </div>
       </div>
 
