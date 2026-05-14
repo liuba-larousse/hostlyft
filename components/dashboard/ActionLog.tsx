@@ -7670,6 +7670,14 @@ function OverrideModal({ pair, bucket, onClose, onRecordAction }) {
       setError('Select listings and date range');
       return;
     }
+
+    // Validate at least one override field is set
+    const hasAnyField = price || minPrice || maxPrice || basePrice || minStay || checkinCheckout;
+    if (!hasAnyField) {
+      setError('Set at least one field (price, min price, max price, base price, min stay, or check-in/out)');
+      return;
+    }
+
     setSubmitting(true);
     setError('');
 
@@ -7677,7 +7685,7 @@ function OverrideModal({ pair, bucket, onClose, onRecordAction }) {
     const overrides = dates.map(date => {
       const o: any = { date };
       if (price) {
-        o.price = price;
+        o.price = String(price);
         o.price_type = priceType;
         if (priceType === 'fixed') o.currency = currency;
       }
