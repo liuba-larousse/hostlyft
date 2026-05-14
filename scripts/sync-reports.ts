@@ -19,7 +19,8 @@ import * as XLSX from 'xlsx';
 
 // ---- Config ----
 
-const REPORT_URLS: Record<string, string> = {
+// Fallback URLs for Marcus — other clients must have report_urls in DB
+const DEFAULT_REPORT_URLS: Record<string, string> = {
   all: 'https://app.pricelabs.co/report-builder/9276',
   building: 'https://app.pricelabs.co/report-builder/10420',
   weeks: 'https://app.pricelabs.co/report-builder/10678',
@@ -93,6 +94,7 @@ interface Client {
   email: string;
   password: string;
   connection_type: 'direct' | 'rm_portal';
+  report_urls: Record<string, string> | null;
 }
 
 interface RmCreds {
@@ -125,7 +127,7 @@ async function testFetchClients(): Promise<Client[]> {
   const supabase = getSupabase();
   const { data, error } = await supabase
     .from('pricelabs_clients')
-    .select('id, client_name, email, password_encrypted, connection_type')
+    .select('id, client_name, email, password_encrypted, connection_type, report_urls')
     .eq('active', true)
     .order('client_name');
   if (error) throw new Error(`Query failed: ${error.message}`);
@@ -135,14 +137,19 @@ async function testFetchClients(): Promise<Client[]> {
   for (const row of data) {
     try {
       const password = row.password_encrypted ? testDecrypt(row.password_encrypted) : '';
+      // Use per-client report_urls, fall back to defaults for Marcus
+      const isMarcus = row.client_name.toLowerCase().includes('marcus') || row.client_name.toLowerCase().includes('halawi');
+      const reportUrls = row.report_urls || (isMarcus ? DEFAULT_REPORT_URLS : null);
       clients.push({
         id: row.id,
         client_name: row.client_name,
         email: row.email,
         password,
         connection_type: row.connection_type ?? 'direct',
+        report_urls: reportUrls,
       });
-      console.log(`  ✓ ${row.client_name} (${row.connection_type || 'direct'}) — credentials decrypted`);
+      const urlStatus = reportUrls ? `${Object.keys(reportUrls).length} report URLs` : 'no report URLs (will skip)';
+      console.log(`  ✓ ${row.client_name} (${row.connection_type || 'direct'}) — ${urlStatus}`);
     } catch (e: any) {
       console.error(`  ✗ ${row.client_name} — decrypt failed: ${e.message}`);
       allSteps.push({ step: `Decrypt ${row.client_name}`, ok: false, duration: 0, error: e.message });
@@ -236,8 +243,8 @@ async function testSwitchRmClient(page: Page, clientName: string): Promise<void>
   throw new Error(`Client "${clientName}" not found on RM Partners page. Available: ${available.join(' | ')}`);
 }
 
-async function testDownloadReport(page: Page, segment: string): Promise<Buffer> {
-  const url = REPORT_URLS[segment];
+async function testDownloadReport(page: Page, segment: string, reportUrl?: string): Promise<Buffer> {
+  const url = reportUrl || DEFAULT_REPORT_URLS[segment];
 
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: TIMEOUT });
   await page.waitForLoadState('networkidle', { timeout: 30_000 }).catch(() => {});
@@ -314,6 +321,12 @@ async function testSaveToSupabase(clientId: string, segment: string, reportData:
 // ---- Orchestration ----
 
 async function syncClient(browser: Browser, client: Client, context?: BrowserContext, page?: Page) {
+  if (!client.report_urls || Object.keys(client.report_urls).length === 0) {
+    console.log(`  Skipping ${client.client_name} — no report URLs configured`);
+    allSteps.push({ step: `Skip: ${client.client_name}`, ok: true, duration: 0, detail: 'no report URLs' });
+    return;
+  }
+
   const isRm = !!context && !!page;
 
   if (!isRm) {
@@ -324,10 +337,10 @@ async function syncClient(browser: Browser, client: Client, context?: BrowserCon
     page = login.page;
   }
 
-  for (const segment of Object.keys(REPORT_URLS)) {
+  for (const [segment, reportUrl] of Object.entries(client.report_urls)) {
     try {
       const buffer = await runStep(`Download ${segment}: ${client.client_name}`, () =>
-        testDownloadReport(page!, segment)
+        testDownloadReport(page!, segment, reportUrl)
       );
 
       const reportData = await runStep(`Parse ${segment}: ${client.client_name}`, () =>

@@ -10,7 +10,7 @@ export async function GET() {
   const supabase = createSupabaseAdmin();
   const { data, error } = await supabase
     .from('pricelabs_clients')
-    .select('id, client_name, email, active, hubspot_contact_id, connection_type, api_key_encrypted, created_at')
+    .select('id, client_name, email, active, hubspot_contact_id, connection_type, api_key_encrypted, report_urls, created_at')
     .order('client_name');
 
   // Mark which clients have an API key (don't expose the key itself in GET)
@@ -82,13 +82,14 @@ export async function PATCH(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { id, active, password, api_key } = await req.json();
+  const { id, active, password, api_key, report_urls } = await req.json();
   if (!id) return NextResponse.json({ error: 'id is required' }, { status: 400 });
 
   const updates: Record<string, unknown> = {};
   if (active !== undefined) updates.active = active;
   if (password) updates.password_encrypted = encrypt(password);
   if (api_key !== undefined) updates.api_key_encrypted = api_key ? encrypt(api_key) : null;
+  if (report_urls !== undefined) updates.report_urls = report_urls;
 
   const supabase = createSupabaseAdmin();
   const { error } = await supabase.from('pricelabs_clients').update(updates).eq('id', id);
