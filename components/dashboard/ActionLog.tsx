@@ -2,8 +2,9 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Plus, Download, Copy, Trash2, Check, AlertCircle, FileText, Sparkles, X, StickyNote, ImagePlus, ZoomIn, FileSpreadsheet, Loader2, Camera, Filter, ChevronRight, History, Flag, CheckCircle2, AlertTriangle, Calendar, Upload, RefreshCw, BookOpen, TrendingUp, Pencil, Clock, Undo2, ChevronDown, EyeOff } from 'lucide-react';
+import { Plus, Download, Copy, Trash2, Check, AlertCircle, FileText, Sparkles, X, StickyNote, ImagePlus, ZoomIn, FileSpreadsheet, Loader2, Camera, Filter, ChevronRight, History, Flag, CheckCircle2, AlertTriangle, Calendar, Upload, RefreshCw, BookOpen, TrendingUp, Pencil, Clock, Undo2, ChevronDown, EyeOff, BarChart3 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import ResultsTab from './ResultsTab';
 
 /* ---------- Constants ---------- */
 
@@ -9075,6 +9076,7 @@ export default function ActionLog() {
                 {activeTab === 'log' ? 'Action Log'
                   : activeTab === 'funnel' ? 'Daily Workflow Funnel'
                   : activeTab === 'summary' ? 'Summary · Compounding signals'
+                  : activeTab === 'results' ? 'Results · Action Follow-Up'
                   : 'Rules & Definitions'}
               </h1>
             </div>
@@ -9116,6 +9118,16 @@ export default function ActionLog() {
               }`}
             >
               <TrendingUp className="w-3.5 h-3.5" /> Summary
+            </button>
+            <button
+              onClick={() => setActiveTab('results')}
+              className={`px-4 py-2 text-[12px] font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
+                activeTab === 'results'
+                  ? 'border-stone-900 text-stone-900'
+                  : 'border-transparent text-stone-500 hover:text-stone-800 hover:border-stone-300'
+              }`}
+            >
+              <BarChart3 className="w-3.5 h-3.5" /> Results
             </button>
             <button
               onClick={() => setActiveTab('rules')}
@@ -9562,6 +9574,14 @@ export default function ActionLog() {
       {/* TAB: RULES — documentation of all rules applied to reports.
           Values are pulled from the actual constants in code (PICKUP_BEHIND_THRESHOLD
           etc.), so this page stays in sync if thresholds change. */}
+      {activeTab === 'results' && (
+        <ResultsTab
+          rows={rows}
+          states={states}
+          portfolioReports={portfolioReports}
+        />
+      )}
+
       {activeTab === 'rules' && (
         <RulesTab />
       )}
