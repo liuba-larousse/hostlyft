@@ -3540,80 +3540,47 @@ function PortfolioReportPanel({ portfolioData, onUpdate, isReadOnly, selectedISO
       {/* Standard segment view (All / PH / Excl PH) — only render when we're not on a drill-down */}
       {segment !== 'building' && segment !== 'listing' && segment !== 'weeks' && (
       <>
-      {/* Upload slot for today */}
-      <div className="p-4 border-b border-stone-200 bg-stone-50/40">
-        <div className="flex items-center justify-between mb-2">
-          <div className="text-[10px] uppercase tracking-[0.2em] text-stone-500">
-            Today's report ({isoToMDY(selectedISO)})
-          </div>
-          {!todayReport && !isReadOnly && (
-            <SyncReportButton segment={segment} onReportLoaded={(parsed) => handleUpload('todayReport', parsed)} />
-          )}
-        </div>
-        <ReportUploadSlot
-          label={`Today (${isoToMDY(selectedISO)})`}
-          kind="todayReport"
-          report={todayReport}
-          onUpload={handleUpload}
-          onClear={handleClear}
-          isReadOnly={isReadOnly}
-          accent="today"
-        />
-        {/* Prior-report status — auto-pulled from archive, no upload */}
-        <div className="mt-3 flex items-center gap-2 text-[11px] flex-wrap">
-          <span className="text-stone-500">Comparing against:</span>
-          {priorReport ? (
-            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-emerald-50 border border-emerald-200 rounded-sm text-emerald-900">
-              <FileSpreadsheet className="w-3 h-3" />
-              <span className="mono">{priorDateLabel}</span>
+      {/* Compact report status bar */}
+      <div className="px-4 py-2 border-b border-stone-200 bg-stone-50/40 flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-3 text-[11px]">
+          {todayReport ? (
+            <span className="inline-flex items-center gap-1.5 text-emerald-800" title={`${todayReport.fileName || 'Report'} · ${todayReport.months?.length || 0} months · uploaded ${todayReport.uploadedAt ? new Date(todayReport.uploadedAt).toLocaleString() : ''}`}>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
+              <span className="mono">{isoToMDY(selectedISO)}</span>
+            </span>
+          ) : isShowingPriorOnly ? (
+            <span className="text-amber-700" title="No report for today — showing most recent prior">
+              <span className="mono">{priorDateLabel}</span> <span className="text-stone-400">(prior)</span>
             </span>
           ) : (
-            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-stone-100 border border-stone-200 rounded-sm text-stone-600">
-              <AlertCircle className="w-3 h-3" />
-              <span>No prior report — 1-day pickup unavailable</span>
+            <span className="text-stone-400">No report</span>
+          )}
+          {priorReport && !isShowingPriorOnly && (
+            <span className="text-stone-400" title={`Comparing against ${priorDateLabel}. 1-day pickup = today minus prior.`}>
+              vs <span className="mono">{priorDateLabel}</span>
             </span>
           )}
-          {todayReport && priorReport && (() => {
-            const todaySchema = reportRevenueSchema(todayReport);
-            const priorSchema = reportRevenueSchema(priorReport);
-            if (todaySchema && priorSchema && todaySchema !== priorSchema) {
-              return (
-                <span
-                  className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-amber-50 border border-amber-200 rounded-sm text-amber-900"
-                  title="The prior report uses Total Revenue while today's uses Rental Revenue (or vice versa). 1-day pickup is disabled to avoid garbage values. Re-upload the prior file to fix."
-                >
-                  <AlertCircle className="w-3 h-3" />
-                  <span>Schema mismatch — 1-day pickup disabled</span>
-                </span>
-              );
-            }
-            // Prior exists but isn't yesterday — 1-day pickup would be misleading
-            if (!priorIsYesterday) {
-              return (
-                <span
-                  className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-stone-100 border border-stone-200 rounded-sm text-stone-600"
-                  title="1-day pickup needs a report from exactly yesterday to be meaningful. With a multi-day gap, the diff would capture several days of change."
-                >
-                  <AlertCircle className="w-3 h-3" />
-                  <span>Prior is not yesterday — 1-day pickup unavailable</span>
-                </span>
-              );
-            }
-            return null;
-          })()}
         </div>
-        <div className="mt-1.5 text-[10px] text-stone-400 leading-snug">
-          Today's upload is automatically saved as the comparison baseline for tomorrow. No need to re-upload.
+        <div className="flex items-center gap-2">
+          {todayReport && !isReadOnly && (
+            <button onClick={() => handleClear('todayReport')} className="text-[10px] text-stone-400 hover:text-rose-600 transition-colors">Clear</button>
+          )}
+          {!isReadOnly && (
+            <SyncReportButton segment={segment} onReportLoaded={(parsed) => handleUpload('todayReport', parsed)} />
+          )}
+          {!todayReport && !isReadOnly && (
+            <ReportUploadSlot
+              label="Drop xlsx"
+              kind="todayReport"
+              report={null}
+              onUpload={handleUpload}
+              onClear={handleClear}
+              isReadOnly={isReadOnly}
+              accent="today"
+            />
+          )}
         </div>
       </div>
-
-      {/* Banner if showing prior-only (read-only browse of yesterday) */}
-      {isShowingPriorOnly && (
-        <div className="px-4 py-2 bg-amber-50 border-b border-amber-200 text-[11px] text-amber-900 flex items-center gap-2">
-          <AlertCircle className="w-3 h-3" />
-          Showing the most recent prior report ({priorDateLabel}) — no report uploaded for {isoToMDY(selectedISO)} yet.
-        </div>
-      )}
 
       {/* Data display */}
       {months.length === 0 ? (
@@ -4637,11 +4604,6 @@ function FunnelView({ funnel, setFunnel, portfolioReports, setPortfolioReports, 
 
           {/* Selected level editor — always Portfolio */}
           <div>
-            <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
-              <div className="text-[10px] uppercase tracking-[0.2em] text-stone-500">
-                Daily review · sub-tabs below are the funnel steps
-              </div>
-            </div>
             {FUNNEL_LEVELS.filter(L => L.id === 'portfolio').map(L => {
               // Build segment + drill-down lookup for the Portfolio level.
               // Each entry shape: { todayReport, priorReport, priorDate }.
