@@ -468,6 +468,7 @@ export default function ResultsTab({ rows, states, portfolioReports }: ResultsTa
                                   <th className="text-right px-2 py-1.5 font-semibold">ADR</th>
                                   <th className="text-right px-2 py-1.5 font-semibold">Revenue</th>
                                   <th className="text-left px-2 py-1.5 font-semibold">Source</th>
+                                  <th className="text-left px-2 py-1.5 font-semibold text-[9px]">Window</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -481,6 +482,7 @@ export default function ResultsTab({ rows, states, portfolioReports }: ResultsTa
                                     <td className="px-2 py-1.5 text-right mono text-stone-700">{b.adr != null ? fmtMoney(b.adr) : '—'}</td>
                                     <td className="px-2 py-1.5 text-right mono text-emerald-800 font-medium">{fmtMoney(b.rental_revenue || b.total_revenue)}</td>
                                     <td className="px-2 py-1.5 text-stone-600">{b.booking_source || '—'}</td>
+                                    <td className="px-2 py-1.5 text-[9px] text-stone-400">{b._round || ''}</td>
                                   </tr>
                                 ))}
                               </tbody>
