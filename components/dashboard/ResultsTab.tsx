@@ -322,15 +322,17 @@ export default function ResultsTab({ rows, states, portfolioReports }: ResultsTa
       return extractKPIs(report, row.affectedDates);
     }
 
-    // Building-level: try building report first, fall back to 'all' segment
+    // Building-level: use building report only — don't fall back to 'all'
+    // (portfolio averages would show misleading deltas for building actions)
     if (!segment && report) {
-      const buildingKPIs = extractBuildingKPIs(report, row.affectedGroup, row.affectedDates);
-      if (buildingKPIs && (buildingKPIs.revenue > 0 || buildingKPIs.occ > 0)) return buildingKPIs;
+      return extractBuildingKPIs(report, row.affectedGroup, row.affectedDates);
     }
 
-    // Fallback to 'all' segment for portfolio-level context
-    const allReport = findReport(portfolioReports, targetISO, 'all', '');
-    if (allReport) return extractKPIs(allReport, row.affectedDates);
+    // Only fall back to 'all' for portfolio-wide actions (Account, All)
+    if (segment === 'all') {
+      const allReport = findReport(portfolioReports, targetISO, 'all', '');
+      if (allReport) return extractKPIs(allReport, row.affectedDates);
+    }
 
     return null;
   }, [portfolioReports]);
