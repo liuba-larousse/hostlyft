@@ -239,16 +239,20 @@ export default function DailyReportTab({ portfolioReports, rows, states }: Daily
     lines.push('═'.repeat(50));
     lines.push('');
 
-    // Portfolio KPIs
+    // Portfolio KPIs with 3-month breakdown
     segments.forEach(seg => {
       const label = segmentLabels[seg];
       const t = portfolioData[seg]['Today'];
       const y = portfolioData[seg]['-1d'];
       if (!t) return;
       lines.push(`${label}:`);
-      lines.push(`  Revenue: ${fmtMoney(t.revenue)}${y ? ` (${fmtSignedMoney(t.revenue - y.revenue)} vs yesterday)` : ''}`);
-      lines.push(`  ADR: ${fmtMoney(t.adr)} · Occ: ${fmtPct(t.occ)} · RevPAR: ${fmtMoney(t.revpar)}`);
-      lines.push(`  3d Pickup: ${fmtMoney(t.pickup3d)} · 7d Pickup: ${fmtMoney(t.pickup7d)}`);
+      lines.push(`  Year Total: ${fmtMoney(t.revenue)}${y ? ` (${fmtSignedMoney(t.revenue - y.revenue)} vs yesterday)` : ''}`);
+      if (t.months && t.months.length > 0) {
+        t.months.slice(0, 3).forEach((m: any) => {
+          const name = m.label?.split(' ')[0] || m.iso;
+          lines.push(`  ${name}: Rev ${fmtMoney(m.rentalRevenue)} · ADR ${fmtMoney(m.rentalADR)} · Occ ${fmtPct(m.occupancy)} · RevPAR ${fmtMoney(m.rentalRevPAR)} · 3d ${fmtMoney(m.pickup3d)} · 7d ${fmtMoney(m.pickup7d)}`);
+        });
+      }
       lines.push('');
     });
 
