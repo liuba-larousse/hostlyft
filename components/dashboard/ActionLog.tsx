@@ -3538,7 +3538,7 @@ function PortfolioReportPanel({ portfolioData, onUpdate, isReadOnly, selectedISO
       })()}
 
       {/* Standard segment view (All / PH / Excl PH) — only render when we're not on a drill-down */}
-      {segment !== 'building' && segment !== 'listing' && (
+      {segment !== 'building' && segment !== 'listing' && segment !== 'weeks' && (
       <>
       {/* Upload slot for today */}
       <div className="p-4 border-b border-stone-200 bg-stone-50/40">
@@ -9112,7 +9112,6 @@ export default function ActionLog() {
               <h1 className="text-2xl font-semibold tracking-tight text-stone-900">
                 {activeTab === 'log' ? 'Action Log'
                   : activeTab === 'funnel' ? 'Daily Workflow Funnel'
-                  : activeTab === 'weeks' ? 'Weeks Report'
                   : activeTab === 'summary' ? 'Summary · Compounding signals'
                   : 'Rules & Definitions'}
               </h1>
@@ -9145,16 +9144,6 @@ export default function ActionLog() {
               }`}
             >
               <Filter className="w-3.5 h-3.5" /> Daily Workflow Funnel
-            </button>
-            <button
-              onClick={() => setActiveTab('weeks')}
-              className={`px-4 py-2 text-[12px] font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
-                activeTab === 'weeks'
-                  ? 'border-stone-900 text-stone-900'
-                  : 'border-transparent text-stone-500 hover:text-stone-800 hover:border-stone-300'
-              }`}
-            >
-              <Calendar className="w-3.5 h-3.5" /> Weeks
             </button>
             <button
               onClick={() => setActiveTab('summary')}
@@ -9587,52 +9576,6 @@ export default function ActionLog() {
           weeksReport={weeksReport}
         />
       )}
-
-      {/* TAB: WEEKS REPORT — standalone weekly view, also saves to portfolioReports */}
-      {activeTab === 'weeks' && (() => {
-        const saveWeeksToPortfolio = (parsed) => {
-          // Save to weeksReport state (legacy)
-          setWeeksReport(prev => {
-            const priorUploadDate = prev?.uploadedAt?.slice(0, 10);
-            const newUploadDate = parsed?.uploadedAt?.slice(0, 10);
-            if (prev && priorUploadDate !== newUploadDate) {
-              const { _prior: _, ...cleanPrev } = prev;
-              return { ...parsed, _prior: cleanPrev };
-            }
-            return { ...parsed, _prior: prev?._prior || null };
-          });
-          // Also save to portfolioReports under today's date
-          setPortfolioReports(prev => {
-            const today = todayISO();
-            return { ...prev, [today]: { ...(prev[today] || {}), weeks: parsed } };
-          });
-        };
-        // Derive weeksReport from portfolioReports if standalone state is empty
-        const effectiveWeeks = weeksReport || (() => {
-          const today = todayISO();
-          const todayWeeks = portfolioReports[today]?.['weeks'];
-          if (todayWeeks) return todayWeeks;
-          const priorDate = findPriorReportDate(portfolioReports, today, 'weeks');
-          if (priorDate) {
-            const prior = portfolioReports[priorDate]['weeks'];
-            // Attach _prior for 1-day pickup
-            const secondPrior = (() => {
-              const sp = findPriorReportDate(portfolioReports, priorDate, 'weeks');
-              return sp ? portfolioReports[sp]['weeks'] : null;
-            })();
-            return prior ? { ...prior, _prior: secondPrior } : null;
-          }
-          return null;
-        })();
-        return (
-          <WeeksTab
-            weeksReport={effectiveWeeks}
-            onUpload={saveWeeksToPortfolio}
-            onClear={() => { setWeeksReport(null); }}
-            onSyncLoaded={saveWeeksToPortfolio}
-          />
-        );
-      })()}
 
       {/* TAB: SUMMARY — cross-references Building report with Weeks report
           to surface compounding signals (problems and opportunities) ranked
