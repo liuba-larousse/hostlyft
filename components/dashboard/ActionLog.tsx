@@ -7664,18 +7664,25 @@ function OverrideModal({ pair, bucket, onClose, onRecordAction }) {
     try {
       let successCount = 0;
       let failCount = 0;
+      let lastError = '';
       for (const target of targetListings) {
         const res = await fetch('/api/pricelabs/overrides', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ listingId: target.id, pms: target.pms, overrides }),
         });
-        if (res.ok) successCount++;
-        else failCount++;
+        if (res.ok) {
+          successCount++;
+        } else {
+          failCount++;
+          const errData = await res.json().catch(() => ({}));
+          lastError = errData.error || `HTTP ${res.status}`;
+          console.warn(`Override failed for ${target.id} (${target.pms}):`, lastError);
+        }
       }
 
       if (failCount > 0 && successCount === 0) {
-        setError(`Failed to apply overrides to all ${failCount} listings`);
+        setError(`Failed to apply overrides to all ${failCount} listings: ${lastError}`);
       } else {
         setSubmitted(true);
         const desc = [];
