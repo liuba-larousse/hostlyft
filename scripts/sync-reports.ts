@@ -1,17 +1,17 @@
 /**
  * Standalone script to sync PriceLabs reports via Playwright.
- * Designed to run in GitHub Actions (full VM, no Vercel limits).
+ * Reads client credentials from Supabase (encrypted), decrypts them,
+ * logs into PriceLabs, downloads reports, saves back to Supabase.
  *
  * Usage: npx tsx scripts/sync-reports.ts
  *
  * Required env vars:
- *   PRICELABS_EMAIL, PRICELABS_PASSWORD
- *   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
- *   ENCRYPTION_KEY (for decrypting stored credentials as fallback)
+ *   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, ENCRYPTION_KEY
  */
 
 import { chromium } from 'playwright-core';
 import { createClient } from '@supabase/supabase-js';
+import { createDecipheriv } from 'crypto';
 import { readFileSync } from 'fs';
 import * as XLSX from 'xlsx';
 
@@ -27,6 +27,23 @@ const REPORT_URLS: Record<string, string> = {
 const LOGIN_URL = 'https://app.pricelabs.co/';
 const TIMEOUT = 60_000;
 
+// ---- Crypto (mirrors lib/crypto/encrypt.ts) ----
+
+function decrypt(ciphertext: string): string {
+  const hex = process.env.ENCRYPTION_KEY;
+  if (!hex || hex.length !== 64) throw new Error('ENCRYPTION_KEY must be 64-char hex');
+  const key = Buffer.from(hex, 'hex');
+  const [ivHex, authTagHex, encryptedHex] = ciphertext.split(':');
+  if (!ivHex || !authTagHex || !encryptedHex) throw new Error('Invalid ciphertext');
+  const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(ivHex, 'hex'));
+  decipher.setAuthTag(Buffer.from(authTagHex, 'hex'));
+  const decrypted = Buffer.concat([
+    decipher.update(Buffer.from(encryptedHex, 'hex')),
+    decipher.final(),
+  ]);
+  return decrypted.toString('utf8');
+}
+
 // ---- Supabase ----
 
 function getSupabase() {
@@ -37,16 +54,31 @@ function getSupabase() {
   );
 }
 
-async function getClientId(): Promise<string | null> {
+interface ClientRow {
+  id: string;
+  client_name: string;
+  email: string;
+  password_encrypted: string;
+  connection_type: string;
+}
+
+async function getMarcusClient(): Promise<{ id: string; email: string; password: string } | null> {
   const supabase = getSupabase();
   const { data } = await supabase
     .from('pricelabs_clients')
-    .select('id')
+    .select('id, client_name, email, password_encrypted, connection_type')
     .or('client_name.ilike.%marcus%,client_name.ilike.%halawi%')
     .eq('active', true)
     .limit(1)
     .maybeSingle();
-  return data?.id ?? null;
+
+  if (!data || !data.password_encrypted) return null;
+
+  return {
+    id: data.id,
+    email: data.email,
+    password: decrypt(data.password_encrypted),
+  };
 }
 
 // ---- PriceLabs Login ----
@@ -56,7 +88,7 @@ async function login(email: string, password: string) {
   const context = await browser.newContext({ acceptDownloads: true });
   const page = await context.newPage();
 
-  console.log('Navigating to PriceLabs...');
+  console.log(`Navigating to PriceLabs as ${email}...`);
   await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: TIMEOUT });
 
   await page.waitForSelector(
@@ -74,7 +106,7 @@ async function login(email: string, password: string) {
   if (url.includes('/signin') || url.includes('/login')) {
     const errorText = await page.locator('[class*="error"], [class*="alert"], [role="alert"]').textContent().catch(() => '');
     await browser.close();
-    throw new Error(`Login failed: still on login page. ${errorText}`);
+    throw new Error(`Login failed for ${email}: ${errorText}`);
   }
 
   console.log('Login successful.');
@@ -85,7 +117,7 @@ async function login(email: string, password: string) {
 
 async function downloadReport(page: any, segment: string): Promise<Buffer> {
   const url = REPORT_URLS[segment];
-  console.log(`  Downloading ${segment} from ${url}...`);
+  console.log(`  Downloading ${segment}...`);
 
   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: TIMEOUT });
   await page.waitForLoadState('networkidle', { timeout: 30_000 }).catch(() => {});
@@ -102,11 +134,11 @@ async function downloadReport(page: any, segment: string): Promise<Buffer> {
   if (!filePath) throw new Error(`Download failed for ${segment}`);
 
   const buffer = readFileSync(filePath);
-  console.log(`  Downloaded ${segment}: ${buffer.length} bytes`);
+  console.log(`  ${segment}: ${buffer.length} bytes`);
   return buffer;
 }
 
-// ---- Parse & Store ----
+// ---- Parse ----
 
 function parseXlsx(buffer: Buffer, segment: string) {
   const wb = XLSX.read(buffer, { type: 'buffer', cellDates: false });
@@ -125,20 +157,20 @@ function parseXlsx(buffer: Buffer, segment: string) {
 // ---- Main ----
 
 async function main() {
-  const email = process.env.PRICELABS_EMAIL;
-  const password = process.env.PRICELABS_PASSWORD;
-
-  if (!email || !password) {
-    throw new Error('PRICELABS_EMAIL and PRICELABS_PASSWORD are required');
-  }
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required');
   }
+  if (!process.env.ENCRYPTION_KEY) {
+    throw new Error('ENCRYPTION_KEY is required to decrypt client credentials');
+  }
 
-  const clientId = await getClientId();
-  if (!clientId) throw new Error('Client not found in pricelabs_clients');
+  // Read credentials from Supabase
+  const client = await getMarcusClient();
+  if (!client) throw new Error('Marcus Halawi client not found or missing credentials');
 
-  const { browser, context, page } = await login(email, password);
+  console.log(`Client: ${client.email} (id: ${client.id})`);
+
+  const { browser, context, page } = await login(client.email, client.password);
   const supabase = getSupabase();
   const today = new Date().toISOString().split('T')[0];
   const results: { segment: string; rows: number; ok: boolean }[] = [];
@@ -152,7 +184,7 @@ async function main() {
         const { error } = await supabase
           .from('portfolio_reports')
           .upsert(
-            { client_id: clientId, report_date: today, segment, report_data: reportData },
+            { client_id: client.id, report_date: today, segment, report_data: reportData },
             { onConflict: 'client_id,report_date,segment' }
           );
 
@@ -177,9 +209,7 @@ async function main() {
   results.forEach(r => console.log(`  ${r.segment}: ${r.ok ? `${r.rows} rows` : 'FAILED'}`));
 
   const allOk = results.every(r => r.ok);
-  if (!allOk) {
-    process.exit(1);
-  }
+  if (!allOk) process.exit(1);
   console.log(`\nAll ${results.length} reports synced for ${today}.`);
 }
 
