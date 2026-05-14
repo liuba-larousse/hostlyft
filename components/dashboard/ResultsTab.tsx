@@ -163,6 +163,38 @@ export default function ResultsTab({ rows, states, portfolioReports }: ResultsTa
     });
   }, [rows]);
 
+  // Parse affected dates to get stay date range for booking filtering
+  // Handles formats like: "Jun 2026 · Week 23 · 2026 (Jun 1-7, 2026)"
+  //                        "May 2026 · Week 20 (May 11-17, 2026)"
+  //                        "Aug 2026"
+  //                        "All"
+  //                        "2026-05-10 → 2026-05-16"
+  const parseStayDates = (affectedDates: string, actionDate: Date | null) => {
+    if (!affectedDates) return { stayFrom: '', stayTo: '' };
+    // Try ISO date range: "2026-05-10 → 2026-05-16"
+    const isoMatch = affectedDates.match(/(\d{4}-\d{2}-\d{2})\s*[→\-–]\s*(\d{4}-\d{2}-\d{2})/);
+    if (isoMatch) return { stayFrom: isoMatch[1], stayTo: isoMatch[2] };
+    // Try "Mon D-D, YYYY" format from week ranges
+    const weekMatch = affectedDates.match(/(\w+ \d+)[–\-](\d+),?\s*(\d{4})/);
+    if (weekMatch) {
+      const start = new Date(`${weekMatch[1]}, ${weekMatch[3]}`);
+      const end = new Date(start);
+      end.setDate(parseInt(weekMatch[2]));
+      if (!isNaN(start.getTime())) return { stayFrom: toISO(start), stayTo: toISO(end) };
+    }
+    // Try month: "Jun 2026"
+    const monthMatch = affectedDates.match(/(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{4})/i);
+    if (monthMatch) {
+      const monthNames = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+      const m = monthNames.indexOf(monthMatch[1].toLowerCase());
+      const y = parseInt(monthMatch[2]);
+      const start = new Date(y, m, 1);
+      const end = new Date(y, m + 1, 0); // last day of month
+      return { stayFrom: toISO(start), stayTo: toISO(end) };
+    }
+    return { stayFrom: '', stayTo: '' };
+  };
+
   // Fetch bookings for a row
   const fetchBookings = useCallback(async (row: any) => {
     if (bookingsCache[row.id]) return;
@@ -171,7 +203,11 @@ export default function ResultsTab({ rows, states, portfolioReports }: ResultsTa
       const actionDate = parseMDY(row.date);
       const since = actionDate ? toISO(actionDate) : '';
       const group = row.affectedGroup || '';
-      const res = await fetch(`/api/action-log/bookings?group=${encodeURIComponent(group)}&since=${since}`);
+      const { stayFrom, stayTo } = parseStayDates(row.affectedDates, actionDate);
+      const params = new URLSearchParams({ group, since });
+      if (stayFrom) params.set('stayFrom', stayFrom);
+      if (stayTo) params.set('stayTo', stayTo);
+      const res = await fetch(`/api/action-log/bookings?${params.toString()}`);
       const data = await res.json();
       setBookingsCache(prev => ({ ...prev, [row.id]: data.bookings || [] }));
     } catch {
