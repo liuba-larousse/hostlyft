@@ -1,4 +1,4 @@
-name: Sync PriceLabs Reports
+name: "Sync PriceLabs Reports"
 
 on:
   schedule:
