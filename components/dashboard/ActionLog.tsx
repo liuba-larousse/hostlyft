@@ -3310,7 +3310,7 @@ function SimpleReportPanel({ levelLabel, levelHint, todayReport, priorReport, pr
   );
 }
 
-function PortfolioReportPanel({ portfolioData, onUpdate, isReadOnly, selectedISO, onInvestigate, buildingReport, dismissedFlags, setDismissedFlags, weeksReport }) {
+function PortfolioReportPanel({ portfolioData, onUpdate, isReadOnly, selectedISO, onInvestigate, buildingReport, dismissedFlags, setDismissedFlags }) {
   const [segment, setSegment] = useState('all');
   const [expandedMonth, setExpandedMonth] = useState(null); // monthIso or null
   const segData = portfolioData[segment] || {};
@@ -3730,9 +3730,9 @@ function PortfolioReportPanel({ portfolioData, onUpdate, isReadOnly, selectedISO
                               : { sameDirection: [], oppositeDirection: [] };
                             const sameBuildings = buildingContribs.sameDirection || [];
 
-                            // Weeks — only for All segment
+                            // Weeks — only for All segment; use fresh data from portfolioData
                             const weekContribs = segment === 'all'
-                              ? computeContributingWeeks(weeksReport, f, month.iso)
+                              ? computeContributingWeeks(portfolioData['weeks']?.todayReport || null, f, month.iso)
                               : [];
 
                             const hasAny = segContribs.length > 0 || sameBuildings.length > 0 || weekContribs.length > 0;
@@ -4167,7 +4167,7 @@ function PortfolioReportPanel({ portfolioData, onUpdate, isReadOnly, selectedISO
   );
 }
 
-function LevelEditor({ level, dayData, onUpdate, onSetStatus, isReadOnly, portfolioData, onUpdatePortfolio, selectedISO, onInvestigate, levelReport, onUpdateLevelReport, buildingReport, onParseNotes, dismissedFlags, setDismissedFlags, weeksReport }) {
+function LevelEditor({ level, dayData, onUpdate, onSetStatus, isReadOnly, portfolioData, onUpdatePortfolio, selectedISO, onInvestigate, levelReport, onUpdateLevelReport, buildingReport, onParseNotes, dismissedFlags, setDismissedFlags }) {
   const data = dayData?.[level.id] || { status: null, fields: {}, notes: '' };
 
   return (
@@ -4184,7 +4184,6 @@ function LevelEditor({ level, dayData, onUpdate, onSetStatus, isReadOnly, portfo
             buildingReport={buildingReport}
             dismissedFlags={dismissedFlags}
             setDismissedFlags={setDismissedFlags}
-            weeksReport={weeksReport}
           />
         </div>
       )}
@@ -4277,7 +4276,7 @@ function LevelEditor({ level, dayData, onUpdate, onSetStatus, isReadOnly, portfo
   );
 }
 
-function FunnelView({ funnel, setFunnel, portfolioReports, setPortfolioReports, rows, setRows, loaded, dismissedFlags, setDismissedFlags, weeksReport }) {
+function FunnelView({ funnel, setFunnel, portfolioReports, setPortfolioReports, rows, setRows, loaded, dismissedFlags, setDismissedFlags }) {
   const [selectedISO, setSelectedISO] = useState(todayISO());
   const [openLevelId, setOpenLevelId] = useState('portfolio');
   const [view, setView] = useState('today'); // 'today' | 'history'
@@ -4655,7 +4654,6 @@ function FunnelView({ funnel, setFunnel, portfolioReports, setPortfolioReports, 
                   onParseNotes={() => setParseModalOpen(true)}
                   dismissedFlags={dismissedFlags}
                   setDismissedFlags={setDismissedFlags}
-                  weeksReport={weeksReport}
                 />
               );
             })}
@@ -6276,9 +6274,9 @@ function WeeksTab({ weeksReport, onUpload, onClear, onSyncLoaded }) {
    Empty states are handled gracefully — Summary depends on having BOTH reports
    uploaded; if either is missing, an explanatory empty state shows.
 */
-function SummaryTab({ portfolioReports, weeksReport: weeksReportProp, selectedISO, setRows, setActiveTab, rows, dismissedFlags, setDismissedFlags }) {
-  // Fall back to weeks stored in portfolioReports if separate weeksReport isn't available
-  const weeksReport = weeksReportProp || (() => {
+function SummaryTab({ portfolioReports, selectedISO, setRows, setActiveTab, rows, dismissedFlags, setDismissedFlags }) {
+  // Derive weeks from portfolioReports (stored by date like other segments)
+  const weeksReport = (() => {
     const todayWeeks = portfolioReports[selectedISO]?.['weeks'];
     if (todayWeeks) return todayWeeks;
     const priorDate = findPriorReportDate(portfolioReports, selectedISO, 'weeks');
@@ -8571,7 +8569,7 @@ export default function ActionLog() {
   const [states, setStates] = useState({}); // { rowId: { before, after } }
   const [funnel, setFunnel] = useState({}); // { 'YYYY-MM-DD': { levelId: { status, fields, notes } } }
   const [portfolioReports, setPortfolioReports] = useState({}); // { 'YYYY-MM-DD': { all, ph, exclPh } }
-  const [weeksReport, setWeeksReport] = useState(null); // single Weeks Report (replaced on upload)
+  const [weeksReport, setWeeksReport] = useState(null); // legacy — weeks now stored in portfolioReports
   const [dismissedFlags, setDismissedFlags] = useState({ snoozed: {}, removed: {} });
   const [stateModal, setStateModal] = useState(null); // { rowId, side: 'before'|'after' }
   const [lightboxShot, setLightboxShot] = useState(null);
@@ -9537,7 +9535,6 @@ export default function ActionLog() {
           loaded={loaded}
           dismissedFlags={dismissedFlags}
           setDismissedFlags={setDismissedFlags}
-          weeksReport={weeksReport}
         />
       )}
 
@@ -9552,7 +9549,6 @@ export default function ActionLog() {
         return (
           <SummaryTab
             portfolioReports={portfolioReports}
-            weeksReport={weeksReport}
             selectedISO={effectiveISO}
             setRows={setRows}
             setActiveTab={setActiveTab}
