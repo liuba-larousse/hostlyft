@@ -393,8 +393,48 @@ export default function DailyReportTab({ portfolioReports, rows, states }: Daily
         </div>
       )}
 
-      {/* Recent Actions */}
-      {recentActions.length > 0 && (
+      {/* Recent Actions with KPI tracking */}
+      {recentActions.length > 0 && (() => {
+        // Helper to get revenue from portfolio report for a segment at a date
+        const getRevForAction = (r: any, dayOffset: number) => {
+          const [m, d, y] = (r.date || '').split('/').map(Number);
+          if (!m || !d || !y) return null;
+          const actionDate = new Date(y, m - 1, d);
+          const target = new Date(actionDate);
+          target.setDate(target.getDate() + dayOffset);
+          const targetISO = target.toISOString().split('T')[0];
+          // Don't show future data
+          if (dayOffset > 0 && target > new Date()) return null;
+
+          const g = (r.affectedGroup || '').trim().toLowerCase();
+          const seg = (!g || ['account','all','portfolio'].includes(g)) ? 'all'
+            : g === 'ph' ? 'ph'
+            : (g === 'excl ph' || g === 'exclph') ? 'exclPh'
+            : null;
+
+          const dateFound = findNearestDate(portfolioReports, targetISO, seg || 'all');
+          if (!dateFound) return null;
+          const report = portfolioReports[dateFound][seg || 'all'];
+          if (!report?.months) return null;
+
+          // Match affected month
+          const affDates = r.affectedDates || '';
+          const monthNames = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+          const mm = affDates.match(/(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{4})/i);
+          let months = report.months.filter((mo: any) => daysToEndOfMonth(mo.y, mo.m) > 0);
+          if (mm) {
+            const mi = monthNames.indexOf(mm[1].toLowerCase()) + 1;
+            const yi = parseInt(mm[2]);
+            const filtered = months.filter((mo: any) => mo.m === mi && mo.y === yi);
+            if (filtered.length > 0) months = filtered;
+          }
+
+          let totalRev = 0;
+          months.forEach((mo: any) => { totalRev += Number(mo.rentalRevenue || 0); });
+          return totalRev;
+        };
+
+        return (
         <div className="border border-stone-200 rounded-sm bg-white">
           <div className="px-4 py-2.5 border-b border-stone-200 bg-stone-50">
             <div className="text-[12px] font-semibold text-stone-800">Actions (Last 7 Days) — {recentActions.length}</div>
@@ -403,28 +443,50 @@ export default function DailyReportTab({ portfolioReports, rows, states }: Daily
             <table className="w-full text-[11px]">
               <thead>
                 <tr className="bg-stone-50 text-stone-500 border-b border-stone-200">
-                  <th className="text-left px-3 py-1.5 font-semibold">Date</th>
-                  <th className="text-left px-3 py-1.5 font-semibold">Group</th>
-                  <th className="text-left px-3 py-1.5 font-semibold">Dates</th>
-                  <th className="text-left px-3 py-1.5 font-semibold">Action</th>
-                  <th className="text-left px-3 py-1.5 font-semibold">Before → After</th>
+                  <th className="text-left px-2 py-1.5 font-semibold">Date</th>
+                  <th className="text-left px-2 py-1.5 font-semibold">Group</th>
+                  <th className="text-left px-2 py-1.5 font-semibold">Action</th>
+                  <th className="text-left px-2 py-1.5 font-semibold text-[9px]">Before → After</th>
+                  <th className="text-right px-2 py-1.5 font-semibold">Before Rev</th>
+                  <th className="text-right px-2 py-1.5 font-semibold text-emerald-700">+1d Rev</th>
+                  <th className="text-right px-2 py-1.5 font-semibold text-emerald-700">+3d Rev</th>
+                  <th className="text-right px-2 py-1.5 font-semibold text-emerald-700">+7d Rev</th>
                 </tr>
               </thead>
               <tbody>
-                {recentActions.map((r, i) => (
+                {recentActions.map((r, i) => {
+                  const beforeRev = getRevForAction(r, 0);
+                  const d1Rev = getRevForAction(r, 1);
+                  const d3Rev = getRevForAction(r, 3);
+                  const d7Rev = getRevForAction(r, 7);
+                  const pickup1 = beforeRev != null && d1Rev != null ? d1Rev - beforeRev : null;
+                  const pickup3 = beforeRev != null && d3Rev != null ? d3Rev - beforeRev : null;
+                  const pickup7 = beforeRev != null && d7Rev != null ? d7Rev - beforeRev : null;
+                  return (
                   <tr key={r.id} className={`border-b border-stone-100 ${i % 2 === 1 ? 'bg-stone-50/30' : ''}`}>
-                    <td className="px-3 py-1.5 mono text-stone-700">{r.date}</td>
-                    <td className="px-3 py-1.5 font-medium text-stone-800">{r.affectedGroup || '—'}</td>
-                    <td className="px-3 py-1.5 text-stone-600 text-[10px] truncate max-w-[120px]" title={r.affectedDates}>{r.affectedDates || '—'}</td>
-                    <td className="px-3 py-1.5 text-stone-700 truncate max-w-[200px]" title={r.action}>{r.action || '—'}</td>
-                    <td className="px-3 py-1.5 text-stone-500 text-[10px]">{r.valueBefore || '?'} → {r.valueAfter || '?'}</td>
+                    <td className="px-2 py-1.5 mono text-stone-700 whitespace-nowrap">{r.date}</td>
+                    <td className="px-2 py-1.5 font-medium text-stone-800">{r.affectedGroup || '—'}</td>
+                    <td className="px-2 py-1.5 text-stone-700 truncate max-w-[180px]" title={r.action}>{r.action || '—'}</td>
+                    <td className="px-2 py-1.5 text-stone-400 text-[9px]">{r.valueBefore || '?'} → {r.valueAfter || '?'}</td>
+                    <td className="px-2 py-1.5 text-right mono text-stone-700">{beforeRev != null ? fmtMoney(beforeRev) : '—'}</td>
+                    <td className={`px-2 py-1.5 text-right mono ${pickup1 != null && pickup1 > 0 ? 'text-emerald-700' : pickup1 != null && pickup1 < 0 ? 'text-rose-700' : 'text-stone-300'}`}>
+                      {pickup1 != null ? fmtSignedMoney(pickup1) : '—'}
+                    </td>
+                    <td className={`px-2 py-1.5 text-right mono ${pickup3 != null && pickup3 > 0 ? 'text-emerald-700' : pickup3 != null && pickup3 < 0 ? 'text-rose-700' : 'text-stone-300'}`}>
+                      {pickup3 != null ? fmtSignedMoney(pickup3) : '—'}
+                    </td>
+                    <td className={`px-2 py-1.5 text-right mono ${pickup7 != null && pickup7 > 0 ? 'text-emerald-700' : pickup7 != null && pickup7 < 0 ? 'text-rose-700' : 'text-stone-300'}`}>
+                      {pickup7 != null ? fmtSignedMoney(pickup7) : '—'}
+                    </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* Per-month breakdown */}
       {portfolioData['all']?.['Today']?.months && (
