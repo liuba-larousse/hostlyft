@@ -468,7 +468,7 @@ export default function ResultsTab({ rows, states, portfolioReports }: ResultsTa
                                   <th className="text-right px-2 py-1.5 font-semibold">ADR</th>
                                   <th className="text-right px-2 py-1.5 font-semibold">Revenue</th>
                                   <th className="text-left px-2 py-1.5 font-semibold">Source</th>
-                                  <th className="text-left px-2 py-1.5 font-semibold text-[9px]">Window</th>
+                                  <th className="text-left px-2 py-1.5 font-semibold text-[9px]">Booked After</th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -482,7 +482,21 @@ export default function ResultsTab({ rows, states, portfolioReports }: ResultsTa
                                     <td className="px-2 py-1.5 text-right mono text-stone-700">{b.adr != null ? fmtMoney(b.adr) : '—'}</td>
                                     <td className="px-2 py-1.5 text-right mono text-emerald-800 font-medium">{fmtMoney(b.rental_revenue || b.total_revenue)}</td>
                                     <td className="px-2 py-1.5 text-stone-600">{b.booking_source || '—'}</td>
-                                    <td className="px-2 py-1.5 text-[9px] text-stone-400">{b._round || ''}</td>
+                                    {(() => {
+                                      // Compute days between action date and booked date
+                                      const actionDate = parseMDY(row.date);
+                                      const bookedDate = b.booked_date ? new Date(b.booked_date + 'T00:00:00') : null;
+                                      if (!actionDate || !bookedDate) return <td className="px-2 py-1.5 text-[9px] text-stone-400">—</td>;
+                                      const diffMs = bookedDate.getTime() - actionDate.getTime();
+                                      const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+                                      const label = diffDays <= 1 ? '24h' : diffDays <= 3 ? '72h' : `${diffDays}d`;
+                                      const color = diffDays <= 1 ? 'text-emerald-700 bg-emerald-50' : diffDays <= 3 ? 'text-amber-700 bg-amber-50' : 'text-stone-500 bg-stone-50';
+                                      return (
+                                        <td className="px-2 py-1.5">
+                                          <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-sm ${color}`}>{label}</span>
+                                        </td>
+                                      );
+                                    })()}
                                   </tr>
                                 ))}
                               </tbody>
