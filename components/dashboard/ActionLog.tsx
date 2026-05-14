@@ -6857,18 +6857,41 @@ function SummaryTab({ portfolioReports, selectedISO, setRows, setActiveTab, rows
   const mixedTop = sliceFor(activeMixed, pageMixed);
 
   // Find last action logged for a specific building + week
-  const getLastAction = (building, weekLabel) => {
+  const getLastAction = (building, weekLabel, weekDateRange) => {
     if (!rows?.length) return null;
-    return rows.find(r =>
-      r.affectedGroup === building &&
-      r.affectedDates?.includes(weekLabel) &&
-      (r.action?.includes('Override') || r.action?.includes('changed') || r.action?.includes('Investigate'))
-    ) || null;
+    return rows.find(r => {
+      if (r.affectedGroup !== building) return false;
+      if (!(r.action?.includes('Override') || r.action?.includes('changed') || r.action?.includes('Investigate'))) return false;
+      // Match by week label in affectedDates
+      if (r.affectedDates?.includes(weekLabel)) return true;
+      // Match by date overlap: parse ISO range from affectedDates and check against week date range
+      if (weekDateRange && r.affectedDates) {
+        const isoMatch = r.affectedDates.match(/(\d{4}-\d{2}-\d{2})\s*[→\-–]\s*(\d{4}-\d{2}-\d{2})/);
+        if (isoMatch) {
+          // Parse week date range: "Jun 29-Jul 5, 2026" or "Jul 6-12, 2026"
+          const weekRangeMatch = weekDateRange.match(/(\w+ \d+)[–\-](?:\w+ )?(\d+),?\s*(\d{4})/);
+          if (weekRangeMatch) {
+            const wStart = new Date(`${weekRangeMatch[1]}, ${weekRangeMatch[3]}`);
+            const wEnd = new Date(wStart); wEnd.setDate(parseInt(weekRangeMatch[2]));
+            if (wEnd < wStart) wEnd.setMonth(wEnd.getMonth() + 1); // cross-month: "Jun 29-Jul 5"
+            const aStart = new Date(isoMatch[1]);
+            const aEnd = new Date(isoMatch[2]);
+            // Overlap check
+            if (!isNaN(wStart.getTime()) && !isNaN(aStart.getTime())) {
+              return aStart <= wEnd && aEnd >= wStart;
+            }
+          }
+        }
+        // Also match month reference
+        if (r.affectedDates.includes(building) || r.notes?.includes(weekLabel)) return true;
+      }
+      return false;
+    }) || null;
   };
 
   // Reusable row component
   const PairRow = ({ pair, isProblem, i, bucket, accent }) => {
-    const lastAction = getLastAction(pair.building, pair.weekLabel);
+    const lastAction = getLastAction(pair.building, pair.weekLabel, pair.weekDateRange);
     return (
     <tr key={`${pair.building}-${pair.weekIso}`} className={`border-b border-stone-100 ${i % 2 === 1 ? 'bg-stone-50/50' : 'bg-white'}`}>
       <td className="px-2 py-1.5 text-stone-500 mono text-[10px]">{i + 1}</td>
