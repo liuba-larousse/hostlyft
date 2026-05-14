@@ -3326,13 +3326,15 @@ function PortfolioReportPanel({ portfolioData, onUpdate, isReadOnly, selectedISO
     onUpdate(segment, kind, null);
   };
 
-  const priorIsYesterday = !!priorReport && isExactlyYesterday(selectedISO, priorDate);
-  const pickup1d = computeOneDayPickup(todayReport, priorReport, selectedISO, priorDate);
-  const havePriorForDiff = !!priorReport;
+  // Skip monthly computations for weeks segment (handled by WeeksTab)
+  const isWeeksSegment = segment === 'weeks';
+  const priorIsYesterday = !isWeeksSegment && !!priorReport && isExactlyYesterday(selectedISO, priorDate);
+  const pickup1d = isWeeksSegment ? {} : computeOneDayPickup(todayReport, priorReport, selectedISO, priorDate);
+  const havePriorForDiff = !isWeeksSegment && !!priorReport;
 
   // Display rows come from today's report (or prior if today not yet uploaded — read-only browse mode)
   const reportForDisplay = todayReport || priorReport;
-  const allMonths = reportForDisplay?.months || [];
+  const allMonths = isWeeksSegment ? [] : (reportForDisplay?.months || []);
   const isShowingPriorOnly = !todayReport && !!priorReport;
   // Past-month toggle: default OFF (hide past months). They have DBA = 0 and
   // can't be acted upon. Toggle on for reconciliation purposes.
