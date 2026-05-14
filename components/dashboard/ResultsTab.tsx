@@ -77,17 +77,29 @@ const extractBuildingKPIs = (report: any, buildingGroup: string, affectedDates: 
 };
 
 // Find the best report for a given date + segment
+// Falls back to nearest available date within 2 days
 const findReport = (portfolioReports: any, dateISO: string, segment: string | null, buildingGroup: string) => {
-  const dayData = portfolioReports[dateISO];
-  if (!dayData) return null;
-
-  if (segment) {
-    return dayData[segment] || null;
+  // Try exact date first, then +/- 1 day, then +/- 2 days
+  const datesToTry = [dateISO];
+  const base = new Date(dateISO + 'T00:00:00');
+  for (let offset = 1; offset <= 2; offset++) {
+    datesToTry.push(toISO(addDays(base, -offset)));
+    datesToTry.push(toISO(addDays(base, offset)));
   }
-  // Building — look in 'building' report's byBuilding
-  const buildingReport = dayData['building'];
-  if (buildingReport?.byBuilding?.[buildingGroup]) {
-    return buildingReport;
+
+  for (const d of datesToTry) {
+    const dayData = portfolioReports[d];
+    if (!dayData) continue;
+
+    if (segment) {
+      if (dayData[segment]) return dayData[segment];
+      continue;
+    }
+    // Building — look in 'building' report's byBuilding
+    const buildingReport = dayData['building'];
+    if (buildingReport?.byBuilding?.[buildingGroup]) {
+      return buildingReport;
+    }
   }
   return null;
 };
@@ -240,6 +252,7 @@ export default function ResultsTab({ rows, states, portfolioReports }: ResultsTa
             <tr className="bg-stone-100 border-b border-stone-200">
               <th className="text-left px-2 py-2 font-semibold text-stone-700 sticky left-0 bg-stone-100 z-10" rowSpan={2}>Date</th>
               <th className="text-left px-2 py-2 font-semibold text-stone-700" rowSpan={2}>Group</th>
+              <th className="text-left px-2 py-2 font-semibold text-stone-700" rowSpan={2}>Dates</th>
               <th className="text-left px-2 py-2 font-semibold text-stone-700 max-w-[180px]" rowSpan={2}>Action</th>
               <th className="text-center px-1 py-1 font-semibold text-stone-500 border-l border-stone-200" colSpan={4}>Before</th>
               <th className="text-center px-1 py-1 font-semibold text-emerald-700 border-l border-stone-200" colSpan={4}>+1 Day</th>
@@ -276,7 +289,13 @@ export default function ResultsTab({ rows, states, portfolioReports }: ResultsTa
                       {row.date}
                     </td>
                     <td className="px-2 py-2 text-stone-800 font-medium">{row.affectedGroup || '—'}</td>
-                    <td className="px-2 py-2 text-stone-700 max-w-[180px] truncate" title={row.action}>{row.action || '—'}</td>
+                    <td className="px-2 py-2 text-stone-600 text-[10px] max-w-[120px] truncate" title={row.affectedDates}>{row.affectedDates || '—'}</td>
+                    <td className="px-2 py-2 text-stone-700 max-w-[180px]" title={row.action}>
+                      <div className="truncate">{row.action || '—'}</div>
+                      {(row.valueBefore || row.valueAfter) && (
+                        <div className="text-[9px] text-stone-400 truncate">{row.valueBefore || '?'} → {row.valueAfter || '?'}</div>
+                      )}
+                    </td>
 
                     <KPICell kpis={beforeKPIs} />
                     <KPICell kpis={day1KPIs} baseline={beforeKPIs} />
@@ -308,7 +327,7 @@ export default function ResultsTab({ rows, states, portfolioReports }: ResultsTa
                   {/* Expanded bookings row */}
                   {isExpanded && (
                     <tr>
-                      <td colSpan={19} className="px-0 py-0 bg-stone-50 border-b border-stone-200">
+                      <td colSpan={20} className="px-0 py-0 bg-stone-50 border-b border-stone-200">
                         {isLoading ? (
                           <div className="px-6 py-4 text-[11px] text-stone-400 flex items-center gap-2">
                             <Loader2 className="w-3 h-3 animate-spin" /> Loading bookings...
