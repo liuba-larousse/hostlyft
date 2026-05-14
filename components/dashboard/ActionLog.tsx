@@ -8614,6 +8614,107 @@ export default function ActionLog() {
       setWeeksReport(storedWeeks);
       setDismissedFlags(storedDismissed);
       setLoaded(true);
+
+      // Auto-merge cron-synced reports from portfolio_reports table
+      // into the Action Log's portfolioReports state. This bridges the
+      // gap between the cron (saves to portfolio_reports table) and the
+      // Action Log (reads from action_log_state.portfolio_reports).
+      try {
+        const prRes = await fetch('/api/pricelabs/portfolio-report');
+        const prData = await prRes.json();
+        const cronReports = prData.reports || [];
+        if (cronReports.length > 0) {
+          // Group by date → segment → rawRows
+          const byDate = {};
+          cronReports.forEach(r => {
+            if (!r.report_date || !r.segment || !r.report_data?.rawRows) return;
+            if (!byDate[r.report_date]) byDate[r.report_date] = {};
+            byDate[r.report_date][r.segment] = r.report_data;
+          });
+          // Parse each report and merge into portfolioReports if not already present
+          setPortfolioReports(prev => {
+            const next = { ...prev };
+            let changed = false;
+            Object.entries(byDate).forEach(([date, segments]) => {
+              Object.entries(segments).forEach(([seg, reportData]) => {
+                // Skip if already have this date+segment
+                if (next[date]?.[seg]) return;
+                // Parse rawRows into the Action Log format
+                try {
+                  const wb = XLSX.utils.book_new();
+                  const ws = XLSX.utils.json_to_sheet(reportData.rawRows);
+                  XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
+                  const arrayBuffer = XLSX.write(wb, { type: 'array' });
+                  // Derive PH/ExclPH from building report
+                  let rows = reportData.rawRows;
+                  if (seg === 'ph' || seg === 'exclPh') {
+                    const groupCol = Object.keys(rows[0] || {}).find(k =>
+                      /group\s*name/i.test(k) || /^group$/i.test(k)
+                    );
+                    if (groupCol) {
+                      rows = seg === 'ph'
+                        ? rows.filter(r => buildingToSegment(String(r[groupCol] || '')) === 'ph')
+                        : rows.filter(r => buildingToSegment(String(r[groupCol] || '')) === 'exclPh');
+                      const wb2 = XLSX.utils.book_new();
+                      XLSX.utils.book_append_sheet(wb2, XLSX.utils.json_to_sheet(rows), 'Sheet1');
+                      const buf2 = XLSX.write(wb2, { type: 'array' });
+                      const parsed = parseReportFile(buf2, reportData.fileName || `report-${seg}.xlsx`);
+                      if (!next[date]) next[date] = {};
+                      next[date][seg] = parsed;
+                      changed = true;
+                      return;
+                    }
+                  }
+                  if (seg === 'weeks') {
+                    const parsed = parseWeeksReportFile(arrayBuffer, reportData.fileName || 'weeks-report.xlsx');
+                    // Weeks report goes to a different state — skip here
+                    return;
+                  }
+                  const parsed = parseReportFile(arrayBuffer, reportData.fileName || `report-${seg}.xlsx`);
+                  if (!next[date]) next[date] = {};
+                  next[date][seg] = parsed;
+                  changed = true;
+                } catch (e) {
+                  console.warn(`Failed to parse cron report ${date}/${seg}:`, e);
+                }
+              });
+
+              // Auto-derive PH and ExclPH from building report if building exists
+              if (next[date]?.['building'] && !next[date]?.['ph']) {
+                try {
+                  const buildingData = byDate[date]?.['building'];
+                  if (buildingData?.rawRows) {
+                    const groupCol = Object.keys(buildingData.rawRows[0] || {}).find(k =>
+                      /group\s*name/i.test(k) || /^group$/i.test(k)
+                    );
+                    if (groupCol) {
+                      ['ph', 'exclPh'].forEach(derivedSeg => {
+                        if (next[date]?.[derivedSeg]) return;
+                        const filtered = buildingData.rawRows.filter(r =>
+                          buildingToSegment(String(r[groupCol] || '')) === derivedSeg
+                        );
+                        if (filtered.length === 0) return;
+                        const wb3 = XLSX.utils.book_new();
+                        XLSX.utils.book_append_sheet(wb3, XLSX.utils.json_to_sheet(filtered), 'Sheet1');
+                        const buf3 = XLSX.write(wb3, { type: 'array' });
+                        const parsed = parseReportFile(buf3, `report-${derivedSeg}.xlsx`);
+                        if (!next[date]) next[date] = {};
+                        next[date][derivedSeg] = parsed;
+                        changed = true;
+                      });
+                    }
+                  }
+                } catch (e) {
+                  console.warn(`Failed to derive PH/ExclPH from building report ${date}:`, e);
+                }
+              }
+            });
+            return changed ? next : prev;
+          });
+        }
+      } catch (e) {
+        console.warn('Failed to auto-merge cron reports:', e);
+      }
     })();
   }, []);
 
