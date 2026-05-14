@@ -312,70 +312,49 @@ export default function DailyReportTab({ portfolioReports, rows, states }: Daily
                   <div className="text-[11px] text-stone-400 italic">No report available</div>
                 ) : (
                   <div className="space-y-3">
-                    {/* Revenue */}
-                    <div>
-                      <div className="text-[9px] uppercase tracking-wider text-stone-400 mb-0.5">Revenue On Books</div>
-                      <div className="text-xl font-semibold text-stone-900 mono">{fmtMoney(t.revenue)}</div>
-                      <div className="flex gap-3 mt-1 text-[10px]">
+                    {/* Year total — small */}
+                    <div className="flex items-baseline justify-between">
+                      <div>
+                        <div className="text-[9px] uppercase tracking-wider text-stone-400">Year Total</div>
+                        <div className="text-[14px] font-semibold text-stone-700 mono">{fmtMoney(t.revenue)}</div>
+                      </div>
+                      <div className="flex gap-2 text-[9px] text-stone-400">
                         {y && <span>vs -1d: <Delta current={t.revenue} prior={y.revenue} fmt="money" /></span>}
                         {d3 && <span>-3d: <Delta current={t.revenue} prior={d3.revenue} fmt="money" /></span>}
                         {d7 && <span>-7d: <Delta current={t.revenue} prior={d7.revenue} fmt="money" /></span>}
                       </div>
                     </div>
 
-                    {/* KPI grid */}
-                    <div className="grid grid-cols-3 gap-2">
-                      {[
-                        { label: 'ADR', val: t.adr, fmt: fmtMoney, prev: [y?.adr, d3?.adr, d7?.adr] },
-                        { label: 'Occ', val: t.occ, fmt: fmtPct, prev: [y?.occ, d3?.occ, d7?.occ] },
-                        { label: 'RevPAR', val: t.revpar, fmt: fmtMoney, prev: [y?.revpar, d3?.revpar, d7?.revpar] },
-                      ].map(kpi => (
-                        <div key={kpi.label} className="bg-stone-50 rounded-sm px-2 py-1.5">
-                          <div className="text-[9px] uppercase text-stone-400">{kpi.label}</div>
-                          <div className="text-[13px] font-semibold mono text-stone-900">{kpi.fmt(kpi.val)}</div>
-                          {y && <div className="text-[9px]"><Delta current={kpi.val} prior={kpi.prev[0]} fmt="pct" /></div>}
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Pickup */}
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="bg-stone-50 rounded-sm px-2 py-1.5">
-                        <div className="text-[9px] uppercase text-stone-400">3d Pickup</div>
-                        <div className="text-[13px] font-semibold mono text-emerald-800">{fmtMoney(t.pickup3d)}</div>
-                      </div>
-                      <div className="bg-stone-50 rounded-sm px-2 py-1.5">
-                        <div className="text-[9px] uppercase text-stone-400">7d Pickup</div>
-                        <div className="text-[13px] font-semibold mono text-emerald-800">{fmtMoney(t.pickup7d)}</div>
-                      </div>
-                    </div>
-
-                    {/* Next 3 months breakdown */}
+                    {/* Per-month breakdown — large numbers for next 3 months */}
                     {t.months && t.months.length > 0 && (
-                      <div>
-                        <div className="text-[9px] uppercase tracking-wider text-stone-400 mb-1">Next 3 Months</div>
-                        <table className="w-full text-[10px]">
-                          <thead>
-                            <tr className="text-stone-400">
-                              <th className="text-left py-0.5 font-medium">Month</th>
-                              <th className="text-right py-0.5 font-medium">Revenue</th>
-                              <th className="text-right py-0.5 font-medium">ADR</th>
-                              <th className="text-right py-0.5 font-medium">Occ</th>
-                              <th className="text-right py-0.5 font-medium">BN</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {t.months.slice(0, 3).map((m: any) => (
-                              <tr key={m.iso} className="border-t border-stone-100">
-                                <td className="py-1 text-stone-700 font-medium">{m.label?.split(' ')[0] || m.iso}</td>
-                                <td className="py-1 text-right mono text-stone-800">{fmtMoney(m.rentalRevenue)}</td>
-                                <td className="py-1 text-right mono text-stone-700">{fmtMoney(m.rentalADR)}</td>
-                                <td className="py-1 text-right mono text-stone-700">{fmtPct(m.occupancy)}</td>
-                                <td className="py-1 text-right mono text-stone-500">{m.bookableNights || '—'}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                      <div className="space-y-2">
+                        {t.months.slice(0, 3).map((m: any, mi: number) => (
+                          <div key={m.iso} className={`rounded-sm p-2.5 ${mi === 0 ? 'bg-emerald-50 border border-emerald-200' : 'bg-stone-50'}`}>
+                            <div className="flex items-baseline justify-between mb-1.5">
+                              <span className={`text-[11px] font-semibold ${mi === 0 ? 'text-emerald-900' : 'text-stone-800'}`}>{m.label || m.iso}</span>
+                              <span className="text-[15px] font-bold mono text-stone-900">{fmtMoney(m.rentalRevenue)}</span>
+                            </div>
+                            <div className="grid grid-cols-4 gap-1.5">
+                              <div>
+                                <div className="text-[8px] uppercase text-stone-400">ADR</div>
+                                <div className="text-[13px] font-semibold mono text-stone-900">{fmtMoney(m.rentalADR)}</div>
+                              </div>
+                              <div>
+                                <div className="text-[8px] uppercase text-stone-400">Occ</div>
+                                <div className="text-[13px] font-semibold mono text-stone-900">{fmtPct(m.occupancy)}</div>
+                              </div>
+                              <div>
+                                <div className="text-[8px] uppercase text-stone-400">RevPAR</div>
+                                <div className="text-[13px] font-semibold mono text-stone-900">{fmtMoney(m.rentalRevPAR)}</div>
+                              </div>
+                              <div>
+                                <div className="text-[8px] uppercase text-stone-400">3d / 7d</div>
+                                <div className="text-[11px] mono text-emerald-700">{fmtMoney(m.pickup3d)}</div>
+                                <div className="text-[10px] mono text-emerald-600">{fmtMoney(m.pickup7d)}</div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>
