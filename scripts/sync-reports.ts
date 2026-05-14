@@ -250,25 +250,36 @@ async function testDownloadReport(page: Page, segment: string, reportUrl?: strin
   await page.waitForLoadState('networkidle', { timeout: 30_000 }).catch(() => {});
   await page.waitForTimeout(3000);
 
-  // Check if report page loaded
+  // Dismiss Pendo Resource Center popup if present (covers the download button)
+  try {
+    const pendoClose = page.locator('#pendo-resource-center-container button[aria-label="Close"], #pendo-close-guide-*');
+    if (await pendoClose.isVisible({ timeout: 2000 }).catch(() => false)) {
+      await pendoClose.click();
+      await page.waitForTimeout(500);
+      console.log('  Dismissed Pendo popup');
+    }
+  } catch {}
+  // Also try removing the overlay via JS
+  await page.evaluate(() => {
+    const el = document.getElementById('pendo-resource-center-container');
+    if (el) el.remove();
+    // Remove any other Pendo overlays
+    document.querySelectorAll('[id^="pendo-"]').forEach(e => {
+      if (e.getAttribute('role') === 'dialog' || e.classList.contains('_pendo-step-container')) {
+        e.remove();
+      }
+    });
+  }).catch(() => {});
+
   const pageTitle = await page.title();
   const pageUrl = page.url();
   console.log(`  Page: "${pageTitle}" at ${pageUrl}`);
 
   const downloadBtn = page.locator('#rb-template-top-panel-download-report-btn');
-  const btnVisible = await downloadBtn.isVisible().catch(() => false);
-  if (!btnVisible) {
-    // Try to find any download button as fallback
-    const altBtn = page.locator('button:has-text("Download"), button:has-text("Export")');
-    const altVisible = await altBtn.isVisible().catch(() => false);
-    if (!altVisible) {
-      throw new Error(`Download button not found on ${url}. Page may not have loaded correctly.`);
-    }
-  }
-
   await downloadBtn.waitFor({ state: 'visible', timeout: 15_000 });
+
   const downloadPromise = page.waitForEvent('download', { timeout: TIMEOUT });
-  await downloadBtn.click();
+  await downloadBtn.click({ force: true }); // force bypasses any remaining overlays
   const download = await downloadPromise;
 
   const filePath = await download.path();
@@ -382,6 +393,10 @@ async function main() {
 
   // ---- Direct clients ----
   for (const client of directClients) {
+    if (!client.report_urls || Object.keys(client.report_urls).length === 0) {
+      console.log(`\nSkipping ${client.client_name} — no report URLs`);
+      continue;
+    }
     console.log(`\n══════ ${client.client_name} (direct) ══════`);
     const browser = await runStep(`Launch browser: ${client.client_name}`, testBrowserLaunch);
     try {
