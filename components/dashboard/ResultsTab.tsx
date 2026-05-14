@@ -151,7 +151,7 @@ interface ResultsTabProps {
 export default function ResultsTab({ rows, states, portfolioReports }: ResultsTabProps) {
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [bookingsCache, setBookingsCache] = useState<Record<string, any[]>>({});
-  const [loadingBookings, setLoadingBookings] = useState<Record<string, boolean>>({});
+  const [loadingBookings, setLoadingBookings] = useState(false);
 
   // Sort rows by date descending
   const sortedRows = useMemo(() => {
@@ -195,35 +195,49 @@ export default function ResultsTab({ rows, states, portfolioReports }: ResultsTa
     return { stayFrom: '', stayTo: '' };
   };
 
-  // Fetch bookings for a row
-  const fetchBookings = useCallback(async (row: any) => {
-    if (bookingsCache[row.id]) return;
-    setLoadingBookings(prev => ({ ...prev, [row.id]: true }));
-    try {
+  // Preload bookings for all rows on mount
+  // Deduplicate: rows with same group + dates share the same booking set
+  React.useEffect(() => {
+    if (rows.length === 0 || Object.keys(bookingsCache).length > 0) return;
+    setLoadingBookings(true);
+
+    // Build unique fetch keys to avoid duplicate API calls
+    const fetchMap: Record<string, { rows: any[]; params: URLSearchParams }> = {};
+    rows.forEach(row => {
       const actionDate = parseMDY(row.date);
       const since = actionDate ? toISO(actionDate) : '';
       const group = row.affectedGroup || '';
       const { stayFrom, stayTo } = parseStayDates(row.affectedDates, actionDate);
-      const params = new URLSearchParams({ group, since });
-      if (stayFrom) params.set('stayFrom', stayFrom);
-      if (stayTo) params.set('stayTo', stayTo);
-      const res = await fetch(`/api/action-log/bookings?${params.toString()}`);
-      const data = await res.json();
-      setBookingsCache(prev => ({ ...prev, [row.id]: data.bookings || [] }));
-    } catch {
-      setBookingsCache(prev => ({ ...prev, [row.id]: [] }));
-    }
-    setLoadingBookings(prev => ({ ...prev, [row.id]: false }));
-  }, [bookingsCache]);
+      const key = `${group}|${since}|${stayFrom}|${stayTo}`;
+      if (!fetchMap[key]) {
+        const params = new URLSearchParams({ group, since });
+        if (stayFrom) params.set('stayFrom', stayFrom);
+        if (stayTo) params.set('stayTo', stayTo);
+        fetchMap[key] = { rows: [], params };
+      }
+      fetchMap[key].rows.push(row);
+    });
+
+    (async () => {
+      const cache: Record<string, any[]> = {};
+      for (const [, { rows: matchingRows, params }] of Object.entries(fetchMap)) {
+        try {
+          const res = await fetch(`/api/action-log/bookings?${params.toString()}`);
+          const data = await res.json();
+          const bookings = data.bookings || [];
+          matchingRows.forEach(row => { cache[row.id] = bookings; });
+        } catch {
+          matchingRows.forEach(row => { cache[row.id] = []; });
+        }
+      }
+      setBookingsCache(cache);
+      setLoadingBookings(false);
+    })();
+  }, [rows]);
 
   const toggleRow = useCallback((row: any) => {
-    if (expandedRow === row.id) {
-      setExpandedRow(null);
-    } else {
-      setExpandedRow(row.id);
-      fetchBookings(row);
-    }
-  }, [expandedRow, fetchBookings]);
+    setExpandedRow(prev => prev === row.id ? null : row.id);
+  }, []);
 
   // Compute KPIs for a row at a given day offset
   // For follow-up offsets (> 0), only return data if the target date has actually passed
@@ -315,7 +329,7 @@ export default function ResultsTab({ rows, states, portfolioReports }: ResultsTa
               const day7KPIs = getKPIs(row, 7);
               const isExpanded = expandedRow === row.id;
               const bookings = bookingsCache[row.id] || [];
-              const isLoading = loadingBookings[row.id];
+              const isRowLoading = loadingBookings;
               const bookingRevenue = bookings.reduce((s, b) => s + (Number(b.rental_revenue) || Number(b.total_revenue) || 0), 0);
 
               return (
@@ -343,19 +357,15 @@ export default function ResultsTab({ rows, states, portfolioReports }: ResultsTa
                         onClick={() => toggleRow(row)}
                         className="flex items-center gap-1 text-[10px] text-stone-600 hover:text-stone-900 transition-colors"
                       >
-                        {isLoading ? (
+                        {isRowLoading ? (
                           <Loader2 className="w-3 h-3 animate-spin" />
                         ) : (
                           <ChevronDown className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
                         )}
-                        {bookingsCache[row.id] ? (
-                          <span>
-                            <span className="font-medium">{bookings.length}</span>
-                            {bookingRevenue > 0 && <span className="text-emerald-700 ml-1">{fmtMoney(bookingRevenue)}</span>}
-                          </span>
-                        ) : (
-                          <span>View</span>
-                        )}
+                        <span>
+                          <span className="font-medium">{bookings.length}</span>
+                          {bookingRevenue > 0 && <span className="text-emerald-700 ml-1">{fmtMoney(bookingRevenue)}</span>}
+                        </span>
                       </button>
                     </td>
                   </tr>
@@ -366,7 +376,7 @@ export default function ResultsTab({ rows, states, portfolioReports }: ResultsTa
                       <td colSpan={20} className="px-0 py-0 bg-stone-50 border-b border-stone-200">
                         {isLoading ? (
                           <div className="px-6 py-4 text-[11px] text-stone-400 flex items-center gap-2">
-                            <Loader2 className="w-3 h-3 animate-spin" /> Loading bookings...
+                            <Loader2 className="w-3 h-3 animate-spin" /> Loading...
                           </div>
                         ) : bookings.length === 0 ? (
                           <div className="px-6 py-4 text-[11px] text-stone-400 italic">
