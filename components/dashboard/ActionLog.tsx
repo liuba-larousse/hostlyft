@@ -1207,6 +1207,7 @@ const PORTFOLIO_SEGMENTS = [
 const PORTFOLIO_DRILLDOWNS = [
   { id: 'building', label: 'Building', subtitle: 'Per-building breakdown', hint: 'Filter PriceLabs to a specific building (or use Group filter), then export and drop here.' },
   { id: 'listing',  label: 'Listing',  subtitle: 'Per-listing breakdown', hint: 'Filter PriceLabs to specific listings, then export and drop here.' },
+  { id: 'weeks',    label: 'Weeks',    subtitle: 'Weekly competitive indices & pickup', hint: 'Upload the PriceLabs Overview by Weeks export.' },
 ];
 
 /* ---------- Auto-flag rules (vs. Same Time Last Year) ---------- */
@@ -3516,6 +3517,22 @@ function PortfolioReportPanel({ portfolioData, onUpdate, isReadOnly, selectedISO
             dismissedFlags={dismissedFlags}
             setDismissedFlags={setDismissedFlags}
             listingReport={segment === 'building' ? (portfolioData['listing']?.todayReport || null) : null}
+          />
+        );
+      })()}
+
+      {/* Weeks drilldown — rendered as WeeksTab inside the funnel */}
+      {segment === 'weeks' && (() => {
+        // Build weeksReport with _prior from portfolioData
+        const weeksToday = portfolioData['weeks']?.todayReport || null;
+        const weeksPrior = portfolioData['weeks']?.priorReport || null;
+        const weeksWithPrior = weeksToday ? { ...weeksToday, _prior: weeksPrior } : null;
+        return (
+          <WeeksTab
+            weeksReport={weeksWithPrior}
+            onUpload={(parsed) => handleUpload('todayReport', parsed)}
+            onClear={() => handleClear('todayReport')}
+            onSyncLoaded={(parsed) => handleUpload('todayReport', parsed)}
           />
         );
       })()}
@@ -6295,7 +6312,14 @@ function WeeksTab({ weeksReport, onUpload, onClear, onSyncLoaded }) {
    Empty states are handled gracefully — Summary depends on having BOTH reports
    uploaded; if either is missing, an explanatory empty state shows.
 */
-function SummaryTab({ portfolioReports, weeksReport, selectedISO, setRows, setActiveTab, rows, dismissedFlags, setDismissedFlags }) {
+function SummaryTab({ portfolioReports, weeksReport: weeksReportProp, selectedISO, setRows, setActiveTab, rows, dismissedFlags, setDismissedFlags }) {
+  // Fall back to weeks stored in portfolioReports if separate weeksReport isn't available
+  const weeksReport = weeksReportProp || (() => {
+    const todayWeeks = portfolioReports[selectedISO]?.['weeks'];
+    if (todayWeeks) return todayWeeks;
+    const priorDate = findPriorReportDate(portfolioReports, selectedISO, 'weeks');
+    return priorDate ? portfolioReports[priorDate]['weeks'] : null;
+  })();
   // perPage: how many rows to show per bucket page (was 'topN' before pagination).
   // page: per-bucket current page index (1-based). Each bucket paginates independently
   // because the buckets have very different sizes — capping all three at the same
@@ -8687,7 +8711,9 @@ export default function ActionLog() {
                   }
                   if (seg === 'weeks') {
                     const parsed = parseWeeksReportFile(arrayBuffer, reportData.fileName || 'weeks-report.xlsx');
-                    // Weeks report goes to a different state — skip here
+                    if (!next[date]) next[date] = {};
+                    next[date][seg] = parsed;
+                    changed = true;
                     return;
                   }
                   const parsed = parseReportFile(arrayBuffer, reportData.fileName || `report-${seg}.xlsx`);
@@ -9562,25 +9588,11 @@ export default function ActionLog() {
         />
       )}
 
-      {/* TAB: WEEKS REPORT — standalone weekly view */}
-      {activeTab === 'weeks' && (
-        <WeeksTab
-          weeksReport={weeksReport}
-          onUpload={(parsed) => setWeeksReport(prev => {
-            // Preserve the prior report for 1-day pickup diff.
-            // Only keep _prior from a different day to avoid self-reference.
-            const priorUploadDate = prev?.uploadedAt?.slice(0, 10);
-            const newUploadDate = parsed?.uploadedAt?.slice(0, 10);
-            if (prev && priorUploadDate !== newUploadDate) {
-              // Strip _prior from the old report to avoid recursive nesting
-              const { _prior: _, ...cleanPrev } = prev;
-              return { ...parsed, _prior: cleanPrev };
-            }
-            // Same day re-upload — keep existing _prior
-            return { ...parsed, _prior: prev?._prior || null };
-          })}
-          onClear={() => setWeeksReport(null)}
-          onSyncLoaded={(parsed) => setWeeksReport(prev => {
+      {/* TAB: WEEKS REPORT — standalone weekly view, also saves to portfolioReports */}
+      {activeTab === 'weeks' && (() => {
+        const saveWeeksToPortfolio = (parsed) => {
+          // Save to weeksReport state (legacy)
+          setWeeksReport(prev => {
             const priorUploadDate = prev?.uploadedAt?.slice(0, 10);
             const newUploadDate = parsed?.uploadedAt?.slice(0, 10);
             if (prev && priorUploadDate !== newUploadDate) {
@@ -9588,9 +9600,39 @@ export default function ActionLog() {
               return { ...parsed, _prior: cleanPrev };
             }
             return { ...parsed, _prior: prev?._prior || null };
-          })}
-        />
-      )}
+          });
+          // Also save to portfolioReports under today's date
+          setPortfolioReports(prev => {
+            const today = todayISO();
+            return { ...prev, [today]: { ...(prev[today] || {}), weeks: parsed } };
+          });
+        };
+        // Derive weeksReport from portfolioReports if standalone state is empty
+        const effectiveWeeks = weeksReport || (() => {
+          const today = todayISO();
+          const todayWeeks = portfolioReports[today]?.['weeks'];
+          if (todayWeeks) return todayWeeks;
+          const priorDate = findPriorReportDate(portfolioReports, today, 'weeks');
+          if (priorDate) {
+            const prior = portfolioReports[priorDate]['weeks'];
+            // Attach _prior for 1-day pickup
+            const secondPrior = (() => {
+              const sp = findPriorReportDate(portfolioReports, priorDate, 'weeks');
+              return sp ? portfolioReports[sp]['weeks'] : null;
+            })();
+            return prior ? { ...prior, _prior: secondPrior } : null;
+          }
+          return null;
+        })();
+        return (
+          <WeeksTab
+            weeksReport={effectiveWeeks}
+            onUpload={saveWeeksToPortfolio}
+            onClear={() => { setWeeksReport(null); }}
+            onSyncLoaded={saveWeeksToPortfolio}
+          />
+        );
+      })()}
 
       {/* TAB: SUMMARY — cross-references Building report with Weeks report
           to surface compounding signals (problems and opportunities) ranked
