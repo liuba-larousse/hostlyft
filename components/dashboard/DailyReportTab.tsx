@@ -174,14 +174,46 @@ export default function DailyReportTab({ portfolioReports, rows, states }: Daily
   React.useEffect(() => {
     if (recentActions.length === 0) return;
     const fetchMap: Record<string, { rows: any[]; params: URLSearchParams }> = {};
+    // Parse affected dates to get stay range for each action
+    const parseStay = (affDates: string) => {
+      // ISO: "2026-08-06 → 2026-08-09"
+      const isoMatch = affDates?.match(/(\d{4}-\d{2}-\d{2})\s*[→\-–]\s*(\d{4}-\d{2}-\d{2})/);
+      if (isoMatch) return { stayFrom: isoMatch[1], stayTo: isoMatch[2] };
+      // Week N
+      const weekMatch = affDates?.match(/Week\s*(\d+)/i);
+      if (weekMatch) {
+        const yearMatch = affDates.match(/(\d{4})/);
+        const year = yearMatch ? parseInt(yearMatch[1]) : new Date().getFullYear();
+        const wn = parseInt(weekMatch[1]);
+        const jan4 = new Date(year, 0, 4);
+        const dow = jan4.getDay() || 7;
+        const ws = new Date(jan4); ws.setDate(jan4.getDate() - dow + 1 + (wn - 1) * 7);
+        const we = new Date(ws); we.setDate(ws.getDate() + 6);
+        return { stayFrom: ws.toISOString().split('T')[0], stayTo: we.toISOString().split('T')[0] };
+      }
+      // Month: "Aug 2026"
+      const monthNames = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+      const mm = affDates?.match(/(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{4})/i);
+      if (mm) {
+        const mi = monthNames.indexOf(mm[1].toLowerCase());
+        const yi = parseInt(mm[2]);
+        return { stayFrom: `${yi}-${String(mi + 1).padStart(2, '0')}-01`, stayTo: `${yi}-${String(mi + 1).padStart(2, '0')}-${new Date(yi, mi + 1, 0).getDate()}` };
+      }
+      return { stayFrom: '', stayTo: '' };
+    };
+
     recentActions.forEach(row => {
       const [m, d, y] = (row.date || '').split('/').map(Number);
       if (!m || !d || !y) return;
       const since = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
       const group = row.affectedGroup || '';
-      const key = `${group}|${since}`;
+      const { stayFrom, stayTo } = parseStay(row.affectedDates);
+      const key = `${group}|${since}|${stayFrom}|${stayTo}`;
       if (!fetchMap[key]) {
-        fetchMap[key] = { rows: [], params: new URLSearchParams({ group, since }) };
+        const params = new URLSearchParams({ group, since });
+        if (stayFrom) params.set('stayFrom', stayFrom);
+        if (stayTo) params.set('stayTo', stayTo);
+        fetchMap[key] = { rows: [], params };
       }
       fetchMap[key].rows.push(row);
     });
@@ -473,14 +505,24 @@ export default function DailyReportTab({ portfolioReports, rows, states }: Daily
           const report = portfolioReports[dateFound][seg || 'all'];
           if (!report?.months) return null;
 
-          // Match affected month
+          // Match affected month — try month name first, then ISO date
           const monthNames = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+          let matchedMonth = -1, matchedYear = -1;
           const mm = affDates.match(/(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{4})/i);
-          let months = report.months.filter((mo: any) => daysToEndOfMonth(mo.y, mo.m) > 0);
           if (mm) {
-            const mi = monthNames.indexOf(mm[1].toLowerCase()) + 1;
-            const yi = parseInt(mm[2]);
-            const filtered = months.filter((mo: any) => mo.m === mi && mo.y === yi);
+            matchedMonth = monthNames.indexOf(mm[1].toLowerCase()) + 1;
+            matchedYear = parseInt(mm[2]);
+          } else {
+            // Try ISO date: "2026-08-06 → 2026-08-09"
+            const isoMatch = affDates.match(/(\d{4})-(\d{2})-\d{2}/);
+            if (isoMatch) {
+              matchedYear = parseInt(isoMatch[1]);
+              matchedMonth = parseInt(isoMatch[2]);
+            }
+          }
+          let months = report.months.filter((mo: any) => daysToEndOfMonth(mo.y, mo.m) > 0);
+          if (matchedMonth > 0 && matchedYear > 0) {
+            const filtered = months.filter((mo: any) => mo.m === matchedMonth && mo.y === matchedYear);
             if (filtered.length > 0) months = filtered;
           }
 
