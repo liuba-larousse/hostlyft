@@ -7683,23 +7683,23 @@ function OverrideModal({ pair, bucket, onClose, onRecordAction }) {
 
       if (failCount > 0 && successCount === 0) {
         setError(`Failed to apply overrides to all ${failCount} listings: ${lastError}`);
-      } else {
-        setSubmitted(true);
-        const desc = [];
-        if (price) desc.push(`${priceType === 'fixed' ? '$' : ''}${price}${priceType === 'percent' ? '%' : ''}`);
-        if (minPrice) desc.push(`min $${minPrice}`);
-        if (minStay) desc.push(`min stay ${minStay}n`);
-
-        onRecordAction(pair, bucket, {
-          listingId: targetListings.length > 1 ? `${targetListings.length} listings` : listingId,
-          dates: `${dateFrom} → ${dateTo}`,
-          description: desc.join(', ') || 'override applied',
-          before: existing.length > 0 ? `${existing.length} existing overrides` : 'none',
-          after: `${dates.length} dates × ${successCount} listings${failCount ? ` (${failCount} failed)` : ''}`,
-        });
-
-        setTimeout(onClose, 1500);
       }
+      // Record the action regardless of API success — the intent was logged
+      setSubmitted(true);
+      const desc = [];
+      if (price) desc.push(`${priceType === 'fixed' ? '$' : ''}${price}${priceType === 'percent' ? '%' : ''}`);
+      if (minPrice) desc.push(`min $${minPrice}`);
+      if (minStay) desc.push(`min stay ${minStay}n`);
+
+      onRecordAction(pair, bucket, {
+        listingId: targetListings.length > 1 ? `${targetListings.length} listings` : listingId,
+        dates: `${dateFrom} → ${dateTo}`,
+        description: desc.join(', ') || 'override applied',
+        before: existing.length > 0 ? `${existing.length} existing overrides` : 'none',
+        after: `${dates.length} dates × ${successCount} listings${failCount ? ` (${failCount} failed)` : ''}`,
+      });
+
+      if (failCount === 0) setTimeout(onClose, 1500);
     } catch (e) {
       setError(String(e));
     }
