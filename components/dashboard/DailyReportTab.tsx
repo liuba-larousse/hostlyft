@@ -396,6 +396,7 @@ export default function DailyReportTab({ portfolioReports, rows, states }: Daily
       {/* Recent Actions with KPI tracking */}
       {recentActions.length > 0 && (() => {
         // Helper to get revenue from portfolio report for a segment at a date
+        // Uses weekly data when affected dates reference a specific week
         const getRevForAction = (r: any, dayOffset: number) => {
           const [m, d, y] = (r.date || '').split('/').map(Number);
           if (!m || !d || !y) return null;
@@ -405,6 +406,30 @@ export default function DailyReportTab({ portfolioReports, rows, states }: Daily
           const targetISO = target.toISOString().split('T')[0];
           // Don't show future data
           if (dayOffset > 0 && target > new Date()) return null;
+
+          const affDates = r.affectedDates || '';
+
+          // Try weeks report if week is referenced
+          const weekMatch = affDates.match(/Week\s*(\d+)/i);
+          if (weekMatch) {
+            const weekNum = parseInt(weekMatch[1]);
+            const weeksDateFound = findNearestDate(portfolioReports, targetISO, 'weeks');
+            if (weeksDateFound) {
+              const weeksReport = portfolioReports[weeksDateFound]['weeks'];
+              if (weeksReport?.weeks) {
+                const week = weeksReport.weeks.find((w: any) => w.w === weekNum);
+                if (week) {
+                  // Weeks don't have TY revenue directly — use pickup as proxy for change
+                  // Return RevPAR × bookable nights as estimated revenue
+                  const revpar = Number(week.rentalRevPAR || 0);
+                  const adr = Number(week.rentalADR || 0);
+                  const occ = Number(week.occupancy || 0) / 100;
+                  // Estimate: 7 nights × occ × ADR (approximate weekly revenue)
+                  return Math.round(adr * occ * 7 * 10); // ×10 for ~10 units avg
+                }
+              }
+            }
+          }
 
           const g = (r.affectedGroup || '').trim().toLowerCase();
           const seg = (!g || ['account','all','portfolio'].includes(g)) ? 'all'
@@ -418,7 +443,6 @@ export default function DailyReportTab({ portfolioReports, rows, states }: Daily
           if (!report?.months) return null;
 
           // Match affected month
-          const affDates = r.affectedDates || '';
           const monthNames = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
           const mm = affDates.match(/(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{4})/i);
           let months = report.months.filter((mo: any) => daysToEndOfMonth(mo.y, mo.m) > 0);
@@ -445,6 +469,7 @@ export default function DailyReportTab({ portfolioReports, rows, states }: Daily
                 <tr className="bg-stone-50 text-stone-500 border-b border-stone-200">
                   <th className="text-left px-2 py-1.5 font-semibold">Date</th>
                   <th className="text-left px-2 py-1.5 font-semibold">Group</th>
+                  <th className="text-left px-2 py-1.5 font-semibold">Affected Dates</th>
                   <th className="text-left px-2 py-1.5 font-semibold">Action</th>
                   <th className="text-left px-2 py-1.5 font-semibold text-[9px]">Before → After</th>
                   <th className="text-right px-2 py-1.5 font-semibold">Before Rev</th>
@@ -466,7 +491,8 @@ export default function DailyReportTab({ portfolioReports, rows, states }: Daily
                   <tr key={r.id} className={`border-b border-stone-100 ${i % 2 === 1 ? 'bg-stone-50/30' : ''}`}>
                     <td className="px-2 py-1.5 mono text-stone-700 whitespace-nowrap">{r.date}</td>
                     <td className="px-2 py-1.5 font-medium text-stone-800">{r.affectedGroup || '—'}</td>
-                    <td className="px-2 py-1.5 text-stone-700 truncate max-w-[180px]" title={r.action}>{r.action || '—'}</td>
+                    <td className="px-2 py-1.5 text-stone-600 text-[10px] max-w-[140px] truncate" title={r.affectedDates}>{r.affectedDates || '—'}</td>
+                    <td className="px-2 py-1.5 text-stone-700 truncate max-w-[160px]" title={r.action}>{r.action || '—'}</td>
                     <td className="px-2 py-1.5 text-stone-400 text-[9px]">{r.valueBefore || '?'} → {r.valueAfter || '?'}</td>
                     <td className="px-2 py-1.5 text-right mono text-stone-700">{beforeRev != null ? fmtMoney(beforeRev) : '—'}</td>
                     <td className={`px-2 py-1.5 text-right mono ${pickup1 != null && pickup1 > 0 ? 'text-emerald-700' : pickup1 != null && pickup1 < 0 ? 'text-rose-700' : 'text-stone-300'}`}>
