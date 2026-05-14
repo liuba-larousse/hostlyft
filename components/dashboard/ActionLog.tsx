@@ -7762,21 +7762,27 @@ function OverrideModal({ pair, bucket, onClose, onRecordAction }) {
   };
 
   const handleDelete = async (date) => {
-    // Delete from all selected listings (or manual listingId if no group)
-    const targets = selectedListings.size > 0
-      ? groupListings.filter(l => selectedListings.has(l.listing_id)).map(l => ({ id: l.listing_id, pms: l.pms || 'guesty' }))
-      : listingId ? [{ id: listingId, pms }] : [];
-    if (targets.length === 0) return;
+    // Delete from the listing whose overrides are displayed (first in group)
+    const firstListing = groupListings[0];
+    const targetId = firstListing?.listing_id || listingId;
+    const targetPms = firstListing?.pms || pms || 'guesty';
+    if (!targetId) return;
     try {
-      for (const target of targets) {
-        await fetch('/api/pricelabs/overrides', {
-          method: 'DELETE',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ listingId: target.id, pms: target.pms, overrides: [{ date }] }),
-        });
+      const res = await fetch('/api/pricelabs/overrides', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ listingId: targetId, pms: targetPms, overrides: [{ date }] }),
+      });
+      if (res.ok || res.status === 204) {
+        setExisting(prev => prev.filter(o => o.date !== date));
+      } else {
+        const data = await res.json().catch(() => ({}));
+        console.warn('Delete failed:', data);
+        setError(`Delete failed: ${data.error || res.status}`);
       }
-      setExisting(prev => prev.filter(o => o.date !== date));
-    } catch {}
+    } catch (e) {
+      setError(`Delete failed: ${e}`);
+    }
   };
 
   return (
@@ -8045,7 +8051,7 @@ function OverrideModal({ pair, bucket, onClose, onRecordAction }) {
                       <th className="text-right px-2 py-1 font-semibold">Override</th>
                       <th className="text-left px-2 py-1 font-semibold">Type</th>
                       <th className="text-right px-2 py-1 font-semibold">PL Price</th>
-                      <th className="text-right px-2 py-1 font-semibold">User Price</th>
+                      <th className="text-right px-2 py-1 font-semibold" title="Price after override applied">Final</th>
                       <th className="text-right px-2 py-1 font-semibold">Min Stay</th>
                       <th className="text-left px-2 py-1 font-semibold">Demand</th>
                       <th className="text-right px-2 py-1 font-semibold" title="Listing occupancy">Occ</th>
@@ -8063,9 +8069,23 @@ function OverrideModal({ pair, bucket, onClose, onRecordAction }) {
                         <td className="px-2 py-1 text-right mono font-medium text-stone-900">{o.price || '—'}</td>
                         <td className="px-2 py-1 text-stone-600">{o.price_type || '—'}</td>
                         <td className="px-2 py-1 text-right mono text-stone-700">{pd?.price != null ? `$${pd.price}` : '—'}</td>
-                        <td className={`px-2 py-1 text-right mono ${pd?.user_price && pd.user_price !== pd.price ? 'text-indigo-700 font-medium' : 'text-stone-400'}`}>
-                          {pd?.user_price != null ? `$${pd.user_price}` : '—'}
-                        </td>
+                        {(() => {
+                          // Compute final price: PL price + override
+                          const plPrice = pd?.price != null ? Number(pd.price) : null;
+                          let finalPrice = null;
+                          if (plPrice != null && o.price) {
+                            if (o.price_type === 'percent') {
+                              finalPrice = Math.round(plPrice * (1 + Number(o.price) / 100));
+                            } else if (o.price_type === 'fixed') {
+                              finalPrice = Number(o.price);
+                            }
+                          }
+                          return (
+                            <td className="px-2 py-1 text-right mono text-indigo-700 font-medium">
+                              {finalPrice != null ? `$${finalPrice.toLocaleString('en-US')}` : (pd?.user_price != null ? `$${pd.user_price}` : '—')}
+                            </td>
+                          );
+                        })()}
                         <td className="px-2 py-1 text-right mono text-stone-600">{o.min_stay || pd?.min_stay || '—'}</td>
                         <td className="px-2 py-1">
                           {pd?.demand_desc ? (
