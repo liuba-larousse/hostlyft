@@ -7526,7 +7526,15 @@ function OverrideModal({ pair, bucket, onClose, onRecordAction }) {
   const [price, setPrice] = useState('');
   const [currency, setCurrency] = useState('USD');
   const [minPrice, setMinPrice] = useState('');
+  const [minPriceType, setMinPriceType] = useState('fixed');
+  const [maxPrice, setMaxPrice] = useState('');
+  const [maxPriceType, setMaxPriceType] = useState('fixed');
+  const [basePrice, setBasePrice] = useState('');
   const [minStay, setMinStay] = useState('');
+  const [checkinCheckout, setCheckinCheckout] = useState(false);
+  const [checkin, setCheckin] = useState('1111111');
+  const [checkout, setCheckout] = useState('1111111');
+  const [overrideReason, setOverrideReason] = useState('');
   // Selected listing IDs (all selected by default)
   const [selectedListings, setSelectedListings] = useState<Set<string>>(new Set());
 
@@ -7644,19 +7652,35 @@ function OverrideModal({ pair, bucket, onClose, onRecordAction }) {
 
     const dates = generateDates(dateFrom, dateTo);
     const overrides = dates.map(date => {
-      const o = { date };
+      const o: any = { date };
       if (price) {
         o.price = price;
         o.price_type = priceType;
         if (priceType === 'fixed') o.currency = currency;
       }
       if (minPrice) {
-        o.min_price = parseInt(minPrice);
-        o.min_price_type = 'fixed';
-        o.currency = currency;
+        o.min_price = Number(minPrice);
+        o.min_price_type = minPriceType;
+        if (minPriceType === 'fixed') o.currency = currency;
+      }
+      if (maxPrice) {
+        o.max_price = Number(maxPrice);
+        o.max_price_type = maxPriceType;
+        if (maxPriceType === 'fixed') o.currency = currency;
+      }
+      if (basePrice) {
+        o.base_price = Number(basePrice);
       }
       if (minStay) {
         o.min_stay = parseInt(minStay);
+      }
+      if (checkinCheckout) {
+        o.check_in_check_out_enabled = '1';
+        o.check_in = checkin;
+        o.check_out = checkout;
+      }
+      if (overrideReason) {
+        o.reason = overrideReason;
       }
       return o;
     });
@@ -8066,30 +8090,49 @@ function OverrideModal({ pair, bucket, onClose, onRecordAction }) {
                 <span className="text-[11px] text-stone-700 font-medium">New Final Price</span>
                 <div className="flex items-center gap-3 mt-1">
                   <label className="flex items-center gap-1.5 text-[11px]">
-                    <input type="radio" name="priceType" value="fixed" checked={priceType === 'fixed'} onChange={() => setPriceType('fixed')} className="accent-rose-500" />
+                    <input type="radio" name="priceType" value="fixed" checked={priceType === 'fixed'} onChange={() => setPriceType('fixed')} className="accent-indigo-500" />
                     Fixed
                   </label>
                   <label className="flex items-center gap-1.5 text-[11px]">
-                    <input type="radio" name="priceType" value="percent" checked={priceType === 'percent'} onChange={() => setPriceType('percent')} className="accent-rose-500" />
+                    <input type="radio" name="priceType" value="percent" checked={priceType === 'percent'} onChange={() => setPriceType('percent')} className="accent-indigo-500" />
                     Percent
                   </label>
-                  <input value={price} onChange={e => setPrice(e.target.value)} placeholder={priceType === 'fixed' ? '250' : '10'}
-                    className="w-20 px-2 py-1.5 text-sm border border-stone-300 rounded-sm focus:outline-none focus:border-indigo-500" />
-                  {priceType === 'fixed' && (
-                    <span className="text-[11px] text-stone-400">{currency}</span>
-                  )}
+                  <input value={price} onChange={e => setPrice(e.target.value)} placeholder={priceType === 'fixed' ? '250' : '-75 to 500'}
+                    className="w-28 px-2 py-1.5 text-sm border border-stone-300 rounded-sm focus:outline-none focus:border-indigo-500" />
+                  {priceType === 'fixed' && <span className="text-[11px] text-stone-400">{currency}</span>}
+                  {priceType === 'percent' && <span className="text-[11px] text-stone-400">%</span>}
                 </div>
               </div>
-              <div className="flex gap-4">
+              <div className="grid grid-cols-3 gap-3">
                 <div>
                   <span className="text-[11px] text-stone-700 font-medium">Min Price</span>
                   <input value={minPrice} onChange={e => setMinPrice(e.target.value)} placeholder="Optional"
                     className="w-full mt-1 px-2 py-1.5 text-sm border border-stone-300 rounded-sm focus:outline-none focus:border-indigo-500" />
+                  <select value={minPriceType} onChange={e => setMinPriceType(e.target.value)} className="w-full mt-1 px-1 py-1 text-[10px] border border-stone-200 rounded-sm">
+                    <option value="fixed">Fixed</option>
+                    <option value="percent_base">% of Base</option>
+                    <option value="percent_min">% of Min</option>
+                  </select>
                 </div>
                 <div>
-                  <span className="text-[11px] text-stone-700 font-medium">Currency</span>
-                  <input value={currency} onChange={e => setCurrency(e.target.value)} placeholder="USD"
+                  <span className="text-[11px] text-stone-700 font-medium">Max Price</span>
+                  <input value={maxPrice} onChange={e => setMaxPrice(e.target.value)} placeholder="Optional"
                     className="w-full mt-1 px-2 py-1.5 text-sm border border-stone-300 rounded-sm focus:outline-none focus:border-indigo-500" />
+                  <select value={maxPriceType} onChange={e => setMaxPriceType(e.target.value)} className="w-full mt-1 px-1 py-1 text-[10px] border border-stone-200 rounded-sm">
+                    <option value="fixed">Fixed</option>
+                    <option value="percent_base">% of Base</option>
+                    <option value="percent_max">% of Max</option>
+                  </select>
+                </div>
+                <div>
+                  <span className="text-[11px] text-stone-700 font-medium">Base Price</span>
+                  <input value={basePrice} onChange={e => setBasePrice(e.target.value)} placeholder="Optional"
+                    className="w-full mt-1 px-2 py-1.5 text-sm border border-stone-300 rounded-sm focus:outline-none focus:border-indigo-500" />
+                  <div className="mt-1">
+                    <span className="text-[11px] text-stone-700 font-medium">Currency</span>
+                    <input value={currency} onChange={e => setCurrency(e.target.value)} placeholder="USD"
+                      className="w-full mt-0.5 px-2 py-1.5 text-sm border border-stone-300 rounded-sm focus:outline-none focus:border-indigo-500" />
+                  </div>
                 </div>
               </div>
             </div>
@@ -8098,14 +8141,61 @@ function OverrideModal({ pair, bucket, onClose, onRecordAction }) {
           {/* Stay Restrictions */}
           <div className="bg-stone-50 border border-stone-200 rounded-sm p-3">
             <label className="text-[10px] uppercase tracking-wider text-stone-600 font-semibold block mb-2">Stay Restrictions</label>
-            <div>
-              <span className="text-[11px] text-stone-700 font-medium">Minimum Stay</span>
-              <div className="flex items-center gap-2 mt-1">
-                <input value={minStay} onChange={e => setMinStay(e.target.value)} placeholder="0"
-                  className="w-20 px-2 py-1.5 text-sm border border-stone-300 rounded-sm focus:outline-none focus:border-indigo-500" />
-                <span className="text-[11px] text-stone-500">Night(s)</span>
+            <div className="space-y-3">
+              <div>
+                <span className="text-[11px] text-stone-700 font-medium">Minimum Stay</span>
+                <div className="flex items-center gap-2 mt-1">
+                  <input value={minStay} onChange={e => setMinStay(e.target.value)} placeholder="0"
+                    className="w-20 px-2 py-1.5 text-sm border border-stone-300 rounded-sm focus:outline-none focus:border-indigo-500" />
+                  <span className="text-[11px] text-stone-500">Night(s)</span>
+                </div>
+              </div>
+              <div>
+                <label className="flex items-center gap-2 text-[11px] text-stone-700 font-medium cursor-pointer">
+                  <input type="checkbox" checked={checkinCheckout} onChange={e => setCheckinCheckout(e.target.checked)} className="accent-indigo-500" />
+                  Check-In / Check-Out restrictions
+                </label>
+                {checkinCheckout && (
+                  <div className="mt-2 space-y-2">
+                    {['Check-in', 'Check-out'].map((label, li) => {
+                      const val = li === 0 ? checkin : checkout;
+                      const setter = li === 0 ? setCheckin : setCheckout;
+                      const days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+                      return (
+                        <div key={label} className="flex items-center gap-2">
+                          <span className="text-[10px] w-16 text-stone-500">{label}:</span>
+                          <div className="flex gap-0.5">
+                            {days.map((day, di) => (
+                              <button
+                                key={day}
+                                type="button"
+                                onClick={() => {
+                                  const arr = val.split('');
+                                  arr[di] = arr[di] === '1' ? '0' : '1';
+                                  setter(arr.join(''));
+                                }}
+                                className={`w-7 h-7 text-[9px] font-medium rounded-sm border transition-colors ${
+                                  val[di] === '1' ? 'bg-indigo-600 text-white border-indigo-700' : 'bg-white text-stone-400 border-stone-200'
+                                }`}
+                              >
+                                {day}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
+          </div>
+
+          {/* Reason */}
+          <div>
+            <label className="text-[10px] uppercase tracking-wider text-stone-500 block mb-1">Reason for Override</label>
+            <input value={overrideReason} onChange={e => setOverrideReason(e.target.value)} placeholder="Optional — e.g., Event weekend, Low demand adjustment"
+              className="w-full px-3 py-2 text-sm border border-stone-300 rounded-sm focus:outline-none focus:border-indigo-500" />
           </div>
 
           {error && (
