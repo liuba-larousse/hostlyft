@@ -178,11 +178,19 @@ export default function ResultsTab({ rows, states, portfolioReports }: ResultsTa
   }, [expandedRow, fetchBookings]);
 
   // Compute KPIs for a row at a given day offset
+  // For follow-up offsets (> 0), only return data if the target date has actually passed
   const getKPIs = useCallback((row: any, dayOffset: number): KPIs | null => {
     const actionDate = parseMDY(row.date);
     if (!actionDate) return null;
     const targetDate = addDays(actionDate, dayOffset);
     const targetISO = toISO(targetDate);
+
+    // Don't show follow-up data for future dates — the report hasn't happened yet
+    if (dayOffset > 0) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      if (targetDate > today) return null;
+    }
 
     const segment = resolveSegment(row.affectedGroup);
     const report = findReport(portfolioReports, targetISO, segment, row.affectedGroup);
