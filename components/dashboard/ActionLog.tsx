@@ -7568,9 +7568,7 @@ function OverrideModal({ pair, bucket, onClose, onRecordAction }) {
         if (data.pricesSource) {
           console.log('Listing prices loaded via:', data.pricesSource);
         }
-        // Only show overrides when single listing — per-listing overrides
-        // are misleading when shown for a multi-listing group
-        if (data.overrides && groupListings.length <= 1) setExisting(data.overrides);
+        if (data.overrides) setExisting(data.overrides);
         if (data.listing) setPricingData(data.listing);
         setLoading(false);
       })
@@ -7975,7 +7973,7 @@ function OverrideModal({ pair, bucket, onClose, onRecordAction }) {
             return (
             <div>
               <label className="text-[10px] uppercase tracking-wider text-stone-500 block mb-1">
-                Existing Overrides ({existing.length})
+                Existing Overrides ({existing.length}){groupListings.length > 1 && <span className="text-stone-400 font-normal ml-1">· showing {groupListings[0]?.listing_name?.split(' -- ')[0] || 'first listing'}</span>}
               </label>
               <div className="max-h-48 overflow-y-auto border border-stone-200 rounded-sm">
                 <table className="w-full text-[10px]">
