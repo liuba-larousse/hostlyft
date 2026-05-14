@@ -286,6 +286,35 @@ export default function DailyReportTab({ portfolioReports, rows, states }: Daily
                         <div className="text-[13px] font-semibold mono text-emerald-800">{fmtMoney(t.pickup7d)}</div>
                       </div>
                     </div>
+
+                    {/* Next 3 months breakdown */}
+                    {t.months && t.months.length > 0 && (
+                      <div>
+                        <div className="text-[9px] uppercase tracking-wider text-stone-400 mb-1">Next 3 Months</div>
+                        <table className="w-full text-[10px]">
+                          <thead>
+                            <tr className="text-stone-400">
+                              <th className="text-left py-0.5 font-medium">Month</th>
+                              <th className="text-right py-0.5 font-medium">Revenue</th>
+                              <th className="text-right py-0.5 font-medium">ADR</th>
+                              <th className="text-right py-0.5 font-medium">Occ</th>
+                              <th className="text-right py-0.5 font-medium">BN</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {t.months.slice(0, 3).map((m: any) => (
+                              <tr key={m.iso} className="border-t border-stone-100">
+                                <td className="py-1 text-stone-700 font-medium">{m.label?.split(' ')[0] || m.iso}</td>
+                                <td className="py-1 text-right mono text-stone-800">{fmtMoney(m.rentalRevenue)}</td>
+                                <td className="py-1 text-right mono text-stone-700">{fmtMoney(m.rentalADR)}</td>
+                                <td className="py-1 text-right mono text-stone-700">{fmtPct(m.occupancy)}</td>
+                                <td className="py-1 text-right mono text-stone-500">{m.bookableNights || '—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
