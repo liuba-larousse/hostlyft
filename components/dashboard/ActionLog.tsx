@@ -8622,7 +8622,12 @@ export default function ActionLog() {
       try {
         const prRes = await fetch('/api/pricelabs/portfolio-report');
         const prData = await prRes.json();
-        const cronReports = prData.reports || [];
+        const allCronReports = prData.reports || [];
+        // Only merge last 3 days to avoid oversizing the action_log_state payload
+        const threeDaysAgo = new Date();
+        threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+        const cutoff = threeDaysAgo.toISOString().split('T')[0];
+        const cronReports = allCronReports.filter(r => r.report_date >= cutoff);
         if (cronReports.length > 0) {
           // Group by date → segment → rawRows
           const byDate = {};
@@ -8771,11 +8776,20 @@ export default function ActionLog() {
     return () => clearTimeout(funnelTimer.current);
   }, [funnel, loaded]);
 
-  // Debounced save for portfolio reports
+  // Debounced save for portfolio reports — trim to last 7 days to avoid oversizing
   useEffect(() => {
     if (!loaded) return;
     clearTimeout(portfolioReportsTimer.current);
-    portfolioReportsTimer.current = setTimeout(() => { savePortfolioReports(portfolioReports); }, 400);
+    portfolioReportsTimer.current = setTimeout(() => {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - 7);
+      const cutoffStr = cutoff.toISOString().split('T')[0];
+      const trimmed = {};
+      Object.entries(portfolioReports).forEach(([date, segs]) => {
+        if (date >= cutoffStr) trimmed[date] = segs;
+      });
+      savePortfolioReports(trimmed);
+    }, 400);
     return () => clearTimeout(portfolioReportsTimer.current);
   }, [portfolioReports, loaded]);
 
