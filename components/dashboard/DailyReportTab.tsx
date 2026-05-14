@@ -169,6 +169,37 @@ export default function DailyReportTab({ portfolioReports, rows, states }: Daily
     }).slice(0, 20);
   }, [rows]);
 
+  // Preload bookings for all actions
+  const [actionBookings, setActionBookings] = React.useState<Record<string, any[]>>({});
+  React.useEffect(() => {
+    if (recentActions.length === 0) return;
+    const fetchMap: Record<string, { rows: any[]; params: URLSearchParams }> = {};
+    recentActions.forEach(row => {
+      const [m, d, y] = (row.date || '').split('/').map(Number);
+      if (!m || !d || !y) return;
+      const since = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const group = row.affectedGroup || '';
+      const key = `${group}|${since}`;
+      if (!fetchMap[key]) {
+        fetchMap[key] = { rows: [], params: new URLSearchParams({ group, since }) };
+      }
+      fetchMap[key].rows.push(row);
+    });
+    (async () => {
+      const cache: Record<string, any[]> = {};
+      for (const [, { rows: matchRows, params }] of Object.entries(fetchMap)) {
+        try {
+          const res = await fetch(`/api/action-log/bookings?${params.toString()}`);
+          const data = await res.json();
+          matchRows.forEach(r => { cache[r.id] = data.bookings || []; });
+        } catch {
+          matchRows.forEach(r => { cache[r.id] = []; });
+        }
+      }
+      setActionBookings(cache);
+    })();
+  }, [recentActions]);
+
   // Copy report as text
   const copyReport = async () => {
     const lines: string[] = [];
@@ -476,6 +507,7 @@ export default function DailyReportTab({ portfolioReports, rows, states }: Daily
                   <th className="text-right px-2 py-1.5 font-semibold text-emerald-700">+1d Rev</th>
                   <th className="text-right px-2 py-1.5 font-semibold text-emerald-700">+3d Rev</th>
                   <th className="text-right px-2 py-1.5 font-semibold text-emerald-700">+7d Rev</th>
+                  <th className="text-right px-2 py-1.5 font-semibold">Bookings</th>
                 </tr>
               </thead>
               <tbody>
@@ -504,6 +536,22 @@ export default function DailyReportTab({ portfolioReports, rows, states }: Daily
                     <td className={`px-2 py-1.5 text-right mono ${pickup7 != null && pickup7 > 0 ? 'text-emerald-700' : pickup7 != null && pickup7 < 0 ? 'text-rose-700' : 'text-stone-300'}`}>
                       {pickup7 != null ? fmtSignedMoney(pickup7) : '—'}
                     </td>
+                    {(() => {
+                      const bk = actionBookings[r.id] || [];
+                      const bkRev = bk.reduce((s: number, b: any) => s + (Number(b.rental_revenue) || Number(b.total_revenue) || 0), 0);
+                      return (
+                        <td className="px-2 py-1.5 text-right">
+                          {bk.length > 0 ? (
+                            <span className="text-[10px]">
+                              <span className="font-medium text-stone-800">{bk.length}</span>
+                              {bkRev > 0 && <span className="text-emerald-700 ml-1">{fmtMoney(bkRev)}</span>}
+                            </span>
+                          ) : (
+                            <span className="text-stone-300 text-[10px]">0</span>
+                          )}
+                        </td>
+                      );
+                    })()}
                   </tr>
                   );
                 })}
