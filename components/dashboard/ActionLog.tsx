@@ -4297,6 +4297,8 @@ function FunnelView({ funnel, setFunnel, portfolioReports, setPortfolioReports, 
   const [view, setView] = useState('today'); // 'today' | 'history'
   const [confirmCopyForward, setConfirmCopyForward] = useState(null); // ISO of source day or null
   const [parseModalOpen, setParseModalOpen] = useState(false);
+  // Track segments explicitly cleared by the user — prevents fallback from re-showing them
+  const [clearedSegments, setClearedSegments] = useState<Set<string>>(new Set());
 
   // Convert AI-proposed actions into action log rows and prepend them
   // WHY prepend: most-recent-first matches the action log's existing default ordering
@@ -4386,6 +4388,17 @@ function FunnelView({ funnel, setFunnel, portfolioReports, setPortfolioReports, 
   const updatePortfolio = useCallback((segment, kind, parsed) => {
     // kind is always 'todayReport' (we no longer accept manual prior uploads).
     // 'parsed === null' means clear today's report for this segment.
+    if (parsed === null) {
+      // Mark as explicitly cleared so buildLookup won't fall back to prior
+      setClearedSegments(prev => new Set([...prev, `${selectedISO}:${segment}`]));
+    } else {
+      // Uploading new data removes the cleared flag
+      setClearedSegments(prev => {
+        const next = new Set(prev);
+        next.delete(`${selectedISO}:${segment}`);
+        return next;
+      });
+    }
     setPortfolioReports(prev => {
       const dayReports = { ...(prev[selectedISO] || {}) };
       if (parsed === null) {
@@ -4622,8 +4635,10 @@ function FunnelView({ funnel, setFunnel, portfolioReports, setPortfolioReports, 
                   const priorDate = findPriorReportDate(portfolioReports, selectedISO, segId);
                   const priorReport = priorDate ? portfolioReports[priorDate][segId] : null;
                   // When no report for selectedISO, shift: use most recent as "today"
-                  // and find a second-prior for the diff so 1-day pickup works
-                  if (!todayReport && priorReport && priorDate) {
+                  // and find a second-prior for the diff so 1-day pickup works.
+                  // BUT skip if user explicitly cleared this segment — respect the clear.
+                  const wasCleared = clearedSegments.has(`${selectedISO}:${segId}`);
+                  if (!todayReport && priorReport && priorDate && !wasCleared) {
                     const secondPriorDate = findPriorReportDate(portfolioReports, priorDate, segId);
                     const secondPrior = secondPriorDate ? portfolioReports[secondPriorDate][segId] : null;
                     return { todayReport: priorReport, priorReport: secondPrior, priorDate: secondPriorDate };
