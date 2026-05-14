@@ -7369,11 +7369,11 @@ function SummaryTab({ portfolioReports, selectedISO, setRows, setActiveTab, rows
               owner: 'Liuba',
               reason: `Override applied (Summary · ${bucket})`,
               affectedGroup: pair.building,
-              affectedDates: `${pair.monthLabel || ''} · ${pair.weekLabel || ''} · ${overrideInfo.dates}`,
+              affectedDates: overrideInfo.dates,
               action: `Override: ${overrideInfo.description}`,
               valueBefore: overrideInfo.before || '',
               valueAfter: overrideInfo.after || '',
-              notes: `Via PriceLabs API · listing ${overrideInfo.listingId}`,
+              notes: `Via PriceLabs API · listing ${overrideInfo.listingId} · ${pair.monthLabel || ''} ${pair.weekLabel || ''}`,
               checkDone: false,
               followUpDate: followUpMDY(),
             };
