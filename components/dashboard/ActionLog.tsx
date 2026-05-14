@@ -9732,21 +9732,21 @@ export default function ActionLog() {
       {/* TAB: RULES — documentation of all rules applied to reports.
           Values are pulled from the actual constants in code (PICKUP_BEHIND_THRESHOLD
           etc.), so this page stays in sync if thresholds change. */}
-      {activeTab === 'results' && (
+      <div style={{ display: activeTab === 'results' ? 'block' : 'none' }}>
         <ResultsTab
           rows={rows}
           states={states}
           portfolioReports={portfolioReports}
         />
-      )}
+      </div>
 
-      {activeTab === 'report' && (
+      <div style={{ display: activeTab === 'report' ? 'block' : 'none' }}>
         <DailyReportTab
           portfolioReports={portfolioReports}
           rows={rows}
           states={states}
         />
-      )}
+      </div>
 
       {activeTab === 'rules' && (
         <RulesTab />
