@@ -70,10 +70,28 @@ const extractKPIs = (report: any, affectedDates: string) => {
 };
 
 // Extract KPIs from a building-level report
+// Tries exact match first, then partial match on building number prefix
 const extractBuildingKPIs = (report: any, buildingGroup: string, affectedDates: string) => {
-  if (!report?.byBuilding?.[buildingGroup]) return null;
-  const fakeReport = { months: report.byBuilding[buildingGroup] };
-  return extractKPIs(fakeReport, affectedDates);
+  if (!report?.byBuilding) return null;
+
+  // Exact match
+  if (report.byBuilding[buildingGroup]) {
+    const fakeReport = { months: report.byBuilding[buildingGroup] };
+    return extractKPIs(fakeReport, affectedDates);
+  }
+
+  // Partial match: extract building number (e.g. "29" from "29.Millenium")
+  const buildingNum = buildingGroup.split('.')[0];
+  if (buildingNum) {
+    const matchKey = Object.keys(report.byBuilding).find(k =>
+      k.startsWith(buildingNum + '.') || k === buildingNum
+    );
+    if (matchKey) {
+      const fakeReport = { months: report.byBuilding[matchKey] };
+      return extractKPIs(fakeReport, affectedDates);
+    }
+  }
+  return null;
 };
 
 // Find the best report for a given date + segment
@@ -256,12 +274,22 @@ export default function ResultsTab({ rows, states, portfolioReports }: ResultsTa
 
     const segment = resolveSegment(row.affectedGroup);
     const report = findReport(portfolioReports, targetISO, segment, row.affectedGroup);
-    if (!report) return null;
 
-    if (segment) {
+    if (segment && report) {
       return extractKPIs(report, row.affectedDates);
     }
-    return extractBuildingKPIs(report, row.affectedGroup, row.affectedDates);
+
+    // Building-level: try building report first, fall back to 'all' segment
+    if (!segment && report) {
+      const buildingKPIs = extractBuildingKPIs(report, row.affectedGroup, row.affectedDates);
+      if (buildingKPIs && (buildingKPIs.revenue > 0 || buildingKPIs.occ > 0)) return buildingKPIs;
+    }
+
+    // Fallback to 'all' segment for portfolio-level context
+    const allReport = findReport(portfolioReports, targetISO, 'all', '');
+    if (allReport) return extractKPIs(allReport, row.affectedDates);
+
+    return null;
   }, [portfolioReports]);
 
   // Get "before" KPIs — prefer state capture, fall back to portfolio report
@@ -374,7 +402,7 @@ export default function ResultsTab({ rows, states, portfolioReports }: ResultsTa
                   {isExpanded && (
                     <tr>
                       <td colSpan={20} className="px-0 py-0 bg-stone-50 border-b border-stone-200">
-                        {isLoading ? (
+                        {isRowLoading ? (
                           <div className="px-6 py-4 text-[11px] text-stone-400 flex items-center gap-2">
                             <Loader2 className="w-3 h-3 animate-spin" /> Loading...
                           </div>
