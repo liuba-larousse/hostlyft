@@ -210,22 +210,38 @@ export default function ResultsTab({ rows, states, portfolioReports }: ResultsTa
     // Try ISO date range: "2026-05-10 → 2026-05-16"
     const isoMatch = affectedDates.match(/(\d{4}-\d{2}-\d{2})\s*[→\-–]\s*(\d{4}-\d{2}-\d{2})/);
     if (isoMatch) return { stayFrom: isoMatch[1], stayTo: isoMatch[2] };
-    // Try "Mon D-D, YYYY" format from week ranges
-    const weekMatch = affectedDates.match(/(\w+ \d+)[–\-](\d+),?\s*(\d{4})/);
-    if (weekMatch) {
-      const start = new Date(`${weekMatch[1]}, ${weekMatch[3]}`);
+    // Try "Mon D-D, YYYY" format from week ranges: "Jun 1-7, 2026"
+    const dateRangeMatch = affectedDates.match(/(\w+ \d+)[–\-](\d+),?\s*(\d{4})/);
+    if (dateRangeMatch) {
+      const start = new Date(`${dateRangeMatch[1]}, ${dateRangeMatch[3]}`);
       const end = new Date(start);
-      end.setDate(parseInt(weekMatch[2]));
+      end.setDate(parseInt(dateRangeMatch[2]));
       if (!isNaN(start.getTime())) return { stayFrom: toISO(start), stayTo: toISO(end) };
     }
-    // Try month: "Jun 2026"
+    // Try "Week N" — compute ISO week start/end dates
+    const weekMatch = affectedDates.match(/Week\s*(\d+)/i);
+    if (weekMatch) {
+      // Extract year from nearby context: "Aug 2026 · Week 36 · 2026"
+      const yearMatch = affectedDates.match(/(\d{4})/);
+      const year = yearMatch ? parseInt(yearMatch[1]) : new Date().getFullYear();
+      const weekNum = parseInt(weekMatch[1]);
+      // ISO week to date: Jan 4 is always in week 1
+      const jan4 = new Date(year, 0, 4);
+      const dayOfWeek = jan4.getDay() || 7; // Mon=1..Sun=7
+      const weekStart = new Date(jan4);
+      weekStart.setDate(jan4.getDate() - dayOfWeek + 1 + (weekNum - 1) * 7);
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekStart.getDate() + 6);
+      return { stayFrom: toISO(weekStart), stayTo: toISO(weekEnd) };
+    }
+    // Try month: "Jun 2026" or "Aug 2026"
     const monthMatch = affectedDates.match(/(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(\d{4})/i);
     if (monthMatch) {
       const monthNames = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
       const m = monthNames.indexOf(monthMatch[1].toLowerCase());
       const y = parseInt(monthMatch[2]);
       const start = new Date(y, m, 1);
-      const end = new Date(y, m + 1, 0); // last day of month
+      const end = new Date(y, m + 1, 0);
       return { stayFrom: toISO(start), stayTo: toISO(end) };
     }
     return { stayFrom: '', stayTo: '' };
