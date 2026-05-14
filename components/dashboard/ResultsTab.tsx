@@ -94,6 +94,24 @@ const extractBuildingKPIs = (report: any, buildingGroup: string, affectedDates: 
   return null;
 };
 
+// Extract KPIs from weeks report for a specific week number
+const extractWeekKPIs = (weeksReport: any, affectedDates: string) => {
+  if (!weeksReport?.weeks || !affectedDates) return null;
+  // Match "Week 23" from affectedDates
+  const weekMatch = affectedDates.match(/Week\s*(\d+)/i);
+  if (!weekMatch) return null;
+  const weekNum = parseInt(weekMatch[1]);
+  const week = weeksReport.weeks.find((w: any) => w.w === weekNum);
+  if (!week) return null;
+
+  return {
+    occ: week.occupancy != null ? Number(week.occupancy) : null,
+    adr: week.rentalADR != null ? Number(week.rentalADR) : null,
+    revpar: week.rentalRevPAR != null ? Number(week.rentalRevPAR) : null,
+    revenue: week.rentalRevenueSTLY != null ? Number(week.rentalRevenueSTLY) : null, // weeks don't have TY revenue, use STLY as reference
+  };
+};
+
 // Find the best report for a given date + segment
 // Falls back to nearest available date within 2 days
 const findReport = (portfolioReports: any, dateISO: string, segment: string | null, buildingGroup: string) => {
@@ -270,6 +288,15 @@ export default function ResultsTab({ rows, states, portfolioReports }: ResultsTa
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       if (targetDate > today) return null;
+    }
+
+    // Try weeks report first if affected dates reference a specific week
+    if (row.affectedDates?.match(/Week\s*\d+/i)) {
+      const weeksReport = findReport(portfolioReports, targetISO, 'weeks', '');
+      if (weeksReport) {
+        const weekKPIs = extractWeekKPIs(weeksReport, row.affectedDates);
+        if (weekKPIs && (weekKPIs.occ > 0 || weekKPIs.adr > 0)) return weekKPIs;
+      }
     }
 
     const segment = resolveSegment(row.affectedGroup);
