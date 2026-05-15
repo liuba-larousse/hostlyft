@@ -149,9 +149,8 @@ export async function GET(req: NextRequest) {
 }
 
 // POST — manual portfolio report sync (uses the same Playwright setup that works for GET)
-// Downloadable segments (each has its own report URL, no filter interaction).
-// PH and Excl PH are derived from the Building report client-side.
-const VALID_SEGMENTS = ['all', 'building', 'weeks', 'listing'] as const;
+// Each segment has its own Report Builder URL.
+const VALID_SEGMENTS = ['all', 'ph', 'exclPh', 'building', 'weeks', 'listing'] as const;
 
 function parsePortfolioXlsx(buffer: Buffer, segment: string) {
   const wb = XLSX.read(buffer, { type: 'buffer', cellDates: false });

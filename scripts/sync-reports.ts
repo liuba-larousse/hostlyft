@@ -22,6 +22,8 @@ import * as XLSX from 'xlsx';
 // Fallback URLs for Marcus — other clients must have report_urls in DB
 const DEFAULT_REPORT_URLS: Record<string, string> = {
   all: 'https://app.pricelabs.co/report-builder/9276',
+  ph: 'https://app.pricelabs.co/report-builder/11774',
+  exclPh: 'https://app.pricelabs.co/report-builder/11775',
   building: 'https://app.pricelabs.co/report-builder/10420',
   weeks: 'https://app.pricelabs.co/report-builder/10678',
   listing: 'https://app.pricelabs.co/report-builder/10744',

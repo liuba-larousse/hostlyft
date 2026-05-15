@@ -8609,10 +8609,8 @@ function SyncReportButton({ segment, onReportLoaded }) {
   const [error, setError] = useState('');
   const [done, setDone] = useState(false);
 
-  // PH and Excl PH are derived from the Building report (which has Group Name column)
-  // so we download 'building' and parse it client-side.
-  // Listing has its own report URL in PriceLabs Report Builder.
-  const apiSegment = (segment === 'ph' || segment === 'exclPh') ? 'building' : segment;
+  // Each segment has its own Report Builder URL in PriceLabs
+  const apiSegment = segment;
 
   const sync = async () => {
     setSyncing(true);
@@ -8648,18 +8646,6 @@ function SyncReportButton({ segment, onReportLoaded }) {
 
       // Step 3: Parse rawRows into the format the Action Log expects
       let rawRows = match.report_data.rawRows;
-
-      // For PH / Excl PH, filter the Building report rows by Group Name
-      if (segment === 'ph' || segment === 'exclPh') {
-        const groupCol = Object.keys(rawRows[0] || {}).find(k =>
-          /group\s*name/i.test(k) || /^group$/i.test(k)
-        );
-        if (groupCol) {
-          rawRows = segment === 'ph'
-            ? rawRows.filter(r => buildingToSegment(String(r[groupCol] || '')) === 'ph')
-            : rawRows.filter(r => buildingToSegment(String(r[groupCol] || '')) === 'exclPh');
-        }
-      }
 
       const wb = XLSX.utils.book_new();
       const ws = XLSX.utils.json_to_sheet(rawRows);
@@ -8799,26 +8785,7 @@ export default function ActionLog() {
                   const ws = XLSX.utils.json_to_sheet(reportData.rawRows);
                   XLSX.utils.book_append_sheet(wb, ws, 'Sheet1');
                   const arrayBuffer = XLSX.write(wb, { type: 'array' });
-                  // Derive PH/ExclPH from building report
-                  let rows = reportData.rawRows;
-                  if (seg === 'ph' || seg === 'exclPh') {
-                    const groupCol = Object.keys(rows[0] || {}).find(k =>
-                      /group\s*name/i.test(k) || /^group$/i.test(k)
-                    );
-                    if (groupCol) {
-                      rows = seg === 'ph'
-                        ? rows.filter(r => buildingToSegment(String(r[groupCol] || '')) === 'ph')
-                        : rows.filter(r => buildingToSegment(String(r[groupCol] || '')) === 'exclPh');
-                      const wb2 = XLSX.utils.book_new();
-                      XLSX.utils.book_append_sheet(wb2, XLSX.utils.json_to_sheet(rows), 'Sheet1');
-                      const buf2 = XLSX.write(wb2, { type: 'array' });
-                      const parsed = parseReportFile(buf2, reportData.fileName || `report-${seg}.xlsx`);
-                      if (!next[date]) next[date] = {};
-                      next[date][seg] = parsed;
-                      changed = true;
-                      return;
-                    }
-                  }
+                  // PH and ExclPH now have their own Report Builder URLs — no derivation needed
                   if (seg === 'weeks') {
                     const parsed = parseWeeksReportFile(arrayBuffer, reportData.fileName || 'weeks-report.xlsx');
                     if (!next[date]) next[date] = {};
@@ -8835,35 +8802,8 @@ export default function ActionLog() {
                 }
               });
 
-              // Auto-derive PH and ExclPH from building report if building exists
-              if (next[date]?.['building'] && !next[date]?.['ph']) {
-                try {
-                  const buildingData = byDate[date]?.['building'];
-                  if (buildingData?.rawRows) {
-                    const groupCol = Object.keys(buildingData.rawRows[0] || {}).find(k =>
-                      /group\s*name/i.test(k) || /^group$/i.test(k)
-                    );
-                    if (groupCol) {
-                      ['ph', 'exclPh'].forEach(derivedSeg => {
-                        if (next[date]?.[derivedSeg]) return;
-                        const filtered = buildingData.rawRows.filter(r =>
-                          buildingToSegment(String(r[groupCol] || '')) === derivedSeg
-                        );
-                        if (filtered.length === 0) return;
-                        const wb3 = XLSX.utils.book_new();
-                        XLSX.utils.book_append_sheet(wb3, XLSX.utils.json_to_sheet(filtered), 'Sheet1');
-                        const buf3 = XLSX.write(wb3, { type: 'array' });
-                        const parsed = parseReportFile(buf3, `report-${derivedSeg}.xlsx`);
-                        if (!next[date]) next[date] = {};
-                        next[date][derivedSeg] = parsed;
-                        changed = true;
-                      });
-                    }
-                  }
-                } catch (e) {
-                  console.warn(`Failed to derive PH/ExclPH from building report ${date}:`, e);
-                }
-              }
+              // PH and ExclPH now come directly from PriceLabs (their own Report Builder URLs)
+              // No client-side derivation needed
             });
             return changed ? next : prev;
           });
