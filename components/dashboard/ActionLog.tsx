@@ -919,7 +919,8 @@ const computeOneDayPickup = (todayReport, priorReport, todayISO, priorISO) => {
     const prior = priorMap.get(month.iso);
     const today = month[field];
     if (prior == null || today == null) continue;
-    out[month.iso] = today - prior;
+    // Pickup is always >= 0. Negative diff means cancellation, not pickup.
+    out[month.iso] = Math.max(0, today - prior);
   }
   return out;
 };
@@ -944,7 +945,8 @@ const computeOneDayPickupByBuilding = (todayReport, priorReport, todayISO, prior
       const today = m[field];
       const prior = priorMap.get(m.iso);
       if (today == null || prior == null) return;
-      out[`${group}|${m.iso}`] = today - prior;
+      // Pickup is always >= 0. Negative diff means cancellation, not pickup.
+      out[`${group}|${m.iso}`] = Math.max(0, today - prior);
     });
   });
   return out;
