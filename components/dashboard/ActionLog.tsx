@@ -4123,6 +4123,7 @@ function PortfolioReportPanel({ portfolioData, onUpdate, isReadOnly, selectedISO
                 <td className="px-3 py-2 text-stone-900">Total ({months.length} months)</td>
                 <td className="text-right px-3 py-2 mono text-stone-500">—</td>
                 <td className="text-right px-3 py-2 mono text-stone-900">{fmtMoney(totals.rentalRevenue)}</td>
+                <td className="text-right px-3 py-2 mono text-stone-500">—</td>
                 <td className={`text-right px-3 py-2 mono ${
                   !havePriorForDiff ? 'text-stone-300 italic' :
                   totals.pickup1d > 0 ? 'text-emerald-700' :
