@@ -2769,7 +2769,7 @@ function SimpleReportPanel({ levelLabel, levelHint, todayReport, priorReport, pr
           <div className="text-[10px] uppercase tracking-[0.2em] text-stone-500">
             {levelLabel} report
           </div>
-          {!todayReport && !isReadOnly && syncSegment && (
+          {!isReadOnly && syncSegment && (
             <SyncReportButton segment={syncSegment} onReportLoaded={(parsed) => onUpload(parsed)} />
           )}
         </div>
@@ -5997,9 +5997,7 @@ function WeeksTab({ weeksReport, onUpload, onClear, onSyncLoaded }) {
         <div className="p-4 border-b border-stone-200 bg-stone-50/40">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[10px] uppercase tracking-[0.2em] text-stone-500">Weeks Report</span>
-            {!weeksReport && (
-              <SyncReportButton segment="weeks" onReportLoaded={onSyncLoaded} />
-            )}
+            <SyncReportButton segment="weeks" onReportLoaded={onSyncLoaded} />
           </div>
           <div
             onDragOver={(e) => e.preventDefault()}
