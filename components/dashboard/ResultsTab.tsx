@@ -38,14 +38,24 @@ const resolveSegment = (group: string) => {
 const extractKPIs = (report: any, affectedDates: string) => {
   if (!report?.months || report.months.length === 0) return null;
 
-  // Try to match month from affectedDates (e.g. "Jun 2026", "May 2026 · Week 23")
+  // Try to match month from affectedDates
+  let targetM = -1, targetY = -1;
+  // Try month name: "Jun 2026", "May 2026 · Week 23"
   const monthMatch = affectedDates?.match(/(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s*(\d{4})/i);
-  let months = report.months;
-
   if (monthMatch) {
     const monthNames = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
-    const targetM = monthNames.indexOf(monthMatch[1].toLowerCase()) + 1;
-    const targetY = parseInt(monthMatch[2]);
+    targetM = monthNames.indexOf(monthMatch[1].toLowerCase()) + 1;
+    targetY = parseInt(monthMatch[2]);
+  } else {
+    // Try ISO date: "2026-08-06 → 2026-08-09"
+    const isoMatch = affectedDates?.match(/(\d{4})-(\d{2})-\d{2}/);
+    if (isoMatch) {
+      targetY = parseInt(isoMatch[1]);
+      targetM = parseInt(isoMatch[2]);
+    }
+  }
+  let months = report.months;
+  if (targetM > 0 && targetY > 0) {
     const filtered = months.filter((m: any) => m.m === targetM && m.y === targetY);
     if (filtered.length > 0) months = filtered;
   }
