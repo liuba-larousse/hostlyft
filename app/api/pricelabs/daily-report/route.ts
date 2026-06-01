@@ -9,6 +9,7 @@ import { switchToRmClient } from '@/lib/pricelabs/rm-portal';
 import { downloadBookingsFile } from '@/lib/pricelabs/download';
 import { parseBookingsXlsx } from '@/lib/pricelabs/parse';
 import { downloadPortfolioReport } from '@/lib/pricelabs/download-report';
+import { uploadToDrive } from '@/lib/google-drive';
 import * as XLSX from 'xlsx';
 
 // Allow up to 5 minutes — needed for Playwright across 8 clients
@@ -67,6 +68,7 @@ export async function GET(req: NextRequest) {
         reportDate.setDate(reportDate.getDate() - 1);
         const reportDateStr = reportDate.toISOString().split('T')[0];
         await upsertBookings(client.id, reportDateStr, bookings);
+        try { await uploadToDrive(buffer, `bookings_${client.client_name}_${reportDateStr}.xlsx`, `bookings/${client.client_name}`); } catch {}
         results.push({ clientId: client.id, clientName: client.client_name, status: 'ok', bookingsFound: bookings.length });
       } finally { await context.close(); }
     } catch (err) {
@@ -89,6 +91,7 @@ export async function GET(req: NextRequest) {
             reportDate.setDate(reportDate.getDate() - 1);
             const reportDateStr = reportDate.toISOString().split('T')[0];
             await upsertBookings(client.id, reportDateStr, bookings);
+            try { await uploadToDrive(buffer, `bookings_${client.client_name}_${reportDateStr}.xlsx`, `bookings/${client.client_name}`); } catch {}
             results.push({ clientId: client.id, clientName: client.client_name, status: 'ok', bookingsFound: bookings.length });
           } catch (err) {
             results.push({ clientId: client.id, clientName: client.client_name, status: 'error', bookingsFound: 0, error: String(err) });
@@ -131,6 +134,7 @@ export async function GET(req: NextRequest) {
                 { client_id: marcus.id, report_date: today, segment: seg, report_data: reportData },
                 { onConflict: 'client_id,report_date,segment' }
               );
+              try { await uploadToDrive(buffer, `portfolio_${seg}_${today}.xlsx`, `portfolio/${seg}`); } catch {}
               portfolioResults.push({ segment: seg, rowCount: reportData.rowCount });
             } catch (e) {
               portfolioResults.push({ segment: seg, rowCount: 0 });
@@ -201,6 +205,7 @@ export async function POST(req: NextRequest) {
           { onConflict: 'client_id,report_date,segment' }
         );
       if (error) throw new Error(`Supabase: ${error.message}`);
+      try { await uploadToDrive(buffer, `portfolio_${segment}_${today}.xlsx`, `portfolio/${segment}`); } catch {}
 
       return NextResponse.json({ success: true, clientName: client.client_name, reportDate: today, segment, rowCount: reportData.rowCount });
     } finally { await context.close(); }

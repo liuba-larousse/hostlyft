@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth';
 import { createSupabaseAdmin } from '@/lib/supabase';
 import { getActiveClients } from '@/lib/supabase/clients';
 // Playwright modules are dynamically imported to avoid bundler issues on Vercel Fluid compute
+import { uploadToDrive } from '@/lib/google-drive';
 import * as XLSX from 'xlsx';
 
 export const maxDuration = 300;
@@ -67,6 +68,7 @@ async function runSync() {
           );
 
         if (error) throw new Error(`Failed to store ${segment} report: ${error.message}`);
+        try { await uploadToDrive(buffer, `portfolio_${segment}_${today}.xlsx`, `portfolio/${segment}`); } catch {}
         results.push({ segment, rowCount: reportData.rowCount });
       }
 
