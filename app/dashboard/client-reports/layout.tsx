@@ -15,8 +15,12 @@ export default function ClientReportsLayout({ children }: { children: React.Reac
   const pathname = usePathname();
 
   return (
-    <div className="p-5 md:p-10 max-w-6xl mx-auto">
-      <div className="flex gap-1 mb-6 border-b border-gray-200">
+    <div className="client-reports-wrap p-5 md:p-10 max-w-6xl mx-auto print:p-0 print:max-w-none">
+      <style>{`@media print {
+        .client-reports-tabs { display: none !important; }
+        .client-reports-wrap { padding: 0 !important; max-width: none !important; margin: 0 !important; }
+      }`}</style>
+      <div className="client-reports-tabs flex gap-1 mb-6 border-b border-gray-200 print:hidden">
         {tabs.map(({ href, label, icon: Icon }) => {
           const active = href === "/dashboard/client-reports"
             ? pathname === "/dashboard/client-reports"

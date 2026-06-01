@@ -202,7 +202,8 @@ type DeltaInfo = { d: number | null; label: string };
 
 export default function MonthlyRevenueReport() {
   const today = useMemo(() => new Date(), []);
-  const currentMonth = today.getFullYear() === REPORT_YEAR ? today.getMonth() : 4;
+  const defaultReportMonth = today.getFullYear() === REPORT_YEAR ? today.getMonth() : 4;
+  const [reportMonth, setReportMonth] = useState(defaultReportMonth);
 
   const [rows, setRows] = useState<Row[] | null>(null);
   const [currency, setCurrency] = useState('$');
@@ -236,8 +237,14 @@ export default function MonthlyRevenueReport() {
   const fmtPct = (n: number) => n.toFixed(n < 10 && n > -10 ? 1 : 0) + '%';
 
   // ── Derived model: actuals / future / aggregates ──
-  const actuals = useMemo(() => (rows ? rows.filter((r) => !r.isFuture) : []), [rows]);
-  const future = useMemo(() => (rows ? rows.filter((r) => r.isFuture) : []), [rows]);
+  // isFuture is derived from `reportMonth` (the focus month) so changing the
+  // selector retargets the report without re-parsing the file.
+  const rowsWithFuture = useMemo(
+    () => (rows ? rows.map((r) => ({ ...r, isFuture: r.mi > reportMonth })) : null),
+    [rows, reportMonth]
+  );
+  const actuals = useMemo(() => (rowsWithFuture ? rowsWithFuture.filter((r) => !r.isFuture) : []), [rowsWithFuture]);
+  const future = useMemo(() => (rowsWithFuture ? rowsWithFuture.filter((r) => r.isFuture) : []), [rowsWithFuture]);
 
   const aggregates = useMemo(() => {
     if (!actuals.length) return null;
@@ -284,16 +291,17 @@ export default function MonthlyRevenueReport() {
 
   // ── Current-month spotlight ──
   const spotlight = useMemo(() => {
-    if (!rows || !actuals.length) return null;
-    let cur = rows.find((r) => r.mi === currentMonth);
+    if (!rowsWithFuture || !actuals.length) return null;
+    let cur = rowsWithFuture.find((r) => r.mi === reportMonth);
     if (!cur || cur.rev <= 0) {
       const withRev = actuals.filter((r) => r.rev > 0);
       if (cur && cur.rev <= 0 && withRev.length) cur = withRev[withRev.length - 1];
       else if (!cur && withRev.length) cur = withRev[withRev.length - 1];
     }
     if (!cur) return null;
-    const isCurrent = cur.mi === currentMonth;
-    const partial = isCurrent && today.getFullYear() === REPORT_YEAR && today.getDate() < 28;
+    // "Current month" label only applies when the focus month is literally today's month.
+    const isCurrent = cur.mi === today.getMonth() && today.getFullYear() === REPORT_YEAR;
+    const partial = isCurrent && today.getDate() < 28;
     const own = (val: number, ly: number, stly: number): DeltaInfo => {
       const bz = basis(cur!, ly, stly);
       return { d: bz.prev ? deltaPct(val, bz.prev) : null, label: bz.label };
@@ -311,7 +319,7 @@ export default function MonthlyRevenueReport() {
         { lab: 'RevPAR',    val: money(cur.revpar), ly: own(cur.revpar, cur.revparLY, cur.revparSTLY), mkt: vsMkt(cur.revpar, cur.mktRevpar) },
       ],
     };
-  }, [rows, actuals, currentMonth, today, money]);
+  }, [rowsWithFuture, actuals, reportMonth, today, money]);
 
   // ── AI prompt + local fallback ──
   const { aiPrompt, aiFallback } = useMemo(() => {
@@ -356,7 +364,7 @@ export default function MonthlyRevenueReport() {
   const generateSummary = useCallback(
     async (isAuto: boolean) => {
       if (!aiPrompt) return;
-      if (isAuto && (summaryEdited || summary.trim().length > 0)) return;
+      if (isAuto && summaryEdited) return;
       setSummaryBusy(true);
       let text = '';
       try {
@@ -383,7 +391,7 @@ export default function MonthlyRevenueReport() {
       if (summaryRef.current) summaryRef.current.textContent = text;
       setSummaryBusy(false);
     },
-    [aiPrompt, aiFallback, summary, summaryEdited]
+    [aiPrompt, aiFallback, summaryEdited]
   );
 
   // Auto-generate on first successful parse.
@@ -394,13 +402,27 @@ export default function MonthlyRevenueReport() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows]);
 
+  // Re-generate when the user picks a different reporting month (unless they
+  // manually edited the summary — then leave their text alone).
+  const firstMonthRender = useRef(true);
+  useEffect(() => {
+    if (firstMonthRender.current) {
+      firstMonthRender.current = false;
+      return;
+    }
+    if (rows && aiPrompt && !summaryEdited) {
+      generateSummary(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reportMonth]);
+
   // ── File handling ──
   const loadObjects = useCallback(
     (objs: Record<string, string>[], kind: string) => {
       try {
         const cur = detectCurrency(objs);
         setCurrency(cur);
-        const { rows: model, missing } = buildModel(objs, currentMonth);
+        const { rows: model, missing } = buildModel(objs, reportMonth);
         if (missing.length) {
           setErrorMsg(
             `This file is missing required metric${missing.length > 1 ? 's' : ''}: ${missing.join(', ')}. Please re-export the report with ${missing.length > 1 ? 'these columns' : 'this column'} included and upload again.`
@@ -416,7 +438,7 @@ export default function MonthlyRevenueReport() {
         setErrorMsg('Could not read that file. ' + (e instanceof Error ? e.message : 'Make sure it is the monthly revenue export.'));
       }
     },
-    [currentMonth]
+    [reportMonth]
   );
 
   const loadText = useCallback(
@@ -474,6 +496,8 @@ export default function MonthlyRevenueReport() {
     setRows(null); setFileName(''); setErrorMsg('');
     setBizName(''); setOwnerName('');
     setSummary(''); setSummaryEdited(false); setSummaryBusy(false);
+    setReportMonth(defaultReportMonth);
+    firstMonthRender.current = true;
     if (fileInputRef.current) fileInputRef.current.value = '';
     if (summaryRef.current) summaryRef.current.textContent = '';
   };
@@ -489,7 +513,23 @@ export default function MonthlyRevenueReport() {
 
       {/* ─── Toolbar (screen only) ─── */}
       {ready && (
-        <div className="no-print flex items-center justify-end gap-2 mb-4">
+        <div className="no-print flex items-center gap-2 mb-4 flex-wrap">
+          <label className="flex items-center gap-2 text-sm text-gray-700 mr-auto">
+            <span className="font-semibold">Reporting month</span>
+            <select
+              value={reportMonth}
+              onChange={(e) => setReportMonth(parseInt(e.target.value, 10))}
+              className="rounded-lg border border-gray-200 bg-white text-gray-900 text-sm font-medium px-3 py-2 hover:border-gray-300 focus:outline-none focus:border-yellow-400 cursor-pointer"
+              aria-label="Choose the month this report covers"
+            >
+              {MONTHS.map((m, i) => (
+                <option key={m} value={i}>
+                  {m} {REPORT_YEAR}
+                  {i === today.getMonth() && today.getFullYear() === REPORT_YEAR ? ' · current' : ''}
+                </option>
+              ))}
+            </select>
+          </label>
           <button
             onClick={reset}
             className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-semibold rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 hover:text-gray-900 transition-colors cursor-pointer"
@@ -733,7 +773,7 @@ export default function MonthlyRevenueReport() {
           {/* Chart */}
           <Section title="Rental revenue by month" range="Actuals · booked-to-date">
             <div className="border border-gray-200 rounded-xl px-5 py-5">
-              <RevenueChart rows={rows!} currentMonth={currentMonth} moneyK={moneyK} />
+              <RevenueChart rows={rowsWithFuture!} currentMonth={reportMonth} moneyK={moneyK} />
               <div className="flex gap-5 text-[11.5px] text-gray-500 mt-1.5 pl-1">
                 <span><i className="inline-block w-2.5 h-2.5 rounded-sm bg-gray-900 mr-1.5 align-middle" />Actual revenue</span>
                 <span><i className="inline-block w-2.5 h-2.5 rounded-sm bg-gray-300 mr-1.5 align-middle" />On the books (upcoming)</span>
@@ -1126,6 +1166,33 @@ const PRINT_AND_REPORT_CSS = `
   .monthly-report-root .ef-input { border-bottom-color: transparent !important; }
   .monthly-report-root .aisum-empty::before { content: ""; }
   .monthly-report-root .aisum:has(.aisum-empty) { display: none; }
+
+  /* Tighten vertical rhythm so the report fits two A4 pages */
+  .monthly-report-root .pb-5 { padding-bottom: 6px !important; }
+  .monthly-report-root .mb-8 { margin-bottom: 10px !important; }
+  .monthly-report-root .mb-7 { margin-bottom: 10px !important; }
+  .monthly-report-root .mb-6 { margin-bottom: 8px !important; }
+  .monthly-report-root .mb-4 { margin-bottom: 6px !important; }
+  .monthly-report-root .mt-10 { margin-top: 12px !important; }
+  .monthly-report-root .mt-9 { margin-top: 14px !important; }
+  .monthly-report-root .pt-4 { padding-top: 6px !important; }
+  /* compact card / section padding */
+  .monthly-report-root .report-page .p-5 { padding: 12px 14px !important; }
+  .monthly-report-root .report-page .px-5.py-5,
+  .monthly-report-root .report-page .py-5.px-5 { padding: 8px 14px !important; }
+  .monthly-report-root .report-page .px-5.py-4 { padding: 10px 14px !important; }
+  .monthly-report-root .report-page .px-6.py-5 { padding: 12px 18px !important; }
+  /* chart svg height cap */
+  .monthly-report-root svg { max-height: 170px !important; }
+  /* tables */
+  .monthly-report-root table { font-size: 12px !important; }
+  .monthly-report-root table td { padding: 6px 10px !important; }
+  .monthly-report-root table th { padding: 0 10px 6px !important; }
+  /* break-inside avoidance */
+  .monthly-report-root .aisum,
+  .monthly-report-root .report-page > .relative,
+  .monthly-report-root table { break-inside: avoid; }
+
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
 `;
