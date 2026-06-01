@@ -33,6 +33,7 @@ const nav: NavItem[] = [
     href: "/dashboard/client-reports", label: "Client Reports", icon: FileText,
     sub: [
       { href: "/dashboard/client-reports/ota-scores", label: "OTA Scores", icon: Star },
+      { href: "/dashboard/client-reports/monthly-reports", label: "Monthly Reports", icon: BarChart3 },
       { href: "/dashboard/client-reports/manage", label: "Manage Clients", icon: Settings },
     ],
   },
