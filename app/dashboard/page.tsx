@@ -1,5 +1,5 @@
 import { auth } from "@/lib/auth";
-import { Bot, Package, Users, Briefcase, ArrowRight, CalendarDays, BarChart3 } from "lucide-react";
+import { Bot, Package, Users, Briefcase, ArrowRight, CalendarDays } from "lucide-react";
 import Link from "next/link";
 import WeekSummary from "@/components/dashboard/WeekSummary";
 import SendTasksEmailButton from "@/components/dashboard/SendTasksEmailButton";
@@ -10,7 +10,6 @@ const quickLinks = [
   { href: "/dashboard/schedule", icon: CalendarDays, label: "Schedule", description: "Weekly team schedule", color: "bg-yellow-50 text-yellow-600" },
   { href: "/dashboard/team", icon: Users, label: "Team", description: "Team members and roles", color: "bg-emerald-50 text-emerald-600" },
   { href: "/dashboard/clients", icon: Briefcase, label: "Clients", description: "Client accounts and projects", color: "bg-amber-50 text-amber-600" },
-  { href: "/dashboard/cloud9", icon: BarChart3, label: "Cloud 9", description: "Pricing tools and action tracking", color: "bg-indigo-50 text-indigo-600" },
 ];
 
 export default async function DashboardPage() {

@@ -23,7 +23,6 @@ test.describe("Dashboard", () => {
       "Schedule",
       "Team",
       "Clients",
-      "Cloud 9",
     ];
     for (const card of cards) {
       await expect(page.getByText(card, { exact: true })).toBeVisible();
@@ -38,7 +37,6 @@ test.describe("Dashboard", () => {
       "Cloud Agents",
       "Artifacts",
       "Schedule",
-      "Cloud 9",
       "Team",
       "Clients",
       "Marketing",
@@ -62,20 +60,6 @@ test.describe("Dashboard", () => {
     await page.goto("/dashboard/schedule");
     await expect(page.getByText("Weekly Schedule")).toBeVisible();
     await page.getByRole("button", { name: "Today" }).click();
-  });
-
-  test("cloud9 page loads with subtabs", async ({ page }) => {
-    await page.goto("/dashboard/cloud9");
-    await expect(page.getByText("Cloud 9")).toBeVisible();
-    await expect(page.getByText("Cloud 9 Matrix")).toBeVisible();
-    await expect(page.getByText("Action Log")).toBeVisible();
-    await expect(page.getByText("Price Matrix")).toBeVisible();
-  });
-
-  test("price matrix page loads under cloud9", async ({ page }) => {
-    await page.goto("/dashboard/cloud9/price-matrix");
-    await page.waitForLoadState("networkidle");
-    await expect(page.locator("body")).not.toContainText("Application error");
   });
 
   test("booking reports page loads", async ({ page }) => {
@@ -105,10 +89,6 @@ test.describe("Dashboard", () => {
   test("quick access cards navigate to correct pages", async ({ page }) => {
     await page.goto("/dashboard");
 
-    await page.getByText("Cloud 9").click();
-    await expect(page).toHaveURL("/dashboard/cloud9");
-
-    await page.goto("/dashboard");
     await page.getByText("Schedule").click();
     await expect(page).toHaveURL("/dashboard/schedule");
   });

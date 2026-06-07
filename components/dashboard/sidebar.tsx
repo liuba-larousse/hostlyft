@@ -19,7 +19,6 @@ const nav: NavItem[] = [
   { href: "/dashboard/agents", label: "Cloud Agents", icon: Bot },
   { href: "/dashboard/artifacts", label: "Artifacts", icon: Package },
   { href: "/dashboard/schedule", label: "Schedule", icon: CalendarDays },
-  { href: "/dashboard/cloud9", label: "Cloud 9", icon: BarChart3 },
   {
     href: "/dashboard/team", label: "Team", icon: Users,
     sub: [

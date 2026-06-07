@@ -32,7 +32,6 @@ app/
     artifacts/         # HTML artifact viewer/uploader (stored in Supabase)
     client-reports/    # Tabbed layout: Bookings, OTA Scores, Manage Clients
     clients/           # Client management
-    cloud9/            # Pricing matrix, action log, price matrix
     marketing/         # Content marketing
     schedule/          # Weekly scheduling
     team/              # Tabbed layout: Members, Workflows
