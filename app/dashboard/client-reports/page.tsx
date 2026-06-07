@@ -16,18 +16,18 @@ function formatDate(s: string | null): string {
 async function getLastSyncedAt(): Promise<string | null> {
   const supabase = createSupabaseAdmin();
   const { data } = await supabase
-    .from('booking_reports')
-    .select('created_at')
-    .order('created_at', { ascending: false })
+    .from('reservations')
+    .select('synced_at')
+    .order('synced_at', { ascending: false })
     .limit(1)
     .maybeSingle();
-  return data?.created_at ?? null;
+  return data?.synced_at ?? null;
 }
 
 async function getLatestBookedDate(): Promise<string | null> {
   const supabase = createSupabaseAdmin();
   const { data } = await supabase
-    .from('booking_reports')
+    .from('reservations')
     .select('booked_date')
     .order('booked_date', { ascending: false })
     .limit(1)

@@ -1,42 +1,12 @@
 import { createSupabaseAdmin } from '@/lib/supabase';
-import type { ParsedBooking } from '@/lib/pricelabs/parse';
 
-export async function upsertBookings(
-  clientId: string,
-  reportDate: string,
-  bookings: ParsedBooking[]
-): Promise<void> {
-  if (!bookings.length) return;
-  const supabase = createSupabaseAdmin();
-
-  const rows = bookings.map(b => ({
-    client_id: clientId,
-    report_date: reportDate,
-    reservation_id: b.reservationId,
-    listing_name: b.listingName,
-    checkin_date: b.checkinDate,
-    checkout_date: b.checkoutDate,
-    booked_date: b.bookedDate,
-    adr: b.adr,
-    rental_revenue: b.rentalRevenue,
-    total_revenue: b.totalRevenue,
-    los: b.los,
-    booking_window: b.bookingWindow,
-    booking_source: b.bookingSource,
-    currency: b.currency,
-  }));
-
-  const { error } = await supabase
-    .from('booking_reports')
-    .upsert(rows, { onConflict: 'client_id,reservation_id,report_date' });
-
-  if (error) throw new Error(`Failed to upsert bookings: ${error.message}`);
-}
+// Reservations are now stored in the `reservations` table (pulled from the
+// PriceLabs API per listing). This module keeps the BookingRow/ClientSummary
+// shape the Booking Reports page expects, mapping over reservation rows.
 
 export interface BookingRow {
   id: string;
   client_id: string;
-  report_date: string;
   reservation_id: string;
   listing_name: string | null;
   checkin_date: string | null;
@@ -45,7 +15,7 @@ export interface BookingRow {
   adr: number | null;
   rental_revenue: number | null;
   total_revenue: number | null;
-  los: number | null;
+  los: number | null;            // length of stay (reservations.nights)
   booking_window: number | null;
   booking_source: string | null;
   currency: string | null;
@@ -60,6 +30,46 @@ export interface ClientSummary {
   lastBooking?: BookingRow; // most recent booking from any date, when today has none
 }
 
+type ReservationRecord = {
+  id: string;
+  client_id: string;
+  reservation_id: string;
+  listing_name: string | null;
+  checkin_date: string | null;
+  checkout_date: string | null;
+  booked_date: string | null;
+  adr: number | null;
+  rental_revenue: number | null;
+  total_revenue: number | null;
+  nights: number | null;
+  booking_window: number | null;
+  booking_source: string | null;
+  currency: string | null;
+};
+
+const SELECT =
+  'id, client_id, reservation_id, listing_name, checkin_date, checkout_date, ' +
+  'booked_date, adr, rental_revenue, total_revenue, nights, booking_window, booking_source, currency';
+
+function toBookingRow(r: ReservationRecord): BookingRow {
+  return {
+    id: r.id,
+    client_id: r.client_id,
+    reservation_id: r.reservation_id,
+    listing_name: r.listing_name,
+    checkin_date: r.checkin_date,
+    checkout_date: r.checkout_date,
+    booked_date: r.booked_date,
+    adr: r.adr,
+    rental_revenue: r.rental_revenue,
+    total_revenue: r.total_revenue,
+    los: r.nights,
+    booking_window: r.booking_window,
+    booking_source: r.booking_source,
+    currency: r.currency,
+  };
+}
+
 export async function getReportsByDate(reportDate: string): Promise<ClientSummary[]> {
   const supabase = createSupabaseAdmin();
 
@@ -72,20 +82,22 @@ export async function getReportsByDate(reportDate: string): Promise<ClientSummar
 
   if (!clients?.length) return [];
 
-  // Fetch bookings by booked_date (more reliable than report_date which depends on sync timing)
+  // Reservations booked on the target date.
   const { data: todayRows, error } = await supabase
-    .from('booking_reports')
-    .select('*')
+    .from('reservations')
+    .select(SELECT)
     .eq('booked_date', reportDate)
+    .neq('status', 'cancelled')
     .order('listing_name');
 
-  if (error) throw new Error(`Failed to fetch reports: ${error.message}`);
+  if (error) throw new Error(`Failed to fetch reservations: ${error.message}`);
 
-  // Group today's bookings by client
+  // Group today's reservations by client
   const byClient = new Map<string, BookingRow[]>();
-  for (const row of todayRows ?? []) {
+  for (const row of (todayRows ?? []) as unknown as ReservationRecord[]) {
+    const mapped = toBookingRow(row);
     if (!byClient.has(row.client_id)) byClient.set(row.client_id, []);
-    byClient.get(row.client_id)!.push(row as BookingRow);
+    byClient.get(row.client_id)!.push(mapped);
   }
 
   // For clients with no bookings today, fetch their last booking
@@ -94,15 +106,16 @@ export async function getReportsByDate(reportDate: string): Promise<ClientSummar
 
   if (missingIds.length) {
     const { data: allRecent } = await supabase
-      .from('booking_reports')
-      .select('*')
+      .from('reservations')
+      .select(SELECT)
       .in('client_id', missingIds)
+      .neq('status', 'cancelled')
       .order('booked_date', { ascending: false });
 
     // Keep only the most recent booking per client
-    for (const row of allRecent ?? []) {
+    for (const row of (allRecent ?? []) as unknown as ReservationRecord[]) {
       if (!lastBookingMap.has(row.client_id)) {
-        lastBookingMap.set(row.client_id, row as BookingRow);
+        lastBookingMap.set(row.client_id, toBookingRow(row));
       }
     }
   }

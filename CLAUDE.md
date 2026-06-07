@@ -50,16 +50,21 @@ app/
 
 **Dashboard layout:** Protected by auth check → team_members lookup → redirect chain. Includes Sidebar + main content + CatMascot. Print styles hide sidebar/mascot.
 
-## PriceLabs Browser Automation
+## PriceLabs Reservations & Metrics (API-based)
 
-`lib/pricelabs/` uses Playwright Core for browser automation against PriceLabs. Locally uses Playwright's bundled Chromium; on Vercel uses `@sparticuz/chromium-min`. API routes under `/api/pricelabs/` have `maxDuration: 300` (5 min) for long-running scrapes.
+Reservation data is pulled from the **PriceLabs API** per listing — not scraped. The flow:
+
+1. **Listings** sync from `GET /v1/listings` into `listing_groups` (`POST /api/pricelabs/listings`).
+2. **Reservations** are fetched per listing via `lib/pricelabs/reservations.ts` and stored in the `reservations` table (`017_reservations.sql`), keyed by `(client_id, listing_id, reservation_id)`. The original API record is kept in `raw` for re-mapping. `GET /api/pricelabs/daily-report` drives this (cron + manual Sync button). PriceLabs' reservation endpoint/field names vary, so the client tries a few endpoint shapes and maps responses through a tolerant field mapper.
+3. **Metrics** (occupancy, ADR, RevPAR, revenue) are computed server-side from reservations joined with listing data in `lib/metrics/reservations-metrics.ts`, exposed via `GET /api/pricelabs/metrics` (per listing, rolled up to building group + client). Stays straddling the window boundary are prorated.
+
+`lib/pricelabs/browser.ts` still provides Playwright Core (bundled Chromium locally; `@sparticuz/chromium-min` on Vercel) for the **OTA scores** scraper (`/api/ota/scrape`). PriceLabs report/bookings scraping has been removed.
 
 ## Cron Jobs (vercel.json)
 
 - `/api/cron/marketing` — daily 9am UTC
-- `/api/pricelabs/daily-report` — daily 8am UTC
+- `/api/pricelabs/daily-report` — daily 8am UTC (pulls reservations from the PriceLabs API)
 - `/api/email/daily-tasks` — daily 8am UTC
-- `/api/pricelabs/daily-report?include=portfolio` — daily 7am UTC
 
 ## Environment Variables
 

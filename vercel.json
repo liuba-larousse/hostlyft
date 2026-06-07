@@ -11,10 +11,6 @@
     {
       "path": "/api/email/daily-tasks",
       "schedule": "0 8 * * *"
-    },
-    {
-      "path": "/api/pricelabs/daily-report?include=portfolio",
-      "schedule": "0 7 * * *"
     }
   ]
 }

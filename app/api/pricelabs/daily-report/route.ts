@@ -1,26 +1,44 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { createSupabaseAdmin } from '@/lib/supabase';
-import { getActiveClients, getRmPortalCredentials } from '@/lib/supabase/clients';
-import { upsertBookings } from '@/lib/supabase/reports';
-import { launchBrowser } from '@/lib/pricelabs/browser';
-import { loginToPriceLabs } from '@/lib/pricelabs/login';
-import { switchToRmClient } from '@/lib/pricelabs/rm-portal';
-import { downloadBookingsFile } from '@/lib/pricelabs/download';
-import { parseBookingsXlsx } from '@/lib/pricelabs/parse';
-import { downloadPortfolioReport } from '@/lib/pricelabs/download-report';
-import { uploadToDrive } from '@/lib/google-drive';
-import * as XLSX from 'xlsx';
+import { getActiveClients } from '@/lib/supabase/clients';
+import { fetchReservations, type ParsedReservation } from '@/lib/pricelabs/reservations';
+import { upsertReservations } from '@/lib/supabase/reservations';
 
-// Allow up to 5 minutes — needed for Playwright across 8 clients
+// Fetching reservations across every listing for every client can take a while.
 export const maxDuration = 300;
+
+// Cap concurrent PriceLabs API calls per client to stay polite to their API.
+const CONCURRENCY = 5;
 
 interface ClientResult {
   clientId: string;
   clientName: string;
   status: 'ok' | 'error';
   bookingsFound: number;
+  listings: number;
   error?: string;
+  debug?: string[];
+}
+
+interface ListingRef {
+  listing_id: string;
+  pms: string | null;
+  listing_name: string | null;
+}
+
+/** Run an async mapper over items with bounded concurrency. */
+async function mapPool<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (cursor < items.length) {
+      const i = cursor++;
+      results[i] = await fn(items[i]);
+    }
+  });
+  await Promise.all(workers);
+  return results;
 }
 
 export async function GET(req: NextRequest) {
@@ -36,9 +54,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const results: ClientResult[] = [];
   let clients;
-
   try {
     clients = await getActiveClients();
   } catch (err) {
@@ -49,167 +65,79 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ message: 'No active clients found', results: [] });
   }
 
-  // Get RM portal credentials for rm_portal clients
-  const rmCreds = await getRmPortalCredentials();
+  const supabase = createSupabaseAdmin();
+  const results: ClientResult[] = [];
 
-  // Group clients by connection type for efficient browser reuse
-  const directClients = clients.filter(c => c.connection_type === 'direct');
-  const rmPortalClients = clients.filter(c => c.connection_type === 'rm_portal');
-
-  // Run direct clients — one browser session per client
-  for (const client of directClients) {
-    const browser = await launchBrowser();
-    try {
-      const { context, page } = await loginToPriceLabs(browser, client.email, client.password);
-      try {
-        const buffer = await downloadBookingsFile(page);
-        const bookings = parseBookingsXlsx(buffer);
-        const reportDate = new Date();
-        reportDate.setDate(reportDate.getDate() - 1);
-        const reportDateStr = reportDate.toISOString().split('T')[0];
-        await upsertBookings(client.id, reportDateStr, bookings);
-        try { await uploadToDrive(buffer, `bookings_${client.client_name}_${reportDateStr}.xlsx`, `bookings/${client.client_name}`); } catch {}
-        results.push({ clientId: client.id, clientName: client.client_name, status: 'ok', bookingsFound: bookings.length });
-      } finally { await context.close(); }
-    } catch (err) {
-      results.push({ clientId: client.id, clientName: client.client_name, status: 'error', bookingsFound: 0, error: String(err) });
-    } finally { await browser.close(); }
-  }
-
-  // Run RM Portal clients — single browser session, switch between clients
-  if (rmPortalClients.length > 0 && rmCreds) {
-    const browser = await launchBrowser();
-    try {
-      const { context, page } = await loginToPriceLabs(browser, rmCreds.email, rmCreds.password);
-      try {
-        for (const client of rmPortalClients) {
-          try {
-            await switchToRmClient(page, client.client_name);
-            const buffer = await downloadBookingsFile(page);
-            const bookings = parseBookingsXlsx(buffer);
-            const reportDate = new Date();
-            reportDate.setDate(reportDate.getDate() - 1);
-            const reportDateStr = reportDate.toISOString().split('T')[0];
-            await upsertBookings(client.id, reportDateStr, bookings);
-            try { await uploadToDrive(buffer, `bookings_${client.client_name}_${reportDateStr}.xlsx`, `bookings/${client.client_name}`); } catch {}
-            results.push({ clientId: client.id, clientName: client.client_name, status: 'ok', bookingsFound: bookings.length });
-          } catch (err) {
-            results.push({ clientId: client.id, clientName: client.client_name, status: 'error', bookingsFound: 0, error: String(err) });
-          }
-        }
-      } finally { await context.close(); }
-    } catch (err) {
-      // If RM portal login fails, mark all RM clients as error
-      for (const client of rmPortalClients) {
-        results.push({ clientId: client.id, clientName: client.client_name, status: 'error', bookingsFound: 0, error: `RM Portal login failed: ${String(err)}` });
-      }
-    } finally { await browser.close(); }
-  } else if (rmPortalClients.length > 0 && !rmCreds) {
-    for (const client of rmPortalClients) {
-      results.push({ clientId: client.id, clientName: client.client_name, status: 'error', bookingsFound: 0, error: 'No RM Portal credentials configured' });
+  for (const client of clients) {
+    if (!client.api_key) {
+      results.push({
+        clientId: client.id,
+        clientName: client.client_name,
+        status: 'error',
+        bookingsFound: 0,
+        listings: 0,
+        error: 'No API key configured for this client',
+      });
+      continue;
     }
-  }
 
-  // If ?include=portfolio, also sync portfolio reports for Marcus
-  const includePortfolio = req.nextUrl.searchParams.get('include') === 'portfolio';
-  let portfolioResults: { segment: string; rowCount: number }[] | undefined;
-  if (includePortfolio) {
-    const marcus = clients.find(c =>
-      c.client_name.toLowerCase().includes('marcus') ||
-      c.client_name.toLowerCase().includes('halawi')
-    );
-    if (marcus) {
-      const browser = await launchBrowser();
-      try {
-        const { context, page } = await loginToPriceLabs(browser, marcus.email, marcus.password);
-        try {
-          const supabase = createSupabaseAdmin();
-          const today = new Date().toISOString().split('T')[0];
-          portfolioResults = [];
-          for (const seg of VALID_SEGMENTS) {
-            try {
-              const buffer = await downloadPortfolioReport(page, seg);
-              const reportData = parsePortfolioXlsx(buffer, seg);
-              await supabase.from('portfolio_reports').upsert(
-                { client_id: marcus.id, report_date: today, segment: seg, report_data: reportData },
-                { onConflict: 'client_id,report_date,segment' }
-              );
-              try { await uploadToDrive(buffer, `portfolio_${seg}_${today}.xlsx`, `portfolio/${seg}`); } catch {}
-              portfolioResults.push({ segment: seg, rowCount: reportData.rowCount });
-            } catch (e) {
-              portfolioResults.push({ segment: seg, rowCount: 0 });
-            }
-          }
-        } finally { await context.close(); }
-      } finally { await browser.close(); }
+    try {
+      // Listings to pull reservations for come from the synced listing_groups table.
+      const { data: listings, error: listingErr } = await supabase
+        .from('listing_groups')
+        .select('listing_id, pms, listing_name')
+        .eq('client_id', client.id);
+
+      if (listingErr) throw new Error(`Failed to load listings: ${listingErr.message}`);
+
+      const listingRefs = (listings ?? []) as ListingRef[];
+      if (!listingRefs.length) {
+        results.push({
+          clientId: client.id,
+          clientName: client.client_name,
+          status: 'error',
+          bookingsFound: 0,
+          listings: 0,
+          error: 'No listings synced for this client — sync listings first.',
+        });
+        continue;
+      }
+
+      const debug: string[] = [];
+      const perListing = await mapPool(listingRefs, CONCURRENCY, async (l) => {
+        const res = await fetchReservations(client.api_key!, l.listing_id, l.pms || 'guesty');
+        if (res.errors?.length && res.reservations.length === 0) {
+          debug.push(`listing ${l.listing_id}: ${res.errors[res.errors.length - 1]}`);
+        }
+        return res.reservations.map(r => ({
+          ...r,
+          listingName: r.listingName || l.listing_name || '',
+        }));
+      });
+
+      const all: ParsedReservation[] = perListing.flat();
+      const saved = await upsertReservations(client.id, all);
+
+      results.push({
+        clientId: client.id,
+        clientName: client.client_name,
+        status: 'ok',
+        bookingsFound: saved,
+        listings: listingRefs.length,
+        ...(debug.length ? { debug: debug.slice(0, 10) } : {}),
+      });
+    } catch (err) {
+      results.push({
+        clientId: client.id,
+        clientName: client.client_name,
+        status: 'error',
+        bookingsFound: 0,
+        listings: 0,
+        error: String(err),
+      });
     }
   }
 
   const allOk = results.every(r => r.status === 'ok');
-  return NextResponse.json(
-    { success: allOk, results, portfolioResults },
-    { status: allOk ? 200 : 207 }
-  );
-}
-
-// POST — manual portfolio report sync (uses the same Playwright setup that works for GET)
-// Each segment has its own Report Builder URL.
-const VALID_SEGMENTS = ['all', 'ph', 'exclPh', 'building', 'weeks', 'listing'] as const;
-
-function parsePortfolioXlsx(buffer: Buffer, segment: string) {
-  const wb = XLSX.read(buffer, { type: 'buffer', cellDates: false });
-  const sheet = wb.Sheets[wb.SheetNames[0]];
-  if (!sheet) throw new Error('Workbook has no sheets');
-  const rows = XLSX.utils.sheet_to_json(sheet, { defval: null });
-  if (rows.length === 0) throw new Error('Report is empty');
-  return { fileName: `portfolio-report-${segment}.xlsx`, uploadedAt: new Date().toISOString(), segment, rawRows: rows, rowCount: rows.length };
-}
-
-export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user?.email) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
-  // Download one segment per request to avoid timeout
-  const segmentParam = req.nextUrl.searchParams.get('segment') || 'all';
-  const segment = VALID_SEGMENTS.includes(segmentParam as any) ? segmentParam as typeof VALID_SEGMENTS[number] : 'all';
-
-  const clients = await getActiveClients();
-  const client = clients.find(c =>
-    c.client_name.toLowerCase().includes('marcus') ||
-    c.client_name.toLowerCase().includes('halawi')
-  );
-  if (!client) {
-    return NextResponse.json({ error: 'Client "Marcus Halawi" not found' }, { status: 404 });
-  }
-
-  let step = 'launching browser';
-  let browser;
-  try {
-    browser = await launchBrowser();
-    step = 'logging in';
-    const { context, page } = await loginToPriceLabs(browser, client.email, client.password);
-    try {
-      step = `downloading ${segment} report`;
-      const buffer = await downloadPortfolioReport(page, segment);
-      step = `parsing ${segment} report`;
-      const reportData = parsePortfolioXlsx(buffer, segment);
-      step = `saving ${segment} to supabase`;
-      const supabase = createSupabaseAdmin();
-      const today = new Date().toISOString().split('T')[0];
-      const { error } = await supabase
-        .from('portfolio_reports')
-        .upsert(
-          { client_id: client.id, report_date: today, segment, report_data: reportData },
-          { onConflict: 'client_id,report_date,segment' }
-        );
-      if (error) throw new Error(`Supabase: ${error.message}`);
-      try { await uploadToDrive(buffer, `portfolio_${segment}_${today}.xlsx`, `portfolio/${segment}`); } catch {}
-
-      return NextResponse.json({ success: true, clientName: client.client_name, reportDate: today, segment, rowCount: reportData.rowCount });
-    } finally { await context.close(); }
-  } catch (err) {
-    return NextResponse.json({ error: `Failed at "${step}": ${String(err)}` }, { status: 500 });
-  } finally { if (browser) await browser.close().catch(() => {}); }
+  return NextResponse.json({ success: allOk, results }, { status: allOk ? 200 : 207 });
 }
