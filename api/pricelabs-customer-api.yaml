@@ -1,0 +1,411 @@
+openapi: 3.0.3
+
+info:
+  title: PriceLabs Customer API
+  description: |
+    Using PriceLabs Customer API, users will be able to import PriceLabs' Dynamic prices per listing in any system. These prices are updated every 24 hours.
+    
+    [Click here](https://help.pricelabs.co/portal/en/kb/articles/pricelabs-api) to know more about Customer API and to know how you can enable it for your PriceLabs account.
+    
+    Please reach out to support@pricelabs.co if you have any queries on the Customer API.
+    
+    Once the Customer API is enabled for your PL account, please use copy the API key from Settings => API Details in your PriceLabs account and send it as X-API-Key in the header for each of the below endpoints.
+    
+    ## Rate limiting & Timeout configuration
+    Each Customer API Key accessing the API has a limit of 60 requests per min capped at 1000 requests per hour. Reaching the rate limit will return a 429 Too Many Requests status code.
+    
+    Please be aware that the processing time for your request may vary depending on the current server load. We recommend setting the client timeout to 300 seconds to allow for any potential delays, even though our aim is to respond to all requests within that timeframe.
+  
+  version: 1.0.0-oas3
+  contact: 
+    name: PriceLabs Support
+    email: support@pricelabs.co
+    url: http://pricelabs.co
+
+tags:
+  - name: Listings
+    description: Manage listings and their pricing information
+  - name: Date Specific Overrides (DSO)
+    description: Manage date-specific pricing overrides
+  - name: Prices
+    description: Retrieve pricing data for listings
+  - name: Neighborhood Data
+    description: Get market data for listing neighborhoods
+  - name: Reservations
+    description: Retrieve reservation information
+
+servers:
+  - url: https://api.pricelabs.co
+    description: PriceLabs API Server
+
+paths:
+  /v1/listings:
+    get:
+      summary: Get all listings in an account
+      description: This API call will return all the listings in a customer's account across all PMSs, with their minimum price, base price, recommended base price and maximum price along with other Performance Metrics.
+      tags:
+        - Listings
+      operationId: allListings
+      parameters:
+        - in: query
+          name: skip_hidden
+          description: Filter hidden listings. Default is false.
+          schema:
+            type: string
+            enum: ['true', 'false']
+            example: 'true'
+        - in: query
+          name: only_syncing_listings
+          description: Filter listings based on sync status. Default is false.
+          schema:
+            type: string
+            enum: ['true', 'false']
+            example: 'true'
+        - name: X-API-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            example: '{{API_KEY}}'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  listings:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Listing'
+
+  /v1/listing_prices:
+    post:
+      summary: Get prices for listings
+      description: Use this API to get prices for your listings that exist in your PriceLabs account.
+      tags:
+        - Prices
+      operationId: pricesForListings
+      parameters:
+        - name: X-API-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            example: '{{API_KEY}}'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                listings:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      id:
+                        type: string
+                        description: Unique listing ID
+                      pms:
+                        type: string
+                        description: PMS Name
+                      dateFrom:
+                        type: string
+                        format: date
+                        description: Start date (current or future)
+                      dateTo:
+                        type: string
+                        format: date
+                        description: End date (current or future)
+                      reason:
+                        type: boolean
+                        description: If true, returns pricing information
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ListingPrices'
+
+  /v1/reservation_data:
+    get:
+      summary: Get reservations from PMS
+      description: Returns all reservations received from the PMS connected to the PriceLabs account. Response is paginated with 100 results per page.
+      tags:
+        - Reservations
+      operationId: getReservations
+      parameters:
+        - name: pms
+          in: query
+          schema:
+            type: string
+            example: igms
+        - name: listing_id
+          in: query
+          schema:
+            type: string
+            example: '12345'
+        - name: include_hidden
+          in: query
+          schema:
+            type: string
+            example: 'true'
+        - name: start_date
+          in: query
+          schema:
+            type: string
+            format: date
+            example: '2020-01-01'
+        - name: end_date
+          in: query
+          schema:
+            type: string
+            format: date
+            example: '2020-01-10'
+        - name: limit
+          in: query
+          schema:
+            type: string
+            example: '100'
+        - name: offset
+          in: query
+          schema:
+            type: string
+            example: '0'
+        - name: X-API-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            example: '{{API_KEY}}'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReservationResponse'
+
+components:
+  schemas:
+    Listing:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Unique listing ID
+        pms:
+          type: string
+          description: PMS that this listing belongs to
+        name:
+          type: string
+          description: Name of the listing
+        latitude:
+          type: string
+          example: '41.8781136'
+        longitude:
+          type: string
+          example: '-87.6297982'
+        country:
+          type: string
+          example: 'United States'
+        city_name:
+          type: string
+          example: 'Chicago'
+        state:
+          type: string
+          example: 'Illinois'
+        no_of_bedrooms:
+          type: number
+          description: Number of bedrooms
+        channel_listing_details:
+          type: array
+          items:
+            type: object
+            properties:
+              channel_name:
+                type: string
+                example: 'airbnb'
+              channel_listing_id:
+                type: string
+                example: '853373441687663301'
+        min:
+          type: number
+          description: Minimum price
+        base:
+          type: number
+          description: Base price
+        max:
+          type: number
+          description: Maximum price
+        group:
+          type: string
+          description: Listing group
+        subgroup:
+          type: string
+          description: Listing subgroup
+        tags:
+          type: string
+          description: PL tags
+        notes:
+          type: string
+          description: Notes
+        isHidden:
+          type: boolean
+          description: Hidden status
+        push_enabled:
+          type: boolean
+          description: Sync status
+        occupancy_next_7:
+          type: number
+          description: Listing occupancy next 7 days
+        market_occupancy_next_7:
+          type: number
+          description: Market occupancy next 7 days
+        occupancy_next_30:
+          type: number
+          description: Listing occupancy next 30 days
+        market_occupancy_next_30:
+          type: number
+          description: Market occupancy next 30 days
+        recommended_base_price:
+          type: string
+          description: PL recommended base price
+        last_date_pushed:
+          type: string
+          format: date-time
+          description: Last synced time
+        last_refreshed_at:
+          type: string
+          format: date-time
+          description: Last refresh time
+
+    ListingPrices:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Listing ID
+        pms:
+          type: string
+          description: PMS Name
+        group:
+          type: string
+          description: Listing group
+        currency:
+          type: string
+          description: Currency
+        last_refreshed_at:
+          type: string
+          format: date-time
+          description: Last refresh timestamp
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+                format: date
+              price:
+                type: number
+                description: PriceLabs recommended price
+              user_price:
+                type: number
+                description: Last seen price on PMS (-1 if unavailable)
+              min_stay:
+                type: number
+                description: Minimum stay
+              booking_status:
+                type: string
+                description: Booking status
+              weekly_discount:
+                type: number
+                description: Weekly discount
+              monthly_discount:
+                type: number
+                description: Monthly discount
+              check_in:
+                type: boolean
+                description: Check-in allowed
+              check_out:
+                type: boolean
+                description: Check-out allowed
+              demand_color:
+                type: string
+                description: Demand color code
+              demand_desc:
+                type: string
+                description: Demand description
+
+    ReservationResponse:
+      type: object
+      properties:
+        pms_name:
+          type: string
+        next_page:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Reservation'
+
+    Reservation:
+      type: object
+      properties:
+        listing_id:
+          type: string
+        listing_name:
+          type: string
+        reservation_id:
+          type: string
+        check_in:
+          type: string
+          format: date
+        check_out:
+          type: string
+          format: date
+        booking_status:
+          type: string
+          enum: ['booked', 'cancelled']
+        booked_date:
+          type: string
+          format: date
+        rental_revenue:
+          type: string
+        total_cost:
+          type: string
+        no_of_days:
+          type: number
+        currency:
+          type: string
+        cancelled_on:
+          type: string
+          format: date
+        cleaning_fees:
+          type: number
+          format: float
+          description: Cleaning fee applied
+        booking_channel:
+          type: string
+          example: 'Booking.com'
+          description: Channel/OTA (e.g., Booking.com, Airbnb, Expedia, VRBO)
+        channelConfirmationCode:
+          type: string
+          example: 'BC-22098yfy'
+          description: Confirmation code from booking channel
+
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+security:
+  - ApiKeyAuth: []

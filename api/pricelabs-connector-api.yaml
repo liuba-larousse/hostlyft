@@ -1,0 +1,241 @@
+# PriceLabs Connector API (Integration API)
+# 
+# This file references the official PriceLabs Connector API documentation.
+# The Connector API allows Property Management Systems (PMS) to integrate with PriceLabs
+# for dynamic pricing and revenue management.
+#
+# IMPORTANT: This API uses Swagger 2.0 specification format.
+#
+# Official Documentation Links:
+# - SwaggerHub v1: https://app.swaggerhub.com/apis/PriceLabs/price-labs_connector/1.0.0
+# - SwaggerHub v2 (Latest): https://app.swaggerhub.com/apis-docs/PriceLabs/price-labs_connector/2.0.0
+# - Integration Guide: https://docs.google.com/document/d/e/2PACX-1vQ4OB_ix8QwNrzayEWKRj4OS-8ylJS8nrTfyKzT9fxJtKKhMjfpwAvYqUUzHub6gvhsk9Nm3V8MU5kz/pub
+#
+# Base URL: https://api.pricelabs.co/v1/integration/api
+#
+# Authentication:
+#   - X-INTEGRATION-TOKEN: Partner token provided by PriceLabs
+#   - X-INTEGRATION-NAME: PMS identifier provided by PriceLabs
+#
+# Rate Limits:
+#   - 300 requests per minute
+#
+# To Get Access:
+#   Email support@pricelabs.co with:
+#   1. Your PMS Name
+#   2. Are you a commercial or a custom PMS
+#   3. Email ID for the development account
+#   4. Commercial contact and email id
+#
+# Key Endpoints:
+#   POST /listings - Update or create listings
+#   POST /calendar - Update rates and availability
+#   POST /reservations - Update property reservations
+#   POST /rate_plans - Add or update rate plans
+#   POST /get_prices - Pull pricing data from PriceLabs
+#   POST /integration - Update integration settings
+#   POST /status - Query current state of objects
+#
+# Webhook Endpoints (Implemented by PMS):
+#   POST /sync_url - Receive pricing updates from PriceLabs
+#   POST /calendar_trigger_url - Trigger calendar data sync
+#   POST /hook_url - Receive notifications from PriceLabs
+#
+# For the complete API specification, please refer to the SwaggerHub links above.
+# The full Swagger 2.0 specification is maintained by PriceLabs and should be
+# accessed directly from SwaggerHub for the most up-to-date information.
+
+swagger: "2.0"
+info:
+  title: PriceLabs Connector API (Integration API)
+  description: |
+    This is a reference file for the PriceLabs Connector API.
+    
+    **Please refer to the official documentation:**
+    - Latest API v2: https://app.swaggerhub.com/apis-docs/PriceLabs/price-labs_connector/2.0.0
+    - API v1: https://app.swaggerhub.com/apis/PriceLabs/price-labs_connector/1.0.0
+    - Integration Guide: https://docs.google.com/document/d/e/2PACX-1vQ4OB_ix8QwNrzayEWKRj4OS-8ylJS8nrTfyKzT9fxJtKKhMjfpwAvYqUUzHub6gvhsk9Nm3V8MU5kz/pub
+    
+    This API is used by PMS (commercial or customer) to access PriceLabs' dynamic pricing product.
+    
+    **To use this API:**
+    Email support@pricelabs.co with:
+    1. Your PMS Name
+    2. Are you a commercial or a custom PMS
+    3. Email ID for the development account
+    4. Commercial contact and email id
+    
+    PriceLabs will provide:
+    1. Your partner token (X-INTEGRATION-TOKEN)
+    2. Your PMS identifier (X-INTEGRATION-NAME)
+    3. Your user_token (email address for test account)
+    
+  version: 1.0.0
+  contact:
+    email: support@pricelabs.co
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+
+host: api.pricelabs.co
+basePath: /v1/integration/api
+
+schemes:
+  - https
+
+securityDefinitions:
+  integration_token:
+    type: apiKey
+    name: X-INTEGRATION-TOKEN
+    in: header
+    description: Partner token provided by PriceLabs
+  integration_name:
+    type: apiKey
+    name: X-INTEGRATION-NAME
+    in: header
+    description: PMS identifier provided by PriceLabs
+
+security:
+  - integration_token: []
+  - integration_name: []
+
+tags:
+  - name: PMS
+    description: Property Management System integration endpoints
+  - name: Integration
+    description: Integration configuration and management
+
+paths:
+  /listings:
+    post:
+      tags:
+        - PMS
+      summary: Update or create listings
+      description: |
+        Update individual details of specific listings or create new ones.
+        
+        **Important Notes:**
+        - When creating a new listing, all fields are required
+        - listing_id must be unique across all users in the PMS
+        - listing_id should not contain spaces or special characters (except underscore)
+        - For multi-room properties, use format: propertyId___roomTypeId
+        
+        **Supported Amenities:**
+        https://docs.google.com/spreadsheets/d/1TR5PpVy0nP2ZOq7HM2IddCVezqoscx71plZRrqFHqok/edit?usp=sharing
+      responses:
+        '200':
+          description: Request processed with successes and failures
+        '401':
+          description: Invalid integration API key
+
+  /calendar:
+    post:
+      tags:
+        - PMS
+      summary: Update rates and availability
+      description: |
+        Update rates and availability for listings.
+        
+        **Important:**
+        - First call must include both price and available_units
+        - Subsequent calls can be delta updates
+        - For multi-rate plans, call /rate_plans first
+        - Must set prices for default rate plan
+      responses:
+        '200':
+          description: Request processed with successes and failures
+        '401':
+          description: Invalid integration API key
+
+  /reservations:
+    post:
+      tags:
+        - PMS
+      summary: Update property reservations
+      description: |
+        Keep reservations up to date for listings.
+        
+        **Important:**
+        - Reservation IDs must be unique across all listings
+        - Push all reservations (past since 2020-01-01 and future)
+        - start_date and end_date are check-in/check-out dates
+      responses:
+        '200':
+          description: Request processed with successes and failures
+        '401':
+          description: Invalid integration API key
+
+  /rate_plans:
+    post:
+      tags:
+        - PMS
+      summary: Add or update rate plans
+      description: |
+        Add or update rate plans for a listing.
+        
+        **Important:**
+        - Must have exactly one default rate plan
+        - After calling this, must call /calendar for default rate plan
+      responses:
+        '200':
+          description: Request processed successfully
+        '401':
+          description: Invalid integration API key
+
+  /get_prices:
+    post:
+      tags:
+        - PMS
+      summary: Pull pricing data from PriceLabs
+      description: |
+        Retrieve pricing information for properties.
+        
+        **Parameters:**
+        - listing_id: Required
+        - rate_plan_id: Optional (skip if no rate plans)
+        - delta_only: Optional (requires delta_only=true in /integration)
+      responses:
+        '200':
+          description: Pricing data retrieved successfully
+        '401':
+          description: Invalid integration API key
+
+  /integration:
+    post:
+      tags:
+        - Integration
+      summary: Update integration settings
+      description: |
+        Configure integration settings including webhook URLs.
+        
+        **Important:**
+        - sync_url: Endpoint to receive pricing updates
+        - calendar_trigger_url: Endpoint to trigger calendar sync
+        - hook_url: Endpoint to receive notifications
+        - regenerate_token: Set true to get new token
+        - delta_only: Set true to receive only changed data
+        
+        **Features array:**
+        Only enable features that PMS actively supports and consumes.
+      responses:
+        '200':
+          description: Integration settings updated
+        '401':
+          description: Invalid integration API key
+
+  /status:
+    post:
+      tags:
+        - PMS
+      summary: Query current state of objects
+      description: |
+        Query PriceLabs for current state of listings, reservations, or calendar data.
+      responses:
+        '200':
+          description: Status information retrieved
+        '401':
+          description: Invalid integration API key
+
+# Note: For complete API specification including request/response schemas,
+# please refer to the official SwaggerHub documentation:
+# https://app.swaggerhub.com/apis-docs/PriceLabs/price-labs_connector/2.0.0
