@@ -2,11 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Users, BookOpen } from "lucide-react";
+import { Users } from "lucide-react";
 
 const tabs = [
   { href: "/dashboard/team/members", label: "Members", icon: Users },
-  { href: "/dashboard/team/workflows", label: "Workflows", icon: BookOpen },
 ];
 
 export default function TeamLayout({ children }: { children: React.ReactNode }) {

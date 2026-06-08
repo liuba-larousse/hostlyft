@@ -18,8 +18,6 @@ test.describe("Dashboard", () => {
     await expect(page.getByText("Quick access")).toBeVisible();
 
     const cards = [
-      "Cloud Agents",
-      "Artifacts",
       "Schedule",
       "Team",
       "Clients",
@@ -34,8 +32,6 @@ test.describe("Dashboard", () => {
 
     const navItems = [
       "Overview",
-      "Cloud Agents",
-      "Artifacts",
       "Schedule",
       "Team",
       "Clients",
@@ -77,13 +73,6 @@ test.describe("Dashboard", () => {
     await page.goto("/dashboard/clients");
     await page.waitForLoadState("networkidle");
     await expect(page.locator("body")).not.toContainText("Application error");
-  });
-
-  test("artifacts page loads with built-in components", async ({ page }) => {
-    await page.goto("/dashboard/artifacts");
-    await expect(page.getByText("Artifacts")).toBeVisible();
-    await expect(page.getByText("Revenue Forecast")).toBeVisible();
-    await expect(page.getByText("Seasonality Analytics")).toBeVisible();
   });
 
   test("quick access cards navigate to correct pages", async ({ page }) => {
