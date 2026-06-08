@@ -55,6 +55,54 @@ function resolveBuildingGroup(custGroup: string, tags: string, listingName: stri
   return custGroup || 'Unknown';
 }
 
+interface ListingLinks {
+  listingUrl: string | null;
+  airbnbUrl: string | null;
+  bookingUrl: string | null;
+  airbnbId: string | null;
+}
+
+/**
+ * Pull OTA/channel links out of a PriceLabs listing record.
+ * PriceLabs' /v1/listings field names for these aren't publicly documented and
+ * vary, so we: (1) read explicit URL fields, (2) regex-scan the raw record for
+ * any airbnb/booking.com URL, and (3) build the Airbnb URL from the listing id
+ * when the PMS is Airbnb (the PriceLabs id is the Airbnb room id in that case).
+ */
+function extractListingLinks(l: Record<string, unknown>): ListingLinks {
+  const json = JSON.stringify(l ?? {});
+  const matchUrl = (host: string): string | null => {
+    const m = json.match(new RegExp(`https?:\\/\\/[^"'\\s\\\\]*${host}[^"'\\s\\\\]*`, 'i'));
+    return m ? m[0] : null;
+  };
+
+  let airbnbUrl = matchUrl('airbnb\\.');
+  const bookingUrl = matchUrl('booking\\.com');
+
+  const pms = String(l.pms ?? '').toLowerCase();
+  const id = l.id != null ? String(l.id) : '';
+  let airbnbId: string | null =
+    l.airbnb_id != null ? String(l.airbnb_id)
+    : l.airbnb_listing_id != null ? String(l.airbnb_listing_id)
+    : null;
+
+  // For Airbnb-connected listings the PriceLabs listing id is the Airbnb room id.
+  if (!airbnbUrl && pms.includes('airbnb') && /^\d+$/.test(id)) {
+    airbnbId = id;
+  }
+  if (!airbnbUrl && airbnbId && /^\d+$/.test(airbnbId)) {
+    airbnbUrl = `https://www.airbnb.com/rooms/${airbnbId}`;
+  }
+
+  const pickStr = (...vals: unknown[]): string | null => {
+    for (const v of vals) if (typeof v === 'string' && v) return v;
+    return null;
+  };
+  const listingUrl = pickStr(l.listing_url, l.url, l.listing_link, l.link);
+
+  return { listingUrl, airbnbUrl, bookingUrl, airbnbId };
+}
+
 // GET — fetch listings, optionally filtered by building_group
 export async function GET(req: NextRequest) {
   const session = await auth();
@@ -162,6 +210,7 @@ export async function POST(req: NextRequest) {
       const custGroup = (l.group || '').trim();
       const tags = (l.tags || '').trim();
       const listingName = (l.name || '').trim();
+      const links = extractListingLinks(l);
       return {
         client_id: clientData.id,
         listing_id: String(l.id),
@@ -174,7 +223,11 @@ export async function POST(req: NextRequest) {
         min_price: l.min != null ? Number(l.min) : null,
         bedroom_count: l.no_of_bedrooms != null ? Number(l.no_of_bedrooms) : null,
         listing_sync: true,
-        airbnb_id: null,
+        airbnb_id: links.airbnbId,
+        listing_url: links.listingUrl,
+        airbnb_url: links.airbnbUrl,
+        booking_url: links.bookingUrl,
+        raw: l,
       };
     });
 
@@ -196,5 +249,9 @@ export async function POST(req: NextRequest) {
     total: allListings.length,
     hidden: allListings.length - listings.length,
     groups,
+    links: {
+      airbnb: listings.filter(l => l.airbnb_url).length,
+      booking: listings.filter(l => l.booking_url).length,
+    },
   });
 }
