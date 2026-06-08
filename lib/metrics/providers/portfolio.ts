@@ -1,4 +1,5 @@
 import { createSupabaseAdmin } from '@/lib/supabase';
+import type { ListingYearPerf } from '@/lib/pricelabs/monthly';
 
 export interface PortfolioMonth {
   ym: string; // "2026-01"
@@ -27,12 +28,16 @@ export interface PortfolioDetail {
   current: PortfolioMonth | null;
   currentYear: YearSummary | null;
   months: PortfolioMonth[];
+  byListing: ListingYearPerf[];
 }
 
 interface PortfolioReportRow {
   report_date: string;
   segment: string;
-  report_data: { rawRows?: Record<string, unknown>[] } | null;
+  report_data: {
+    rawRows?: Record<string, unknown>[];
+    byListing?: ListingYearPerf[];
+  } | null;
 }
 
 function num(value: unknown): number {
@@ -150,6 +155,7 @@ export async function getPortfolioDetail(
   const current =
     months.find((m) => m.ym === currentYM) ?? months[months.length - 1] ?? null;
   const currentYear = summarizeYear(months, currentYM.slice(0, 4));
+  const byListing = chosen.report_data?.byListing ?? [];
 
-  return { reportDate: chosen.report_date, segment: chosen.segment, current, currentYear, months };
+  return { reportDate: chosen.report_date, segment: chosen.segment, current, currentYear, months, byListing };
 }

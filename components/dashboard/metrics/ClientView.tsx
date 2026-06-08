@@ -3,6 +3,7 @@ import type { ClientDetail } from '@/lib/metrics/client-detail';
 import type { DateRange } from '@/lib/metrics/types';
 import { METRIC_LIST } from '@/lib/metrics/registry';
 import { clientColor } from '@/lib/metrics/colors';
+import { formatValue } from '@/lib/metrics/format';
 import { KpiCard } from './KpiCard';
 import { BulletRow } from './BulletRow';
 import { TrendChart } from './TrendChart';
@@ -87,6 +88,37 @@ export const ClientView: React.FC<ClientViewProps> = ({ detail, range }) => {
               </div>
             </div>
           ) : null}
+        </section>
+      ) : null}
+
+      {/* Per-listing occupancy — reserved dates ÷ calendar days of the year */}
+      {portfolio && portfolio.byListing.length > 0 ? (
+        <section>
+          <SectionTitle note={`${portfolio.currentYear?.year ?? ''} · occupancy per listing`}>
+            By listing
+          </SectionTitle>
+          <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 text-left">
+                  <th className="px-4 py-2.5 text-xs font-bold uppercase tracking-wide text-gray-400">Listing</th>
+                  <th className="px-4 py-2.5 text-right text-xs font-bold uppercase tracking-wide text-gray-400">Occupancy</th>
+                  <th className="px-4 py-2.5 text-right text-xs font-bold uppercase tracking-wide text-gray-400">Nights</th>
+                  <th className="px-4 py-2.5 text-right text-xs font-bold uppercase tracking-wide text-gray-400">Revenue</th>
+                </tr>
+              </thead>
+              <tbody>
+                {portfolio.byListing.map((l, i) => (
+                  <tr key={`${l.listing}-${i}`} className="border-b border-gray-50 last:border-0">
+                    <td className="max-w-xs truncate px-4 py-2.5 text-gray-900">{l.listing}</td>
+                    <td className="px-4 py-2.5 text-right font-semibold tabular-nums text-gray-900">{l.occupancy.toFixed(1)}%</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums text-gray-600">{l.bookedNights}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums text-gray-600">{formatValue('currency', l.revenue, bookings.currency)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
       ) : null}
 

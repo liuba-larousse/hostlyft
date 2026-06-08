@@ -7,18 +7,16 @@ import {
   parseMoney,
   type ApiReservation,
 } from './api';
-import { computeMonthlyPerformance } from './monthly';
+import { computeMonthly, computePerListingYear, type Stay } from './monthly';
 
 export interface ClientSyncResult {
   clientId: string;
   clientName: string;
   status: 'synced' | 'skipped' | 'error';
   pms?: string;
-  reservations?: number; // booked rows upserted
+  reservations?: number; // forward booked rows refreshed
   listings?: number;
   months?: number;
-  occupancy30?: number;
-  marketOccupancy30?: number;
   reason?: string;
 }
 
@@ -41,8 +39,7 @@ function toBookingRow(r: ApiReservation, clientId: string, fallbackDate: string)
 
   return {
     client_id: clientId,
-    // report_date keyed to the booking itself so re-syncs are idempotent
-    // (one row per reservation), not per sync-day.
+    // report_date keyed to the booking itself so re-syncs are idempotent.
     report_date: booked || fallbackDate,
     reservation_id: r.reservation_id,
     listing_name: r.listing_name ?? null,
@@ -59,26 +56,57 @@ function toBookingRow(r: ApiReservation, clientId: string, fallbackDate: string)
   };
 }
 
-interface SyncWindow {
-  start: string;
-  end: string;
-}
-
-function defaultWindow(): SyncWindow {
-  // reservation_data filters by STAY date. A year back gives monthly performance
-  // history; a year forward captures upcoming stays / recent forward bookings.
+/**
+ * Forward window: stays from the start of the current month onward. Elapsed past
+ * months never change, so we don't re-pull them — only current + future stays
+ * (where new bookings and cancellations happen) are refreshed each sync.
+ */
+function forwardWindow(): { start: string; end: string } {
   const today = new Date();
-  const start = new Date(today);
-  start.setDate(start.getDate() - 365);
+  const start = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
   const end = new Date(today);
-  end.setDate(end.getDate() + 365);
+  end.setUTCDate(end.getUTCDate() + 365);
   return { start: isoDate(start), end: isoDate(end) };
 }
 
-export async function syncClientFromApi(
-  client: PriceLabsClient,
-  window: SyncWindow = defaultWindow()
-): Promise<ClientSyncResult> {
+interface StayRowDB {
+  checkin_date: string | null;
+  checkout_date: string | null;
+  rental_revenue: number | null;
+  listing_name: string | null;
+}
+
+/** All booking_reports stays for a client (past retained + forward refreshed). */
+async function loadStays(
+  supabase: ReturnType<typeof createSupabaseAdmin>,
+  clientId: string
+): Promise<Stay[]> {
+  const PAGE = 1000;
+  const stays: Stay[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from('booking_reports')
+      .select('checkin_date, checkout_date, rental_revenue, listing_name')
+      .eq('client_id', clientId)
+      .order('id', { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(error.message);
+    const batch = (data ?? []) as StayRowDB[];
+    for (const r of batch) {
+      if (!r.checkin_date || !r.checkout_date) continue;
+      stays.push({
+        checkIn: r.checkin_date,
+        checkOut: r.checkout_date,
+        rentalRevenue: r.rental_revenue ?? 0,
+        listing: r.listing_name ?? 'Unknown',
+      });
+    }
+    if (batch.length < PAGE) break;
+  }
+  return stays;
+}
+
+export async function syncClientFromApi(client: PriceLabsClient): Promise<ClientSyncResult> {
   if (!client.api_key) {
     return {
       clientId: client.id,
@@ -91,25 +119,23 @@ export async function syncClientFromApi(
   try {
     const supabase = createSupabaseAdmin();
     const reportDate = isoDate(new Date());
+    const window = forwardWindow();
 
     const listings = await fetchListings(client.api_key);
     const pms = dominantPms(listings) ?? 'guesty';
 
+    // Pull only forward (current month onward) — past stays don't change.
     const reservations = await fetchReservations(client.api_key, pms, window.start, window.end);
     const mapped = reservations
       .filter((r) => r.booking_status === 'booked')
       .map((r) => toBookingRow(r, client.id, reportDate));
 
-    // Dedup on the table's conflict key — a feed that repeats a reservation on
-    // the same booked_date would otherwise trigger Postgres "ON CONFLICT cannot
-    // affect row a second time" and abort the whole upsert.
     const byKey = new Map<string, (typeof mapped)[number]>();
     for (const row of mapped) byKey.set(`${row.reservation_id}|${row.report_date}`, row);
-    const rows = [...byKey.values()];
+    const forwardRows = [...byKey.values()];
 
-    // Never wipe a client on an empty result — an API hiccup that returns 200
-    // with no rows must not delete historical data. Skip instead.
-    if (rows.length === 0) {
+    // Don't touch data on an empty pull (API hiccup) — leave existing intact.
+    if (forwardRows.length === 0) {
       return {
         clientId: client.id,
         clientName: client.client_name,
@@ -120,27 +146,31 @@ export async function syncClientFromApi(
       };
     }
 
-    // Full-refresh: delete then insert. Not transactional (supabase-js has no
-    // multi-statement tx); a mid-insert failure is self-healed by the next run,
-    // and we only reach the delete once a non-empty set is in hand.
+    // Refresh ONLY the forward slice: drop current+future stays, re-insert the
+    // current booked set (cancellations fall out), and keep all past rows.
     const { error: delError } = await supabase
       .from('booking_reports')
       .delete()
-      .eq('client_id', client.id);
+      .eq('client_id', client.id)
+      .gte('checkin_date', window.start);
     if (delError) throw new Error(delError.message);
 
-    for (let i = 0; i < rows.length; i += 500) {
-      const chunk = rows.slice(i, i + 500);
+    for (let i = 0; i < forwardRows.length; i += 500) {
+      const chunk = forwardRows.slice(i, i + 500);
       const { error } = await supabase
         .from('booking_reports')
         .upsert(chunk, { onConflict: 'client_id,reservation_id,report_date' });
       if (error) throw new Error(error.message);
     }
 
-    // Monthly performance computed from the same reservations (by stay date),
-    // written in the shape the portfolio provider reads — replaces the scraped
-    // PriceLabs report. Occupancy uses current listing count as capacity proxy.
-    const monthlyRows = computeMonthlyPerformance(reservations, listings.length);
+    // Recompute performance from the FULL retained table (past + refreshed
+    // forward), not just this pull. Occupancy = reserved dates ÷ (listings ×
+    // calendar days); per-listing breakdown included.
+    const stays = await loadStays(supabase, client.id);
+    const monthlyRows = computeMonthly(stays, listings.length);
+    const roster = listings.map((l) => l.name).filter(Boolean);
+    const byListing = computePerListingYear(stays, reportDate.slice(0, 4), roster);
+
     const { error: pErr } = await supabase.from('portfolio_reports').upsert(
       {
         client_id: client.id,
@@ -150,8 +180,10 @@ export async function syncClientFromApi(
           source: 'customer-api',
           uploadedAt: reportDate,
           segment: 'all',
+          listingCount: listings.length,
           rawRows: monthlyRows,
           rowCount: monthlyRows.length,
+          byListing,
         },
       },
       { onConflict: 'client_id,report_date,segment' }
@@ -163,7 +195,7 @@ export async function syncClientFromApi(
       clientName: client.client_name,
       status: 'synced',
       pms,
-      reservations: rows.length,
+      reservations: forwardRows.length,
       listings: listings.length,
       months: monthlyRows.length,
     };
@@ -177,11 +209,11 @@ export async function syncClientFromApi(
   }
 }
 
-export async function syncAllFromApi(window?: SyncWindow): Promise<ClientSyncResult[]> {
+export async function syncAllFromApi(): Promise<ClientSyncResult[]> {
   const clients = await getActiveClients();
   const results: ClientSyncResult[] = [];
   for (const client of clients) {
-    results.push(await syncClientFromApi(client, window));
+    results.push(await syncClientFromApi(client));
   }
   return results;
 }
