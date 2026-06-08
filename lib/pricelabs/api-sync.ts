@@ -5,7 +5,6 @@ import {
   fetchListings,
   fetchReservations,
   parseMoney,
-  parsePercent,
   type ApiReservation,
 } from './api';
 import { computeMonthlyPerformance } from './monthly';
@@ -96,11 +95,6 @@ export async function syncClientFromApi(
     const listings = await fetchListings(client.api_key);
     const pms = dominantPms(listings) ?? 'guesty';
 
-    // Occupancy snapshot — average forward occupancy across listings.
-    const occ = listings.map((l) => parsePercent(l.occupancy_next_30)).filter((n) => n > 0);
-    const mkt = listings.map((l) => parsePercent(l.market_occupancy_next_30)).filter((n) => n > 0);
-    const avg = (xs: number[]) => (xs.length ? xs.reduce((s, n) => s + n, 0) / xs.length : 0);
-
     const reservations = await fetchReservations(client.api_key, pms, window.start, window.end);
     const mapped = reservations
       .filter((r) => r.booking_status === 'booked')
@@ -172,8 +166,6 @@ export async function syncClientFromApi(
       reservations: rows.length,
       listings: listings.length,
       months: monthlyRows.length,
-      occupancy30: Math.round(avg(occ) * 10) / 10,
-      marketOccupancy30: Math.round(avg(mkt) * 10) / 10,
     };
   } catch (e) {
     return {

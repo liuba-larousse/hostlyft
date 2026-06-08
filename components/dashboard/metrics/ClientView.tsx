@@ -50,16 +50,19 @@ export const ClientView: React.FC<ClientViewProps> = ({ detail, range }) => {
         </div>
       </section>
 
-      {/* Monthly performance — portfolio_reports, with LY/STLY benchmarks */}
-      {portfolio && portfolio.current ? (
+      {/* Performance computed from reservations: occupancy = booked nights ÷
+          (listings × calendar days). Headline is the current calendar year. */}
+      {portfolio && portfolio.currentYear ? (
         <section>
-          <SectionTitle note={`${portfolio.current.label} · computed from reservations`}>
-            Monthly performance
+          <SectionTitle
+            note={`${portfolio.currentYear.year} · booked nights ÷ listings × calendar days`}
+          >
+            Performance
           </SectionTitle>
           <div className="rounded-xl border border-gray-200 bg-white p-4">
-            <BulletRow label="Occupancy" value={portfolio.current.occupancy} unit="percent" />
-            <BulletRow label="RevPAR" value={portfolio.current.revpar} unit="currency" />
-            <BulletRow label="ADR" value={portfolio.current.adr} unit="currency" />
+            <BulletRow label="Occupancy" value={portfolio.currentYear.occupancy} unit="percent" />
+            <BulletRow label="RevPAR" value={portfolio.currentYear.revpar} unit="currency" />
+            <BulletRow label="ADR" value={portfolio.currentYear.adr} unit="currency" />
           </div>
 
           {months.length > 1 ? (

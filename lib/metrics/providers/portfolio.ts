@@ -4,21 +4,28 @@ export interface PortfolioMonth {
   ym: string; // "2026-01"
   label: string; // "Jan"
   occupancy: number;
-  occupancyLY: number;
-  occupancySTLY: number;
   revpar: number;
-  revparLY: number;
-  revparSTLY: number;
   adr: number;
-  adrLY: number;
-  adrSTLY: number;
   revenue: number;
+  bookedNights: number;
+  availableNights: number;
+}
+
+export interface YearSummary {
+  year: string;
+  occupancy: number; // Σ booked nights ÷ Σ available nights (listings × calendar days)
+  revpar: number;
+  adr: number;
+  revenue: number;
+  bookedNights: number;
+  availableNights: number;
 }
 
 export interface PortfolioDetail {
   reportDate: string;
   segment: string;
   current: PortfolioMonth | null;
+  currentYear: YearSummary | null;
   months: PortfolioMonth[];
 }
 
@@ -31,6 +38,11 @@ interface PortfolioReportRow {
 function num(value: unknown): number {
   const n = typeof value === 'string' ? parseFloat(value) : (value as number);
   return Number.isFinite(n) ? (n as number) : 0;
+}
+
+function daysInMonth(ym: string): number {
+  const [y, m] = ym.split('-').map(Number);
+  return new Date(Date.UTC(y, m, 0)).getUTCDate();
 }
 
 const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -47,15 +59,44 @@ function toMonth(row: Record<string, unknown>): PortfolioMonth | null {
     ym,
     label: MONTH_ABBR[monthIdx] ?? ym,
     occupancy: num(row['Occupancy %']),
-    occupancyLY: num(row['Occupancy % LY']),
-    occupancySTLY: num(row['Occupancy % STLY']),
     revpar: num(row['Rental RevPAR']),
-    revparLY: num(row['Rental RevPAR LY']),
-    revparSTLY: num(row['Rental RevPAR STLY']),
     adr: num(row['Rental ADR']),
-    adrLY: num(row['Rental ADR LY']),
-    adrSTLY: num(row['Rental ADR STLY']),
     revenue: num(row['Rental Revenue']),
+    bookedNights: num(row['Booked Nights']),
+    availableNights: num(row['Available Nights']),
+  };
+}
+
+function daysInYear(year: number): number {
+  return (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0 ? 366 : 365;
+}
+
+/**
+ * Current-year occupancy from reservations: booked nights ÷ (listings × calendar
+ * days of the year). Available nights must span the FULL year, not just months
+ * that happened to have a booking — otherwise sparse clients look over-occupied.
+ */
+function summarizeYear(months: PortfolioMonth[], year: string): YearSummary | null {
+  const yearMonths = months.filter((m) => m.ym.startsWith(year));
+  if (!yearMonths.length) return null;
+
+  // Listing count is constant across months (availableNights = listings × days),
+  // so recover it from any populated month.
+  const ref = yearMonths.find((m) => m.availableNights > 0);
+  const listingCount = ref ? Math.round(ref.availableNights / daysInMonth(ref.ym)) : 0;
+  const available = listingCount * daysInYear(Number(year));
+
+  const booked = yearMonths.reduce((s, m) => s + m.bookedNights, 0);
+  const revenue = yearMonths.reduce((s, m) => s + m.revenue, 0);
+
+  return {
+    year,
+    occupancy: available > 0 ? Math.round((booked / available) * 1000) / 10 : 0,
+    revpar: available > 0 ? Math.round((revenue / available) * 100) / 100 : 0,
+    adr: booked > 0 ? Math.round((revenue / booked) * 100) / 100 : 0,
+    revenue: Math.round(revenue * 100) / 100,
+    bookedNights: booked,
+    availableNights: available,
   };
 }
 
@@ -108,6 +149,7 @@ export async function getPortfolioDetail(
 
   const current =
     months.find((m) => m.ym === currentYM) ?? months[months.length - 1] ?? null;
+  const currentYear = summarizeYear(months, currentYM.slice(0, 4));
 
-  return { reportDate: chosen.report_date, segment: chosen.segment, current, months };
+  return { reportDate: chosen.report_date, segment: chosen.segment, current, currentYear, months };
 }
