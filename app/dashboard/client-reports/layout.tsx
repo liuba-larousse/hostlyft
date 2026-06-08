@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { FileText, Star, Settings, BarChart3 } from "lucide-react";
+import { FileText, Star, Settings, BarChart3, Activity } from "lucide-react";
 
 const tabs = [
+  { href: "/dashboard/client-reports/overview", label: "Pulse", icon: Activity },
   { href: "/dashboard/client-reports", label: "Bookings", icon: FileText },
   { href: "/dashboard/client-reports/ota-scores", label: "OTA Scores", icon: Star },
   { href: "/dashboard/client-reports/monthly-reports", label: "Monthly Reports", icon: BarChart3 },

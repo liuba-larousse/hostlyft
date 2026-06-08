@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
-import { LayoutDashboard, Bot, Package, Users, Briefcase, Megaphone, LogOut, FileText, CalendarDays, Menu, X, BarChart3, Settings, Star, BookOpen } from "lucide-react";
+import { LayoutDashboard, Users, Briefcase, Megaphone, LogOut, FileText, CalendarDays, Menu, X, BarChart3, Settings, Star, Activity } from "lucide-react";
 import { clsx } from "clsx";
 import type { LucideIcon } from "lucide-react";
 
@@ -16,14 +16,11 @@ interface NavItem {
 
 const nav: NavItem[] = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
-  { href: "/dashboard/agents", label: "Cloud Agents", icon: Bot },
-  { href: "/dashboard/artifacts", label: "Artifacts", icon: Package },
   { href: "/dashboard/schedule", label: "Schedule", icon: CalendarDays },
   {
     href: "/dashboard/team", label: "Team", icon: Users,
     sub: [
       { href: "/dashboard/team/members", label: "Members", icon: Users },
-      { href: "/dashboard/team/workflows", label: "Workflows", icon: BookOpen },
     ],
   },
   { href: "/dashboard/clients", label: "Clients", icon: Briefcase },
@@ -31,6 +28,7 @@ const nav: NavItem[] = [
   {
     href: "/dashboard/client-reports", label: "Client Reports", icon: FileText,
     sub: [
+      { href: "/dashboard/client-reports/overview", label: "Pulse", icon: Activity },
       { href: "/dashboard/client-reports/ota-scores", label: "OTA Scores", icon: Star },
       { href: "/dashboard/client-reports/monthly-reports", label: "Monthly Reports", icon: BarChart3 },
       { href: "/dashboard/client-reports/manage", label: "Manage Clients", icon: Settings },
