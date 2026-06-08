@@ -16,22 +16,25 @@ export default function SyncButton() {
     setState("loading");
     setMessage("");
     try {
-      const res = await fetch("/api/pricelabs/daily-report");
+      const res = await fetch("/api/pricelabs/sync", { method: "POST" });
       const data = await res.json();
-      if (res.ok || res.status === 207) {
-        const results = data.results as Array<{ status: string; clientName: string; error?: string }> | undefined;
-        const ok = results?.filter(r => r.status === "ok").length ?? 0;
-        const total = results?.length ?? 0;
+      if (res.ok) {
+        const results = data.results as
+          | Array<{ status: string; clientName: string; reservations?: number; reason?: string }>
+          | undefined;
+        const synced = results?.filter(r => r.status === "synced") ?? [];
         const failed = results?.filter(r => r.status === "error") ?? [];
-        if (ok === total) {
-          const totalBookings = results?.reduce((sum, r) => sum + ((r as {bookingsFound?: number}).bookingsFound ?? 0), 0) ?? 0;
+        const skipped = results?.filter(r => r.status === "skipped") ?? [];
+        const total = results?.length ?? 0;
+        const totalReservations = synced.reduce((sum, r) => sum + (r.reservations ?? 0), 0);
+        if (failed.length === 0) {
           setState("success");
-          setMessage(total ? `${ok}/${total} synced · ${totalBookings} bookings found` : "Sync complete");
+          const skipNote = skipped.length ? ` · ${skipped.length} no key` : "";
+          setMessage(total ? `${synced.length}/${total} synced · ${totalReservations} reservations${skipNote}` : "Sync complete");
           router.refresh(); // re-fetch server component data
         } else {
           setState("error");
-          const firstError = failed[0]?.error ?? "Unknown error";
-          setMessage(`${ok}/${total} synced — ${failed[0]?.clientName}: ${firstError}`);
+          setMessage(`${synced.length}/${total} synced — ${failed[0]?.clientName}: ${failed[0]?.reason ?? "error"}`);
         }
       } else {
         setState("error");

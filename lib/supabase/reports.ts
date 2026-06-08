@@ -1,37 +1,4 @@
 import { createSupabaseAdmin } from '@/lib/supabase';
-import type { ParsedBooking } from '@/lib/pricelabs/parse';
-
-export async function upsertBookings(
-  clientId: string,
-  reportDate: string,
-  bookings: ParsedBooking[]
-): Promise<void> {
-  if (!bookings.length) return;
-  const supabase = createSupabaseAdmin();
-
-  const rows = bookings.map(b => ({
-    client_id: clientId,
-    report_date: reportDate,
-    reservation_id: b.reservationId,
-    listing_name: b.listingName,
-    checkin_date: b.checkinDate,
-    checkout_date: b.checkoutDate,
-    booked_date: b.bookedDate,
-    adr: b.adr,
-    rental_revenue: b.rentalRevenue,
-    total_revenue: b.totalRevenue,
-    los: b.los,
-    booking_window: b.bookingWindow,
-    booking_source: b.bookingSource,
-    currency: b.currency,
-  }));
-
-  const { error } = await supabase
-    .from('booking_reports')
-    .upsert(rows, { onConflict: 'client_id,reservation_id,report_date' });
-
-  if (error) throw new Error(`Failed to upsert bookings: ${error.message}`);
-}
 
 export interface BookingRow {
   id: string;
