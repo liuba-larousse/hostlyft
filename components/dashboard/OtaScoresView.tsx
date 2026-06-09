@@ -1,22 +1,29 @@
 "use client";
 
 import { useState } from "react";
-import { Star, Loader2, RefreshCw, ExternalLink } from "lucide-react";
+import { Star, Loader2, RefreshCw } from "lucide-react";
 
-interface ScoreRow {
-  id: string;
+interface ScoreData {
   overall_score: number;
   review_count: number;
   scraped_at: string;
-  ota_listings: {
-    id: string;
-    ota_name: string;
-    listing_url: string;
-    listing_label: string;
-    pricelabs_clients: {
-      client_name: string;
-    };
-  };
+}
+
+type ClientRel = { client_name: string } | { client_name: string }[] | null;
+
+interface ListingRow {
+  id: string;
+  ota_name: string;
+  listing_url: string;
+  listing_label: string;
+  // Supabase types a to-one relation as an array; accept both.
+  pricelabs_clients: ClientRel;
+  ota_scores: ScoreData[]; // 0 or 1 (unique per listing)
+}
+
+function clientName(rel: ClientRel): string {
+  const c = Array.isArray(rel) ? rel[0] : rel;
+  return c?.client_name ?? "Unknown";
 }
 
 const OTA_COLS = [
@@ -46,29 +53,36 @@ function scoreColor(ota: string, score: number): { bg: string; text: string } {
   return { bg: "bg-emerald-100", text: "text-emerald-700" };
 }
 
-function ScoreCell({ row, scale }: { row: ScoreRow | undefined; scale: number }) {
-  if (!row) return <span className="text-gray-300">—</span>;
-  if (row.overall_score === 0 && row.review_count === 0) {
+function ScoreCell({ listing, scale }: { listing: ListingRow | undefined; scale: number }) {
+  if (!listing) return <span className="text-gray-300">—</span>; // no URL for this OTA
+  const score = listing.ota_scores?.[0];
+  if (!score) {
     return (
-      <a href={row.ota_listings.listing_url} target="_blank" rel="noopener" className="text-xs text-gray-400 hover:text-gray-600">
+      <a href={listing.listing_url} target="_blank" rel="noopener" className="text-xs text-gray-400 hover:text-gray-600">
+        Not scraped
+      </a>
+    );
+  }
+  if (score.overall_score === 0 && score.review_count === 0) {
+    return (
+      <a href={listing.listing_url} target="_blank" rel="noopener" className="text-xs text-gray-400 hover:text-gray-600">
         No reviews
       </a>
     );
   }
-  const color = scoreColor(row.ota_listings.ota_name, row.overall_score);
+  const color = scoreColor(listing.ota_name, score.overall_score);
   return (
-    <a href={row.ota_listings.listing_url} target="_blank" rel="noopener" className="inline-flex flex-col items-center gap-0.5">
+    <a href={listing.listing_url} target="_blank" rel="noopener" className="inline-flex flex-col items-center gap-0.5">
       <span className={`rounded-full px-2.5 py-0.5 text-sm font-bold tabular-nums ${color.bg} ${color.text}`}>
-        {row.overall_score.toFixed(2)}
+        {score.overall_score.toFixed(2)}
         <span className="ml-0.5 text-xs font-normal opacity-60">/{scale}</span>
       </span>
-      <span className="text-[10px] tabular-nums text-gray-400">{row.review_count} reviews</span>
+      <span className="text-[10px] tabular-nums text-gray-400">{score.review_count} reviews</span>
     </a>
   );
 }
 
-export default function OtaScoresView({ initialScores }: { initialScores: ScoreRow[] }) {
-  const [scores, setScores] = useState(initialScores);
+export default function OtaScoresView({ initialListings }: { initialListings: ListingRow[] }) {
   const [scraping, setScraping] = useState(false);
   const [scrapeResult, setScrapeResult] = useState<string | null>(null);
 
@@ -83,34 +97,28 @@ export default function OtaScoresView({ initialScores }: { initialScores: ScoreR
       });
       const data = await res.json();
       setScrapeResult(`Scraped ${data.scraped}/${data.total} listings${data.failed ? `, ${data.failed} failed` : ""}`);
-      const r2 = await fetch("/api/ota/scores");
-      if (r2.ok) {
-        const newScores = await r2.json();
-        setScores(Array.isArray(newScores) ? newScores : []);
-      } else {
-        window.location.reload();
-      }
+      window.location.reload(); // re-fetch listings + fresh scores
     } catch {
       setScrapeResult("Scrape failed");
+      setScraping(false);
     }
-    setScraping(false);
   }
 
-  // Pivot: client → listing label → ota → score row.
-  const byClient: Record<string, Record<string, Record<string, ScoreRow>>> = {};
-  scores.forEach((s) => {
-    const client = s.ota_listings?.pricelabs_clients?.client_name ?? "Unknown";
-    const label = s.ota_listings?.listing_label || s.ota_listings?.listing_url || "—";
-    const ota = s.ota_listings?.ota_name;
-    if (!ota) return;
+  // Pivot: client → listing name → ota → listing row.
+  const byClient: Record<string, Record<string, Record<string, ListingRow>>> = {};
+  initialListings.forEach((l) => {
+    const client = clientName(l.pricelabs_clients);
+    const name = (l.listing_label || "").trim() || "Unnamed listing";
+    if (!l.ota_name) return;
     (byClient[client] ??= {});
-    (byClient[client][label] ??= {});
-    byClient[client][label][ota] = s;
+    (byClient[client][name] ??= {});
+    byClient[client][name][l.ota_name] = l;
   });
 
+  const scrapedAts = initialListings.flatMap((l) => l.ota_scores.map((s) => new Date(s.scraped_at).getTime()));
   const lastScrape =
-    scores.length > 0
-      ? new Date(Math.max(...scores.map((s) => new Date(s.scraped_at).getTime()))).toLocaleString("en-US", {
+    scrapedAts.length > 0
+      ? new Date(Math.max(...scrapedAts)).toLocaleString("en-US", {
           month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit",
         })
       : null;
@@ -147,10 +155,10 @@ export default function OtaScoresView({ initialScores }: { initialScores: ScoreR
         </div>
       )}
 
-      {scores.length === 0 ? (
+      {initialListings.length === 0 ? (
         <div className="rounded-2xl border border-gray-200 bg-white p-16 text-center">
           <Star size={40} className="mx-auto mb-3 text-gray-300" />
-          <p className="mb-1 text-base font-semibold text-gray-900">No OTA scores yet</p>
+          <p className="mb-1 text-base font-semibold text-gray-900">No OTA listings yet</p>
           <p className="text-sm text-gray-500">Add listing URLs under Manage Clients, then click Scrape All.</p>
         </div>
       ) : (
@@ -158,7 +166,7 @@ export default function OtaScoresView({ initialScores }: { initialScores: ScoreR
           {Object.entries(byClient)
             .sort(([a], [b]) => a.localeCompare(b))
             .map(([client, listingMap]) => {
-              const labels = Object.keys(listingMap).sort((a, b) => a.localeCompare(b));
+              const names = Object.keys(listingMap).sort((a, b) => a.localeCompare(b));
               return (
                 <div key={client} className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
                   <div className="flex items-center gap-3 border-b border-gray-100 px-6 py-4">
@@ -182,20 +190,14 @@ export default function OtaScoresView({ initialScores }: { initialScores: ScoreR
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-50">
-                        {labels.map((label) => (
-                          <tr key={label} className="hover:bg-gray-50">
-                            <td
-                              className="sticky left-0 z-10 max-w-[260px] truncate bg-white px-6 py-3 font-medium text-gray-900"
-                              title={decodeHtml(label)}
-                            >
-                              <span className="inline-flex items-center gap-1">
-                                {decodeHtml(label)}
-                                <ExternalLink size={10} className="shrink-0 opacity-30" />
-                              </span>
+                        {names.map((name) => (
+                          <tr key={name} className="hover:bg-gray-50">
+                            <td className="sticky left-0 z-10 max-w-[260px] truncate bg-white px-6 py-3 font-medium text-gray-900" title={decodeHtml(name)}>
+                              {decodeHtml(name)}
                             </td>
                             {OTA_COLS.map((c) => (
                               <td key={c.key} className="px-4 py-3 text-center">
-                                <ScoreCell row={listingMap[label][c.key]} scale={c.scale} />
+                                <ScoreCell listing={listingMap[name][c.key]} scale={c.scale} />
                               </td>
                             ))}
                           </tr>

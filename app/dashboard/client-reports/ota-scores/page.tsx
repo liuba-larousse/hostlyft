@@ -1,17 +1,20 @@
 import { createSupabaseAdmin } from '@/lib/supabase';
-import { Star } from 'lucide-react';
 import OtaScoresView from '@/components/dashboard/OtaScoresView';
 
-async function getScores() {
+// Listing-centric: every OTA URL added under Manage Clients shows here, with its
+// scraped score attached if one exists (otherwise "Not scraped").
+async function getListings() {
   const supabase = createSupabaseAdmin();
   const { data } = await supabase
-    .from('ota_scores')
-    .select('*, ota_listings(*, pricelabs_clients(client_name))')
-    .order('scraped_at', { ascending: false });
+    .from('ota_listings')
+    .select(
+      'id, ota_name, listing_url, listing_label, pricelabs_clients(client_name), ota_scores(overall_score, review_count, scraped_at)'
+    )
+    .order('listing_label');
   return data ?? [];
 }
 
 export default async function OtaScoresPage() {
-  const scores = await getScores();
-  return <OtaScoresView initialScores={scores} />;
+  const listings = await getListings();
+  return <OtaScoresView initialListings={listings} />;
 }
