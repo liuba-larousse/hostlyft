@@ -54,8 +54,20 @@ export function parseMoney(value: string | number | undefined | null): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Fetch that backs off and retries on 429 (PriceLabs allows 60/min, 1000/hr). */
+async function apiFetch(url: string, apiKey: string): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url, { headers: headers(apiKey) });
+    if (res.status !== 429 || attempt >= 5) return res;
+    const retryAfter = Number(res.headers.get('retry-after'));
+    await sleep(Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 3000 * (attempt + 1));
+  }
+}
+
 export async function fetchListings(apiKey: string): Promise<ApiListing[]> {
-  const res = await fetch(`${BASE}/v1/listings`, { headers: headers(apiKey) });
+  const res = await apiFetch(`${BASE}/v1/listings`, apiKey);
   if (!res.ok) {
     throw new Error(`PriceLabs /v1/listings ${res.status}: ${(await res.text()).slice(0, 200)}`);
   }
@@ -126,7 +138,7 @@ export async function fetchReservations(
   let page = 0;
   for (; page < MAX_PAGES; page++) {
     const url = `${BASE}/v1/reservation_data?pms=${encodeURIComponent(pms)}&start_date=${startDate}&end_date=${endDate}&limit=${limit}&offset=${offset}`;
-    const res = await fetch(url, { headers: headers(apiKey) });
+    const res = await apiFetch(url, apiKey);
     if (!res.ok) {
       throw new Error(`PriceLabs /v1/reservation_data ${res.status}: ${(await res.text()).slice(0, 200)}`);
     }
@@ -140,6 +152,7 @@ export async function fetchReservations(
     const morePossible = json.next_page === true || rows.length === limit;
     if (!morePossible) break;
     offset += limit;
+    await sleep(1100); // stay under 60 requests/min
   }
 
   // Surface truncation loudly — a full-refresh on truncated data would lose history.
