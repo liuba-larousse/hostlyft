@@ -13,8 +13,9 @@ export interface ClientSyncResult {
   clientId: string;
   clientName: string;
   status: 'synced' | 'skipped' | 'error';
+  mode?: 'backfill' | 'incremental';
   pms?: string;
-  reservations?: number; // forward booked rows refreshed
+  reservations?: number; // booked rows stored/refreshed this run
   listings?: number;
   months?: number;
   reason?: string;
@@ -64,6 +65,16 @@ function toBookingRow(r: ApiReservation, clientId: string, fallbackDate: string)
 function forwardWindow(): { start: string; end: string } {
   const today = new Date();
   const start = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
+  const end = new Date(today);
+  end.setUTCDate(end.getUTCDate() + 365);
+  return { start: isoDate(start), end: isoDate(end) };
+}
+
+/** First import: grab all available history (3 years back) + a year forward. */
+function backfillWindow(): { start: string; end: string } {
+  const today = new Date();
+  const start = new Date(today);
+  start.setUTCFullYear(start.getUTCFullYear() - 3);
   const end = new Date(today);
   end.setUTCDate(end.getUTCDate() + 365);
   return { start: isoDate(start), end: isoDate(end) };
@@ -119,12 +130,19 @@ export async function syncClientFromApi(client: PriceLabsClient): Promise<Client
   try {
     const supabase = createSupabaseAdmin();
     const reportDate = isoDate(new Date());
-    const window = forwardWindow();
 
     const listings = await fetchListings(client.api_key);
     const pms = dominantPms(listings) ?? 'guesty';
 
-    // Pull only forward (current month onward) — past stays don't change.
+    // First import → full backfill of all history. Afterwards → forward-only
+    // (past stays don't change; only current + future need refreshing).
+    const { count } = await supabase
+      .from('booking_reports')
+      .select('*', { count: 'exact', head: true })
+      .eq('client_id', client.id);
+    const firstImport = (count ?? 0) === 0;
+    const window = firstImport ? backfillWindow() : forwardWindow();
+
     const reservations = await fetchReservations(client.api_key, pms, window.start, window.end);
     const mapped = reservations
       .filter((r) => r.booking_status === 'booked')
@@ -132,31 +150,31 @@ export async function syncClientFromApi(client: PriceLabsClient): Promise<Client
 
     const byKey = new Map<string, (typeof mapped)[number]>();
     for (const row of mapped) byKey.set(`${row.reservation_id}|${row.report_date}`, row);
-    const forwardRows = [...byKey.values()];
+    const rows = [...byKey.values()];
 
     // Don't touch data on an empty pull (API hiccup) — leave existing intact.
-    if (forwardRows.length === 0) {
+    if (rows.length === 0) {
       return {
         clientId: client.id,
         clientName: client.client_name,
         status: 'skipped',
+        mode: firstImport ? 'backfill' : 'incremental',
         pms,
         listings: listings.length,
         reason: 'no booked reservations returned — existing data left intact',
       };
     }
 
-    // Refresh ONLY the forward slice: drop current+future stays, re-insert the
-    // current booked set (cancellations fall out), and keep all past rows.
-    const { error: delError } = await supabase
-      .from('booking_reports')
-      .delete()
-      .eq('client_id', client.id)
-      .gte('checkin_date', window.start);
+    // Backfill replaces everything; incremental refreshes only the forward
+    // slice (drop current+future, re-insert current booked so cancellations
+    // fall out) while keeping all past rows.
+    let del = supabase.from('booking_reports').delete().eq('client_id', client.id);
+    if (!firstImport) del = del.gte('checkin_date', window.start);
+    const { error: delError } = await del;
     if (delError) throw new Error(delError.message);
 
-    for (let i = 0; i < forwardRows.length; i += 500) {
-      const chunk = forwardRows.slice(i, i + 500);
+    for (let i = 0; i < rows.length; i += 500) {
+      const chunk = rows.slice(i, i + 500);
       const { error } = await supabase
         .from('booking_reports')
         .upsert(chunk, { onConflict: 'client_id,reservation_id,report_date' });
@@ -194,8 +212,9 @@ export async function syncClientFromApi(client: PriceLabsClient): Promise<Client
       clientId: client.id,
       clientName: client.client_name,
       status: 'synced',
+      mode: firstImport ? 'backfill' : 'incremental',
       pms,
-      reservations: forwardRows.length,
+      reservations: rows.length,
       listings: listings.length,
       months: monthlyRows.length,
     };
