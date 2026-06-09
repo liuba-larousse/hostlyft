@@ -41,6 +41,54 @@ export async function POST(req: Request) {
   return NextResponse.json(data);
 }
 
+// Upsert a single (listing, OTA) cell by client + ota + listing label.
+// Empty URL deletes the cell. Powers the Manage Clients listing-URL table.
+export async function PATCH(req: Request) {
+  const session = await auth();
+  if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const { clientId, otaName, listingLabel, listingUrl } = await req.json();
+  if (!clientId || !otaName || listingLabel === undefined) {
+    return NextResponse.json({ error: 'clientId, otaName, listingLabel required' }, { status: 400 });
+  }
+
+  const supabase = createSupabaseAdmin();
+  const { data: existingRows } = await supabase
+    .from('ota_listings')
+    .select('id')
+    .eq('client_id', clientId)
+    .eq('ota_name', otaName)
+    .eq('listing_label', listingLabel)
+    .limit(1);
+  const existing = existingRows?.[0];
+
+  const url = (listingUrl ?? '').trim();
+
+  if (!url) {
+    if (existing) await supabase.from('ota_listings').delete().eq('id', existing.id);
+    return NextResponse.json({ deleted: true });
+  }
+
+  if (existing) {
+    const { data, error } = await supabase
+      .from('ota_listings')
+      .update({ listing_url: url })
+      .eq('id', existing.id)
+      .select()
+      .single();
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json(data);
+  }
+
+  const { data, error } = await supabase
+    .from('ota_listings')
+    .insert({ client_id: clientId, ota_name: otaName, listing_url: url, listing_label: listingLabel })
+    .select()
+    .single();
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json(data);
+}
+
 export async function DELETE(req: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
