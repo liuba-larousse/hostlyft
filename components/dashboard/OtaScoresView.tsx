@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Star, Loader2, RefreshCw } from "lucide-react";
+import { scoreTone } from "@/lib/metrics/ota-score";
 
 interface ScoreData {
   overall_score: number;
@@ -49,17 +50,6 @@ function decodeHtml(s: string): string {
     .replace(/&gt;/g, ">");
 }
 
-function scoreColor(ota: string, score: number): { bg: string; text: string } {
-  if (ota === "airbnb") {
-    if (score < 4.2) return { bg: "bg-red-100", text: "text-red-700" };
-    if (score < 4.8) return { bg: "bg-yellow-100", text: "text-yellow-700" };
-    return { bg: "bg-emerald-100", text: "text-emerald-700" };
-  }
-  if (score < 7.0) return { bg: "bg-red-100", text: "text-red-700" };
-  if (score < 8.5) return { bg: "bg-yellow-100", text: "text-yellow-700" };
-  return { bg: "bg-emerald-100", text: "text-emerald-700" };
-}
-
 function ScoreCell({ listing, scale }: { listing: ListingRow | undefined; scale: number }) {
   if (!listing) return <span className="text-gray-300">—</span>; // no URL for this OTA
   const score = scoreOf(listing.ota_scores);
@@ -77,7 +67,7 @@ function ScoreCell({ listing, scale }: { listing: ListingRow | undefined; scale:
       </a>
     );
   }
-  const color = scoreColor(listing.ota_name, score.overall_score);
+  const color = scoreTone(scale, score.overall_score);
   return (
     <a href={listing.listing_url} target="_blank" rel="noopener" className="inline-flex flex-col items-center gap-0.5">
       <span className={`rounded-full px-2.5 py-0.5 text-sm font-bold tabular-nums ${color.bg} ${color.text}`}>

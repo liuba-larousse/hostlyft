@@ -121,9 +121,10 @@ export async function fetchReservations(
   const all: ApiReservation[] = [];
   let offset = 0;
   const limit = 100;
+  const MAX_PAGES = 1000; // 100k reservations — backstop against runaway loops
 
-  // Hard cap to avoid runaway loops (200 pages = 20k reservations).
-  for (let page = 0; page < 200; page++) {
+  let page = 0;
+  for (; page < MAX_PAGES; page++) {
     const url = `${BASE}/v1/reservation_data?pms=${encodeURIComponent(pms)}&start_date=${startDate}&end_date=${endDate}&limit=${limit}&offset=${offset}`;
     const res = await fetch(url, { headers: headers(apiKey) });
     if (!res.ok) {
@@ -139,6 +140,11 @@ export async function fetchReservations(
     const morePossible = json.next_page === true || rows.length === limit;
     if (!morePossible) break;
     offset += limit;
+  }
+
+  // Surface truncation loudly — a full-refresh on truncated data would lose history.
+  if (page >= MAX_PAGES) {
+    throw new Error(`PriceLabs reservation pull hit page cap (${MAX_PAGES}) for pms=${pms}; aborting to avoid a truncated full-refresh`);
   }
 
   return all;

@@ -188,7 +188,13 @@ export async function POST(req: Request) {
   let failed = 0;
   const results: Array<{ listing_id: string; url: string; ota: string; score: number | null; reviewCount: number | null; error?: string }> = [];
 
-  for (const listing of listings) {
+  // Only OTAs we have a scraper for — Expedia URLs are stored but not scraped,
+  // so exclude them rather than counting them as failures.
+  const SCRAPEABLE = new Set(['airbnb', 'vrbo', 'booking_com']);
+  const scrapeable = listings.filter((l) => SCRAPEABLE.has(l.ota_name));
+  if (!scrapeable.length) return NextResponse.json({ scraped: 0, failed: 0, total: 0, results });
+
+  for (const listing of scrapeable) {
     let result: { score: number; reviewCount: number } | null = null;
 
     // URLs may be saved without a scheme (e.g. "airbnb.com/h/..."); fetch needs a full URL.
@@ -225,5 +231,5 @@ export async function POST(req: Request) {
     await new Promise((r) => setTimeout(r, 1500));
   }
 
-  return NextResponse.json({ scraped, failed, total: listings.length, results });
+  return NextResponse.json({ scraped, failed, total: scrapeable.length, results });
 }

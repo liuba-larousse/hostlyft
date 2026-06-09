@@ -1,6 +1,7 @@
 import React from 'react';
 import { clsx } from 'clsx';
 import type { OtaListingScore } from '@/lib/metrics/providers/ota';
+import { scoreTone } from '@/lib/metrics/ota-score';
 
 const OTA_LABELS: Record<string, string> = {
   airbnb: 'Airbnb',
@@ -11,13 +12,6 @@ const OTA_LABELS: Record<string, string> = {
 // Airbnb is on a 5-point scale; VRBO / Booking.com on 10.
 function scaleFor(otaName: string): number {
   return otaName === 'airbnb' ? 5 : 10;
-}
-
-function toneFor(score: number, scale: number): string {
-  const pct = score / scale;
-  if (pct >= 0.96) return 'text-green-600';
-  if (pct >= 0.84) return 'text-yellow-600';
-  return 'text-red-600';
 }
 
 interface ReviewScoresProps {
@@ -46,7 +40,7 @@ export const ReviewScores: React.FC<ReviewScoresProps> = ({ ota }) => {
             </div>
             {listing.scraped ? (
               <>
-                <p className={clsx('mt-1 text-2xl font-bold tabular-nums', toneFor(listing.score, scale))}>
+                <p className={clsx('mt-1 text-2xl font-bold tabular-nums', scoreTone(scale, listing.score).text)}>
                   {listing.score.toFixed(2)}
                   <span className="text-sm font-medium text-gray-400">/{scale}</span>
                 </p>
