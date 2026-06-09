@@ -19,6 +19,7 @@ interface ListingRow {
   ota_name: string;
   listing_url: string;
   listing_label: string;
+  pl_listing_id: string | null;
   // Supabase returns a to-one relation as either a single object or an array
   // (ota_scores is unique per listing, so it's typically a single object/null).
   pricelabs_clients: ClientRel;
@@ -101,15 +102,17 @@ export default function OtaScoresView({ initialListings }: { initialListings: Li
     }
   }
 
-  // Pivot: client → listing name → ota → listing row.
-  const byClient: Record<string, Record<string, Record<string, ListingRow>>> = {};
+  // Pivot: client → listing (by id) → ota → row. Keyed by pl_listing_id so
+  // same-named listings stay distinct; legacy rows fall back to name.
+  const byClient: Record<string, Record<string, { name: string; otas: Record<string, ListingRow> }>> = {};
   initialListings.forEach((l) => {
+    if (!l.ota_name) return;
     const client = clientName(l.pricelabs_clients);
     const name = (l.listing_label || "").trim() || "Unnamed listing";
-    if (!l.ota_name) return;
+    const listingKey = l.pl_listing_id || `name:${name}`;
     (byClient[client] ??= {});
-    (byClient[client][name] ??= {});
-    byClient[client][name][l.ota_name] = l;
+    (byClient[client][listingKey] ??= { name, otas: {} });
+    byClient[client][listingKey].otas[l.ota_name] = l;
   });
 
   const scrapedAts = initialListings.flatMap((l) => {
@@ -166,7 +169,7 @@ export default function OtaScoresView({ initialListings }: { initialListings: Li
           {Object.entries(byClient)
             .sort(([a], [b]) => a.localeCompare(b))
             .map(([client, listingMap]) => {
-              const names = Object.keys(listingMap).sort((a, b) => a.localeCompare(b));
+              const rows = Object.entries(listingMap).sort(([, a], [, b]) => a.name.localeCompare(b.name));
               return (
                 <div key={client} className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
                   <div className="flex items-center gap-3 border-b border-gray-100 px-6 py-4">
@@ -190,14 +193,14 @@ export default function OtaScoresView({ initialListings }: { initialListings: Li
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-50">
-                        {names.map((name) => (
-                          <tr key={name} className="hover:bg-gray-50">
-                            <td className="sticky left-0 z-10 max-w-[260px] truncate bg-white px-6 py-3 font-medium text-gray-900" title={decodeHtml(name)}>
-                              {decodeHtml(name)}
+                        {rows.map(([lk, g]) => (
+                          <tr key={lk} className="hover:bg-gray-50">
+                            <td className="sticky left-0 z-10 max-w-[260px] truncate bg-white px-6 py-3 font-medium text-gray-900" title={decodeHtml(g.name)}>
+                              {decodeHtml(g.name)}
                             </td>
                             {OTA_COLS.map((c) => (
                               <td key={c.key} className="px-4 py-3 text-center">
-                                <ScoreCell listing={listingMap[name][c.key]} scale={c.scale} />
+                                <ScoreCell listing={g.otas[c.key]} scale={c.scale} />
                               </td>
                             ))}
                           </tr>

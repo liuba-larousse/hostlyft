@@ -43,6 +43,7 @@ function toBookingRow(r: ApiReservation, clientId: string, fallbackDate: string)
     // report_date keyed to the booking itself so re-syncs are idempotent.
     report_date: booked || fallbackDate,
     reservation_id: r.reservation_id,
+    listing_id: r.listing_id ?? null,
     listing_name: r.listing_name ?? null,
     checkin_date: checkin || null,
     checkout_date: (r.check_out ?? '').slice(0, 10) || null,
@@ -85,6 +86,7 @@ interface StayRowDB {
   checkout_date: string | null;
   rental_revenue: number | null;
   listing_name: string | null;
+  listing_id: string | null;
 }
 
 /** All booking_reports stays for a client (past retained + forward refreshed). */
@@ -97,7 +99,7 @@ async function loadStays(
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await supabase
       .from('booking_reports')
-      .select('checkin_date, checkout_date, rental_revenue, listing_name')
+      .select('checkin_date, checkout_date, rental_revenue, listing_name, listing_id')
       .eq('client_id', clientId)
       .order('id', { ascending: true })
       .range(from, from + PAGE - 1);
@@ -109,7 +111,8 @@ async function loadStays(
         checkIn: r.checkin_date,
         checkOut: r.checkout_date,
         rentalRevenue: r.rental_revenue ?? 0,
-        listing: r.listing_name ?? 'Unknown',
+        listingId: r.listing_id ?? r.listing_name ?? 'unknown',
+        listingName: r.listing_name ?? 'Unknown',
       });
     }
     if (batch.length < PAGE) break;
@@ -190,7 +193,9 @@ export async function syncClientFromApi(client: PriceLabsClient): Promise<Client
     // calendar days); per-listing breakdown included.
     const stays = await loadStays(supabase, client.id);
     const monthlyRows = computeMonthly(stays, listings.length);
-    const roster = listings.map((l) => l.name).filter(Boolean);
+    const roster = listings
+      .filter((l) => l.id && l.name)
+      .map((l) => ({ id: String(l.id), name: l.name }));
     const year = reportDate.slice(0, 4);
     const byListing = computePerListingYear(stays, year, roster);
 

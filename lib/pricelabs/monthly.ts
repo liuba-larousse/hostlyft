@@ -7,7 +7,13 @@ export interface Stay {
   checkIn: string; // YYYY-MM-DD
   checkOut: string; // YYYY-MM-DD (exclusive — checkout night isn't occupied)
   rentalRevenue: number;
-  listing: string;
+  listingId: string;
+  listingName: string;
+}
+
+export interface RosterListing {
+  id: string;
+  name: string;
 }
 
 const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -76,7 +82,8 @@ export function computeMonthly(stays: Stay[], listingCount: number): MonthlyRow[
 }
 
 export interface ListingYearPerf {
-  listing: string;
+  listingId: string;
+  listing: string; // display name
   occupancy: number; // reserved dates in year ÷ calendar days of year
   bookedNights: number;
   revenue: number;
@@ -84,30 +91,32 @@ export interface ListingYearPerf {
 
 /**
  * Per-listing occupancy for a calendar year (capacity = 1 listing × days in
- * year). `roster` adds listings with zero bookings so the breakdown is complete.
+ * year), keyed by listing id so same-named units stay distinct. `roster` adds
+ * listings with zero bookings so the breakdown is complete.
  */
 export function computePerListingYear(
   stays: Stay[],
   year: string,
-  roster: string[] = []
+  roster: RosterListing[] = []
 ): ListingYearPerf[] {
-  const byListing = new Map<string, { nights: number; rental: number }>();
-  for (const name of roster) byListing.set(name, { nights: 0, rental: 0 });
+  const byId = new Map<string, { name: string; nights: number; rental: number }>();
+  for (const r of roster) byId.set(r.id, { name: r.name, nights: 0, rental: 0 });
 
   for (const s of stays) {
     eachNightMonth(s, (ym, perNight) => {
       if (!ym.startsWith(year)) return;
-      const agg = byListing.get(s.listing) ?? { nights: 0, rental: 0 };
+      const agg = byId.get(s.listingId) ?? { name: s.listingName, nights: 0, rental: 0 };
       agg.nights += 1;
       agg.rental += perNight;
-      byListing.set(s.listing, agg);
+      byId.set(s.listingId, agg);
     });
   }
 
   const cap = daysInYear(Number(year));
-  return [...byListing.entries()]
-    .map(([listing, a]) => ({
-      listing,
+  return [...byId.entries()]
+    .map(([listingId, a]) => ({
+      listingId,
+      listing: a.name,
       occupancy: r1((a.nights / cap) * 100),
       bookedNights: a.nights,
       revenue: r2(a.rental),

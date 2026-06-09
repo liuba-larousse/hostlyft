@@ -3,11 +3,12 @@ import { auth } from '@/lib/auth';
 import { createSupabaseAdmin } from '@/lib/supabase';
 
 interface ByListing {
+  listingId: string;
   listing: string;
 }
 
-// Active listing names for a client, from the latest synced portfolio report's
-// per-listing roster. Used to build the Manage Clients listing-URL table.
+// Active listings (id + name) for a client, from the latest synced portfolio
+// report's per-listing roster. Used to build the Manage Clients listing-URL table.
 export async function GET(req: Request) {
   const session = await auth();
   if (!session?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -24,10 +25,10 @@ export async function GET(req: Request) {
     .order('report_date', { ascending: false })
     .limit(1);
 
-  const byListing = ((data?.[0]?.report_data?.byListing ?? []) as ByListing[])
-    .map((l) => l.listing)
-    .filter(Boolean)
-    .sort((a, b) => a.localeCompare(b));
+  const listings = ((data?.[0]?.report_data?.byListing ?? []) as ByListing[])
+    .filter((l) => l.listingId && l.listing)
+    .map((l) => ({ id: l.listingId, name: l.listing }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 
-  return NextResponse.json({ listings: byListing });
+  return NextResponse.json({ listings });
 }

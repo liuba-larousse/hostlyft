@@ -11,11 +11,17 @@ const OTA_COLS = [
   { key: "expedia", label: "Expedia" },
 ] as const;
 
+interface Listing {
+  id: string;
+  name: string;
+}
+
 interface OtaListing {
   id: string;
   ota_name: string;
   listing_url: string;
   listing_label: string;
+  pl_listing_id: string | null;
 }
 
 type CellStatus = "idle" | "saving" | "saved" | "error";
@@ -27,10 +33,10 @@ interface Cell {
   error?: string;
 }
 
-const keyOf = (label: string, ota: string) => `${label}|||${ota}`;
+const keyOf = (listingId: string, ota: string) => `${listingId}|||${ota}`;
 
 export default function OtaListingsTable({ clientId }: { clientId: string; clientName: string }) {
-  const [listings, setListings] = useState<string[]>([]);
+  const [listings, setListings] = useState<Listing[]>([]);
   const [cells, setCells] = useState<Record<string, Cell>>({});
   const [loading, setLoading] = useState(true);
   const [scraping, setScraping] = useState(false);
@@ -46,11 +52,16 @@ export default function OtaListingsTable({ clientId }: { clientId: string; clien
       fetch(`/api/ota/listings?clientId=${clientId}`).then((r) => r.json()).catch(() => []),
     ]).then(([names, existing]) => {
       if (!active) return;
-      const list: string[] = Array.isArray(names?.listings) ? names.listings : [];
+      const list: Listing[] = Array.isArray(names?.listings) ? names.listings : [];
+      const byName = new Map(list.map((l) => [l.name, l.id]));
       const map: Record<string, Cell> = {};
-      for (const l of list) for (const c of OTA_COLS) map[keyOf(l, c.key)] = { url: "", saved: "", status: "idle" };
+      for (const l of list) for (const c of OTA_COLS) map[keyOf(l.id, c.key)] = { url: "", saved: "", status: "idle" };
+
       for (const row of (Array.isArray(existing) ? existing : []) as OtaListing[]) {
-        const k = keyOf(row.listing_label, row.ota_name);
+        // Match by listing id; legacy rows (no pl_listing_id) fall back to name.
+        const lid = row.pl_listing_id ?? byName.get(row.listing_label);
+        if (!lid) continue;
+        const k = keyOf(lid, row.ota_name);
         if (map[k] !== undefined) map[k] = { id: row.id, url: row.listing_url, saved: row.listing_url, status: "idle" };
       }
       setListings(list);
@@ -65,8 +76,8 @@ export default function OtaListingsTable({ clientId }: { clientId: string; clien
   }, []);
 
   const saveCell = useCallback(
-    async (label: string, ota: string) => {
-      const k = keyOf(label, ota);
+    async (listingId: string, listingName: string, ota: string) => {
+      const k = keyOf(listingId, ota);
       const cell = cellsRef.current[k];
       if (!cell || cell.url.trim() === cell.saved) return; // unchanged
       const url = cell.url.trim();
@@ -75,7 +86,7 @@ export default function OtaListingsTable({ clientId }: { clientId: string; clien
         const res = await fetch("/api/ota/listings", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ clientId, otaName: ota, listingLabel: label, listingUrl: url }),
+          body: JSON.stringify({ clientId, otaName: ota, plListingId: listingId, listingLabel: listingName, listingUrl: url }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data?.error || "save failed");
@@ -146,13 +157,13 @@ export default function OtaListingsTable({ clientId }: { clientId: string; clien
               </tr>
             </thead>
             <tbody>
-              {listings.map((label) => (
-                <tr key={label} className="border-t border-gray-100">
-                  <td className="sticky left-0 z-10 max-w-[200px] truncate bg-white px-3 py-2 font-medium text-gray-800" title={label}>
-                    {label}
+              {listings.map((listing) => (
+                <tr key={listing.id} className="border-t border-gray-100">
+                  <td className="sticky left-0 z-10 max-w-[200px] truncate bg-white px-3 py-2 font-medium text-gray-800" title={listing.name}>
+                    {listing.name}
                   </td>
                   {OTA_COLS.map((c) => {
-                    const k = keyOf(label, c.key);
+                    const k = keyOf(listing.id, c.key);
                     const cell = cells[k] ?? { url: "", saved: "", status: "idle" as CellStatus };
                     return (
                       <td key={c.key} className="px-2 py-1.5">
@@ -160,23 +171,17 @@ export default function OtaListingsTable({ clientId }: { clientId: string; clien
                           <input
                             value={cell.url}
                             onChange={(e) => setUrl(k, e.target.value)}
-                            onBlur={() => saveCell(label, c.key)}
+                            onBlur={() => saveCell(listing.id, listing.name, c.key)}
                             placeholder={`${c.label} URL`}
                             className={clsx(
                               "w-full rounded-md border px-2 py-1.5 pr-6 text-xs text-gray-700 outline-none transition-colors placeholder:text-gray-300",
-                              cell.status === "error"
-                                ? "border-red-300 focus:border-red-400"
-                                : cell.saved && cell.url === cell.saved
-                                  ? "border-gray-200 focus:border-yellow-400"
-                                  : "border-gray-200 focus:border-yellow-400"
+                              cell.status === "error" ? "border-red-300 focus:border-red-400" : "border-gray-200 focus:border-yellow-400"
                             )}
                           />
                           <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2">
                             {cell.status === "saving" && <Loader2 size={12} className="animate-spin text-gray-400" />}
                             {cell.status === "saved" && <Check size={12} className="text-green-500" />}
-                            {cell.status === "error" && (
-                              <AlertCircle size={12} className="text-red-500" aria-label={cell.error} />
-                            )}
+                            {cell.status === "error" && <AlertCircle size={12} className="text-red-500" aria-label={cell.error} />}
                           </span>
                         </div>
                         {cell.status === "error" && cell.error && (

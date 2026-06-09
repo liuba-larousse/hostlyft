@@ -41,26 +41,40 @@ export async function POST(req: Request) {
   return NextResponse.json(data);
 }
 
-// Upsert a single (listing, OTA) cell by client + ota + listing label.
+// Upsert a single (listing, OTA) cell by client + ota + listing id.
 // Empty URL deletes the cell. Powers the Manage Clients listing-URL table.
 export async function PATCH(req: Request) {
   const session = await auth();
   if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { clientId, otaName, listingLabel, listingUrl } = await req.json();
-  if (!clientId || !otaName || listingLabel === undefined) {
-    return NextResponse.json({ error: 'clientId, otaName, listingLabel required' }, { status: 400 });
+  const { clientId, otaName, plListingId, listingLabel, listingUrl } = await req.json();
+  if (!clientId || !otaName || !plListingId) {
+    return NextResponse.json({ error: 'clientId, otaName, plListingId required' }, { status: 400 });
   }
 
   const supabase = createSupabaseAdmin();
-  const { data: existingRows } = await supabase
+
+  // Prefer matching by listing id; fall back to a legacy row keyed only by
+  // label (pl_listing_id not yet set) so existing URLs migrate in place.
+  const byId = await supabase
     .from('ota_listings')
     .select('id')
     .eq('client_id', clientId)
     .eq('ota_name', otaName)
-    .eq('listing_label', listingLabel)
+    .eq('pl_listing_id', plListingId)
     .limit(1);
-  const existing = existingRows?.[0];
+  let existing = byId.data?.[0];
+  if (!existing && listingLabel) {
+    const byLabel = await supabase
+      .from('ota_listings')
+      .select('id')
+      .eq('client_id', clientId)
+      .eq('ota_name', otaName)
+      .eq('listing_label', listingLabel)
+      .is('pl_listing_id', null)
+      .limit(1);
+    existing = byLabel.data?.[0];
+  }
 
   const url = (listingUrl ?? '').trim();
 
@@ -72,7 +86,7 @@ export async function PATCH(req: Request) {
   if (existing) {
     const { data, error } = await supabase
       .from('ota_listings')
-      .update({ listing_url: url })
+      .update({ listing_url: url, pl_listing_id: plListingId, listing_label: listingLabel })
       .eq('id', existing.id)
       .select()
       .single();
@@ -82,7 +96,7 @@ export async function PATCH(req: Request) {
 
   const { data, error } = await supabase
     .from('ota_listings')
-    .insert({ client_id: clientId, ota_name: otaName, listing_url: url, listing_label: listingLabel })
+    .insert({ client_id: clientId, ota_name: otaName, listing_url: url, listing_label: listingLabel, pl_listing_id: plListingId })
     .select()
     .single();
   if (error) {

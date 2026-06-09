@@ -8,7 +8,7 @@ async function getListings() {
   const { data } = await supabase
     .from('ota_listings')
     .select(
-      'id, ota_name, listing_url, listing_label, pricelabs_clients(client_name), ota_scores(overall_score, review_count, scraped_at)'
+      'id, ota_name, listing_url, listing_label, pl_listing_id, pricelabs_clients(client_name), ota_scores(overall_score, review_count, scraped_at)'
     )
     .order('listing_label');
   return data ?? [];
