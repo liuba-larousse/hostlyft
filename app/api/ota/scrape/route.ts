@@ -25,112 +25,62 @@ async function scrapeAirbnb(url: string): Promise<{ score: number; reviewCount: 
   } catch { return null; }
 }
 
-// ── VRBO: Apify actor (client-side rendered, can't scrape directly) ─────────
+// ── VRBO: BrightData Web Unlocker (pay-per-use; bypasses Cloudflare). 0–10 scale.
 async function scrapeVrbo(url: string): Promise<{ score: number; reviewCount: number } | null> {
-  const apiToken = process.env.APIFY_API_TOKEN;
-  if (!apiToken) {
-    console.error('APIFY_API_TOKEN not set — cannot scrape VRBO');
+  const token = process.env.BRIGHTDATA_API_TOKEN;
+  const zone = process.env.BRIGHTDATA_ZONE;
+  if (!token || !zone) {
+    console.error('BRIGHTDATA_API_TOKEN / BRIGHTDATA_ZONE not set — cannot scrape VRBO');
     return null;
   }
 
-  try {
-    // Convert listing URL to a format the Apify actor can process
-    // Extract property ID from various VRBO URL formats:
-    //   vrbo.com/en-gb/p4517808vb  →  4517808
-    //   vrbo.com/4517808           →  4517808
-    //   vrbo.com/3721404?chkin=... →  3721404
-    let listingUrl = url;
-    const idMatch = url.match(/\/p?(\d{5,})(?:vb)?(?:\?|$|\/)/i)
-      ?? url.match(/vrbo\.com\/(?:en-\w+\/)?p?(\d{5,})/i);
+  // Use the plain listing URL — vrbo.com/{id}. Date params make VRBO time out
+  // through the unlocker. Falls back to the given URL if no id is found.
+  const idMatch =
+    url.match(/\/p?(\d{5,})(?:vb)?(?:\?|$|\/)/i) ?? url.match(/vrbo\.com\/(?:[a-z-]+\/)?p?(\d{5,})/i);
+  const listingUrl = idMatch ? `https://www.vrbo.com/${idMatch[1]}` : url;
 
-    if (idMatch) {
-      // Build a clean listing URL with dates (required for the actor)
-      const propId = idMatch[1];
-      const checkIn = new Date();
-      checkIn.setDate(checkIn.getDate() + 14);
-      const checkOut = new Date(checkIn);
-      checkOut.setDate(checkOut.getDate() + 2);
-      const fmt = (d: Date) => d.toISOString().slice(0, 10);
-      listingUrl = `https://www.vrbo.com/${propId}?chkin=${fmt(checkIn)}&chkout=${fmt(checkOut)}&adults=2`;
-    } else if (!listingUrl.includes('chkin') && !listingUrl.includes('startDate')) {
-      const checkIn = new Date();
-      checkIn.setDate(checkIn.getDate() + 14);
-      const checkOut = new Date(checkIn);
-      checkOut.setDate(checkOut.getDate() + 2);
-      const fmt = (d: Date) => d.toISOString().slice(0, 10);
-      const sep = listingUrl.includes('?') ? '&' : '?';
-      listingUrl = `${listingUrl}${sep}chkin=${fmt(checkIn)}&chkout=${fmt(checkOut)}&adults=2`;
-    }
-
-    const runRes = await fetch(
-      'https://api.apify.com/v2/acts/w6lNm5DeDKCs6byfP/runs?waitForFinish=180',
-      {
+  // Web Unlocker is flaky (transient empty responses); retry a few times.
+  let html = '';
+  for (let attempt = 0; attempt < 3 && html.length < 5000; attempt++) {
+    try {
+      const res = await fetch('https://api.brightdata.com/request', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          property_listings_urls: [listingUrl],
-          results_wanted: 1,
-          max_pages: 1,
-        }),
-      }
-    );
-
-    if (!runRes.ok) {
-      const errText = await runRes.text();
-      console.error('Apify VRBO run failed:', runRes.status, errText);
-      return null;
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ zone, url: listingUrl, format: 'raw' }),
+        signal: AbortSignal.timeout(120_000),
+      });
+      if (res.ok) html = await res.text();
+      else console.error('VRBO Web Unlocker', res.status, (await res.text()).slice(0, 150));
+    } catch (e) {
+      console.error('VRBO Web Unlocker attempt error:', e);
     }
-
-    const runData = await runRes.json();
-    const datasetId = runData?.data?.defaultDatasetId;
-    if (!datasetId) {
-      console.error('Apify VRBO: no datasetId in response');
-      return null;
-    }
-
-    // Wait a moment for dataset to be ready
-    await new Promise(r => setTimeout(r, 2000));
-
-    // Fetch results from the dataset
-    const dataRes = await fetch(
-      `https://api.apify.com/v2/datasets/${datasetId}/items?format=json`,
-      { headers: { 'Authorization': `Bearer ${apiToken}` } }
-    );
-
-    if (!dataRes.ok) {
-      console.error('Apify VRBO dataset fetch failed:', dataRes.status);
-      return null;
-    }
-
-    const items = await dataRes.json();
-    if (!items || items.length === 0) {
-      console.error('Apify VRBO: no items in dataset');
-      return null;
-    }
-
-    // The actor returns: review_score, review_count, review_label
-    const item = items[0];
-    const score = item.review_score ?? item.rating ?? item.overallRating ?? null;
-    const reviewCount = item.review_count ?? item.reviewCount ?? 0;
-
-    if (score !== null && score !== undefined && !isNaN(Number(score))) {
-      return { score: parseFloat(String(score)), reviewCount: parseInt(String(reviewCount)) || 0 };
-    }
-
-    // No score found — might be a listing with no reviews
-    if (item.review_label === null || item.review_count === 0) {
-      return { score: 0, reviewCount: 0 };
-    }
-
-    console.error('Apify VRBO: could not extract score from item:', JSON.stringify(item).slice(0, 300));
-    return null;
-  } catch (e) {
-    console.error('VRBO Apify scrape error:', e);
+  }
+  if (html.length < 5000) {
+    console.error('VRBO: no usable page after retries for', listingUrl);
     return null;
   }
+
+  // The rating is in (multi-)escaped JSON-LD: \\\"ratingValue\\\":\\\"8.8\\\",
+  // \\\"reviewCount\\\":\\\"23\\\" (bestRating 10). There are also 0.0/null
+  // placeholders, so allow any backslash run and take the max real value.
+  const maxNum = (re: RegExp): number | null => {
+    const ns = [...html.matchAll(re)]
+      .map((m) => parseFloat(m[1].replace(/,/g, '')))
+      .filter((n) => !Number.isNaN(n));
+    return ns.length ? Math.max(...ns) : null;
+  };
+  const score =
+    maxNum(/ratingValue\\*"\s*:\s*\\*"?(\d(?:\.\d{1,2})?)/gi) ??
+    maxNum(/"average"\s*:\s*(\d(?:\.\d{1,2})?)/gi);
+  const reviewCount =
+    maxNum(/reviewCount\\*"\s*:\s*\\*"?(\d[\d,]*)/gi) ?? maxNum(/(\d[\d,]*)\s*reviews?/gi) ?? 0;
+
+  // No reviews → score 0 (don't report a placeholder 0.0 as a failure).
+  if (!score || reviewCount === 0) return { score: 0, reviewCount: 0 };
+  if (score > 0 && score <= 10) return { score, reviewCount };
+  console.error('VRBO: could not extract score from', listingUrl);
+  return null;
 }
 
 // ── Booking.com: Playwright (client-side rendered) ──────────────────────────
