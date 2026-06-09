@@ -22,6 +22,12 @@ export interface YearSummary {
   availableNights: number;
 }
 
+export interface Cancellations {
+  year: string;
+  count: number;
+  rentalAmount: number;
+}
+
 export interface PortfolioDetail {
   reportDate: string;
   segment: string;
@@ -29,6 +35,7 @@ export interface PortfolioDetail {
   currentYear: YearSummary | null;
   months: PortfolioMonth[];
   byListing: ListingYearPerf[];
+  cancellations: Cancellations | null;
 }
 
 interface PortfolioReportRow {
@@ -37,6 +44,7 @@ interface PortfolioReportRow {
   report_data: {
     rawRows?: Record<string, unknown>[];
     byListing?: ListingYearPerf[];
+    cancellations?: Cancellations;
   } | null;
 }
 
@@ -156,6 +164,7 @@ export async function getPortfolioDetail(
     months.find((m) => m.ym === currentYM) ?? months[months.length - 1] ?? null;
   const currentYear = summarizeYear(months, currentYM.slice(0, 4));
   const byListing = chosen.report_data?.byListing ?? [];
+  const cancellations = chosen.report_data?.cancellations ?? null;
 
-  return { reportDate: chosen.report_date, segment: chosen.segment, current, currentYear, months, byListing };
+  return { reportDate: chosen.report_date, segment: chosen.segment, current, currentYear, months, byListing, cancellations };
 }

@@ -62,9 +62,10 @@ export default async function PulsePage({ searchParams }: PulsePageProps) {
       <AttentionStrip flags={overview.attention} />
 
       <section>
-        <h2 className="mb-2 text-xs font-bold uppercase tracking-widest text-gray-400">
-          Portfolio
-        </h2>
+        <div className="mb-2 flex items-baseline justify-between">
+          <h2 className="text-xs font-bold uppercase tracking-widest text-gray-400">Portfolio</h2>
+          <span className="text-xs text-gray-400">▲▼ vs previous {range.label.toLowerCase()}</span>
+        </div>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {METRIC_LIST.map((def) => (
             <KpiCard

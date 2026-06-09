@@ -64,6 +64,14 @@ export const ClientView: React.FC<ClientViewProps> = ({ detail, range }) => {
             <BulletRow label="Occupancy" value={portfolio.currentYear.occupancy} unit="percent" />
             <BulletRow label="RevPAR" value={portfolio.currentYear.revpar} unit="currency" />
             <BulletRow label="ADR" value={portfolio.currentYear.adr} unit="currency" />
+            {portfolio.cancellations && portfolio.cancellations.count > 0 ? (
+              <p className="mt-3 border-t border-gray-100 pt-3 text-xs text-gray-500">
+                <span className="font-semibold text-gray-700">{portfolio.cancellations.count}</span>{' '}
+                cancellations in {portfolio.cancellations.year} ·{' '}
+                {formatValue('currency', portfolio.cancellations.rentalAmount, bookings.currency)} rental
+                value (excluded from revenue)
+              </p>
+            ) : null}
           </div>
 
           {months.length > 1 ? (

@@ -191,7 +191,20 @@ export async function syncClientFromApi(client: PriceLabsClient): Promise<Client
     const stays = await loadStays(supabase, client.id);
     const monthlyRows = computeMonthly(stays, listings.length);
     const roster = listings.map((l) => l.name).filter(Boolean);
-    const byListing = computePerListingYear(stays, reportDate.slice(0, 4), roster);
+    const year = reportDate.slice(0, 4);
+    const byListing = computePerListingYear(stays, year, roster);
+
+    // Cancellations for the current year (stays cancelled before arrival). The
+    // forward pull captures upcoming cancellations — the actionable lost revenue.
+    const cancelledThisYear = reservations.filter(
+      (r) => r.booking_status === 'cancelled' && (r.check_in ?? '').slice(0, 4) === year
+    );
+    const cancellations = {
+      year,
+      count: cancelledThisYear.length,
+      rentalAmount:
+        Math.round(cancelledThisYear.reduce((s, r) => s + parseMoney(r.rental_revenue), 0) * 100) / 100,
+    };
 
     const { error: pErr } = await supabase.from('portfolio_reports').upsert(
       {
@@ -206,6 +219,7 @@ export async function syncClientFromApi(client: PriceLabsClient): Promise<Client
           rawRows: monthlyRows,
           rowCount: monthlyRows.length,
           byListing,
+          cancellations,
         },
       },
       { onConflict: 'client_id,report_date,segment' }
