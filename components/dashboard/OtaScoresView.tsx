@@ -11,19 +11,26 @@ interface ScoreData {
 
 type ClientRel = { client_name: string } | { client_name: string }[] | null;
 
+type ScoreRel = ScoreData | ScoreData[] | null;
+
 interface ListingRow {
   id: string;
   ota_name: string;
   listing_url: string;
   listing_label: string;
-  // Supabase types a to-one relation as an array; accept both.
+  // Supabase returns a to-one relation as either a single object or an array
+  // (ota_scores is unique per listing, so it's typically a single object/null).
   pricelabs_clients: ClientRel;
-  ota_scores: ScoreData[]; // 0 or 1 (unique per listing)
+  ota_scores: ScoreRel;
 }
 
 function clientName(rel: ClientRel): string {
   const c = Array.isArray(rel) ? rel[0] : rel;
   return c?.client_name ?? "Unknown";
+}
+
+function scoreOf(rel: ScoreRel): ScoreData | undefined {
+  return (Array.isArray(rel) ? rel[0] : rel) ?? undefined;
 }
 
 const OTA_COLS = [
@@ -55,7 +62,7 @@ function scoreColor(ota: string, score: number): { bg: string; text: string } {
 
 function ScoreCell({ listing, scale }: { listing: ListingRow | undefined; scale: number }) {
   if (!listing) return <span className="text-gray-300">—</span>; // no URL for this OTA
-  const score = listing.ota_scores?.[0];
+  const score = scoreOf(listing.ota_scores);
   if (!score) {
     return (
       <a href={listing.listing_url} target="_blank" rel="noopener" className="text-xs text-gray-400 hover:text-gray-600">
@@ -115,7 +122,10 @@ export default function OtaScoresView({ initialListings }: { initialListings: Li
     byClient[client][name][l.ota_name] = l;
   });
 
-  const scrapedAts = initialListings.flatMap((l) => l.ota_scores.map((s) => new Date(s.scraped_at).getTime()));
+  const scrapedAts = initialListings.flatMap((l) => {
+    const s = scoreOf(l.ota_scores);
+    return s ? [new Date(s.scraped_at).getTime()] : [];
+  });
   const lastScrape =
     scrapedAts.length > 0
       ? new Date(Math.max(...scrapedAts)).toLocaleString("en-US", {
