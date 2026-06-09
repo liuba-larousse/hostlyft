@@ -1,12 +1,10 @@
 import { getClientList, getMetricsOverview } from '@/lib/metrics/overview';
 import { getClientDetail } from '@/lib/metrics/client-detail';
 import { parseRange, parseScope, resolveRange } from '@/lib/metrics/range';
-import { METRIC_LIST } from '@/lib/metrics/registry';
 import { ClientScopePicker } from '@/components/dashboard/metrics/ClientScopePicker';
 import { AttentionStrip } from '@/components/dashboard/metrics/AttentionStrip';
 import { ClientMatrix } from '@/components/dashboard/metrics/ClientMatrix';
 import { ClientView } from '@/components/dashboard/metrics/ClientView';
-import { KpiCard } from '@/components/dashboard/metrics/KpiCard';
 
 export const dynamic = 'force-dynamic';
 
@@ -63,25 +61,11 @@ export default async function PulsePage({ searchParams }: PulsePageProps) {
 
       <section>
         <div className="mb-2 flex items-baseline justify-between">
-          <h2 className="text-xs font-bold uppercase tracking-widest text-gray-400">Portfolio</h2>
-          <span className="text-xs text-gray-400">▲▼ vs previous {range.label.toLowerCase()}</span>
+          <h2 className="text-xs font-bold uppercase tracking-widest text-gray-400">Clients</h2>
+          <span className="text-xs text-gray-400">
+            each client in its own currency · ▲▼ vs previous {range.label.toLowerCase()}
+          </span>
         </div>
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {METRIC_LIST.map((def) => (
-            <KpiCard
-              key={def.id}
-              def={def}
-              metric={overview.portfolio.metrics[def.id]}
-              currency={overview.portfolio.currency}
-            />
-          ))}
-        </div>
-      </section>
-
-      <section>
-        <h2 className="mb-2 text-xs font-bold uppercase tracking-widest text-gray-400">
-          Clients
-        </h2>
         <ClientMatrix clients={overview.clients} />
       </section>
     </div>

@@ -60,8 +60,7 @@ export interface AttentionFlag {
 
 export interface MetricsOverview {
   range: DateRange;
-  clients: ClientMetrics[];
-  portfolio: ClientMetrics; // aggregate across the selected scope (clientId = "portfolio")
+  clients: ClientMetrics[]; // one entry per client, each in its own currency
   attention: AttentionFlag[];
 }
 

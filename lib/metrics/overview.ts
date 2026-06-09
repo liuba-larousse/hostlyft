@@ -1,7 +1,7 @@
 import { createSupabaseAdmin } from '@/lib/supabase';
 import type { ClientListItem, DateRange, MetricsOverview, Scope } from './types';
 import { getBookingData } from './providers/bookings';
-import { aggregatePortfolio, buildClientMetrics, computeAttention } from './compute';
+import { buildClientMetrics, computeAttention } from './compute';
 
 export async function getClientList(): Promise<ClientListItem[]> {
   const supabase = createSupabaseAdmin();
@@ -30,7 +30,6 @@ export async function getMetricsOverview(
   return {
     range,
     clients,
-    portfolio: aggregatePortfolio(bookingData),
     attention: computeAttention(clients),
   };
 }

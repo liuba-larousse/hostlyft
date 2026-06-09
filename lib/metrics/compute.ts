@@ -6,12 +6,7 @@ import type {
 } from './types';
 import { METRIC_IDS } from './types';
 import { deltaPct, formatValue } from './format';
-import {
-  addAgg,
-  emptyAgg,
-  type BookingAgg,
-  type ClientBookingData,
-} from './providers/bookings';
+import type { BookingAgg, ClientBookingData } from './providers/bookings';
 
 function deriveValue(metricId: MetricId, agg: BookingAgg): number {
   switch (metricId) {
@@ -54,37 +49,8 @@ export function buildClientMetrics(data: ClientBookingData): ClientMetrics {
   };
 }
 
-export function aggregatePortfolio(data: ClientBookingData[]): ClientMetrics {
-  const current = emptyAgg();
-  const prior = emptyAgg();
-  const dayMap = new Map<string, BookingAgg>();
-
-  const currencies = new Set<string>();
-  for (const c of data) {
-    addAgg(current, c.current);
-    addAgg(prior, c.prior);
-    currencies.add(c.currency);
-    for (const d of c.days) {
-      let agg = dayMap.get(d.date);
-      if (!agg) {
-        agg = emptyAgg();
-        dayMap.set(d.date, agg);
-      }
-      addAgg(agg, d.agg);
-    }
-  }
-
-  const days = [...dayMap.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([date, agg]) => ({ date, agg }));
-
-  return {
-    clientId: 'portfolio',
-    clientName: 'Portfolio',
-    currency: currencies.size === 1 ? [...currencies][0] : 'USD',
-    metrics: metricsFromAggs(current, prior, days),
-  };
-}
+// Note: no cross-client aggregate — clients have different currencies, so a
+// summed "portfolio" total would be meaningless. Metrics stay per client.
 
 const ATTENTION_THRESHOLD = -0.15; // flag a client when a metric drops 15%+ vs prior
 const ATTENTION_METRICS: MetricId[] = ['revenue', 'bookings'];
