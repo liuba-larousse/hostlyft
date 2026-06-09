@@ -63,22 +63,49 @@ export async function fetchListings(apiKey: string): Promise<ApiListing[]> {
   return json.listings ?? [];
 }
 
-/** Most common PMS across a client's listings (reservation_data requires `pms`). */
+// OTA channels can appear as a listing's "pms", but reservation_data must be
+// queried with the real PMS (e.g. ownerrez, guesty) to return all bookings —
+// not just one channel's slice. Listings often duplicate per channel, so the
+// channel can out-number the real PMS; exclude channels when picking.
+const CHANNEL_PMS = new Set([
+  'airbnb',
+  'vrbo',
+  'booking_com',
+  'bookingcom',
+  'booking.com',
+  'expedia',
+  'homeaway',
+  'tripadvisor',
+]);
+
+/** The client's real PMS for reservation_data — prefers a non-channel PMS. */
 export function dominantPms(listings: ApiListing[]): string | null {
-  const counts = new Map<string, number>();
+  const real = new Map<string, number>();
+  const all = new Map<string, number>();
   for (const l of listings) {
     if (!l.pms) continue;
-    counts.set(l.pms, (counts.get(l.pms) ?? 0) + 1);
-  }
-  let best: string | null = null;
-  let max = 0;
-  for (const [pms, count] of counts) {
-    if (count > max) {
-      max = count;
-      best = pms;
+    all.set(l.pms, (all.get(l.pms) ?? 0) + 1);
+    if (!CHANNEL_PMS.has(l.pms.toLowerCase())) {
+      real.set(l.pms, (real.get(l.pms) ?? 0) + 1);
     }
   }
-  return best;
+  const top = (m: Map<string, number>): string | null => {
+    let best: string | null = null;
+    let max = 0;
+    for (const [pms, count] of m) {
+      if (count > max) {
+        max = count;
+        best = pms;
+      }
+    }
+    return best;
+  };
+  // Real PMS wins; fall back to most common overall for genuinely direct-channel clients.
+  return top(real) ?? top(all);
+}
+
+export function isChannelPms(pms: string): boolean {
+  return CHANNEL_PMS.has(pms.toLowerCase());
 }
 
 /**

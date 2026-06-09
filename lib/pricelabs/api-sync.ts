@@ -131,8 +131,12 @@ export async function syncClientFromApi(client: PriceLabsClient): Promise<Client
     const supabase = createSupabaseAdmin();
     const reportDate = isoDate(new Date());
 
-    const listings = await fetchListings(client.api_key);
-    const pms = dominantPms(listings) ?? 'guesty';
+    const allListings = await fetchListings(client.api_key);
+    const pms = dominantPms(allListings) ?? 'guesty';
+    // Capacity/roster: keep only the real-PMS listings — channel duplicates
+    // (same unit listed under airbnb/vrbo/…) would otherwise inflate the count.
+    const pmsListings = allListings.filter((l) => (l.pms ?? '').toLowerCase() === pms.toLowerCase());
+    const listings = pmsListings.length ? pmsListings : allListings;
 
     // First import → full backfill of all history. Afterwards → forward-only
     // (past stays don't change; only current + future need refreshing).
