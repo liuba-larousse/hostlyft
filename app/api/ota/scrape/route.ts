@@ -191,10 +191,15 @@ export async function POST(req: Request) {
   for (const listing of listings) {
     let result: { score: number; reviewCount: number } | null = null;
 
+    // URLs may be saved without a scheme (e.g. "airbnb.com/h/..."); fetch needs a full URL.
+    const url = /^https?:\/\//i.test(listing.listing_url)
+      ? listing.listing_url
+      : `https://${listing.listing_url}`;
+
     try {
-      if (listing.ota_name === 'airbnb') result = await scrapeAirbnb(listing.listing_url);
-      else if (listing.ota_name === 'vrbo') result = await scrapeVrbo(listing.listing_url);
-      else if (listing.ota_name === 'booking_com') result = await scrapeBooking(listing.listing_url);
+      if (listing.ota_name === 'airbnb') result = await scrapeAirbnb(url);
+      else if (listing.ota_name === 'vrbo') result = await scrapeVrbo(url);
+      else if (listing.ota_name === 'booking_com') result = await scrapeBooking(url);
 
       if (result) {
         await supabase
