@@ -6,7 +6,7 @@ import { METRIC_IDS } from './types';
 export const METRICS: Record<MetricId, MetricDef> = {
   revenue: {
     id: 'revenue',
-    label: 'Revenue',
+    label: 'Rental Revenue',
     short: 'Rev',
     category: 'finance',
     unit: 'currency',

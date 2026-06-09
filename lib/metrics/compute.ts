@@ -16,7 +16,8 @@ import {
 function deriveValue(metricId: MetricId, agg: BookingAgg): number {
   switch (metricId) {
     case 'revenue':
-      return agg.revenue;
+      // Rental revenue (sum of rental totals), net of cancellations.
+      return agg.rentalRevenue;
     case 'bookings':
       return agg.bookings;
     case 'adr':

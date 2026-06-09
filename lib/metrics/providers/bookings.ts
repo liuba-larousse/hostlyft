@@ -6,8 +6,9 @@ import { priorRange } from '../range';
 // booking window) are computed from these sums so cross-client aggregation stays
 // exact (no averaging of averages).
 export interface BookingAgg {
-  revenue: number; // total_revenue (incl. fees) — the headline revenue
-  rentalRevenue: number; // rental-only revenue — used for ADR
+  // Rental revenue only (excludes fees/taxes in total_cost). Cancellations are
+  // never folded in — the sync stores booked reservations only.
+  rentalRevenue: number;
   bookings: number;
   nights: number;
   windowSum: number;
@@ -26,7 +27,6 @@ export interface ClientBookingData {
 interface BookingReportRow {
   client_id: string;
   booked_date: string | null;
-  total_revenue: number | null;
   rental_revenue: number | null;
   los: number | null;
   booking_window: number | null;
@@ -34,11 +34,10 @@ interface BookingReportRow {
 }
 
 export function emptyAgg(): BookingAgg {
-  return { revenue: 0, rentalRevenue: 0, bookings: 0, nights: 0, windowSum: 0, windowCount: 0 };
+  return { rentalRevenue: 0, bookings: 0, nights: 0, windowSum: 0, windowCount: 0 };
 }
 
 export function addAgg(target: BookingAgg, src: BookingAgg): void {
-  target.revenue += src.revenue;
   target.rentalRevenue += src.rentalRevenue;
   target.bookings += src.bookings;
   target.nights += src.nights;
@@ -47,7 +46,6 @@ export function addAgg(target: BookingAgg, src: BookingAgg): void {
 }
 
 function fold(agg: BookingAgg, row: BookingReportRow): void {
-  agg.revenue += row.total_revenue ?? 0;
   agg.rentalRevenue += row.rental_revenue ?? 0;
   agg.bookings += 1;
   agg.nights += row.los ?? 0;
@@ -79,7 +77,7 @@ export async function getBookingData(
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await supabase
       .from('booking_reports')
-      .select('client_id, booked_date, total_revenue, rental_revenue, los, booking_window, currency')
+      .select('client_id, booked_date, rental_revenue, los, booking_window, currency')
       .in('client_id', ids)
       .gte('booked_date', prior.from)
       .lte('booked_date', range.to)
