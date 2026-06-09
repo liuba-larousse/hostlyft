@@ -24,6 +24,7 @@ interface Cell {
   url: string;
   saved: string;
   status: CellStatus;
+  error?: string;
 }
 
 const keyOf = (label: string, ota: string) => `${label}|||${ota}`;
@@ -76,12 +77,12 @@ export default function OtaListingsTable({ clientId }: { clientId: string; clien
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ clientId, otaName: ota, listingLabel: label, listingUrl: url }),
         });
-        if (!res.ok) throw new Error("save failed");
         const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || "save failed");
         setCells((p) => ({ ...p, [k]: { id: data?.id, url, saved: url, status: "saved" } }));
         setTimeout(() => setCells((p) => (p[k] ? { ...p, [k]: { ...p[k], status: "idle" } } : p)), 1500);
-      } catch {
-        setCells((p) => ({ ...p, [k]: { ...p[k], status: "error" } }));
+      } catch (e) {
+        setCells((p) => ({ ...p, [k]: { ...p[k], status: "error", error: e instanceof Error ? e.message : "save failed" } }));
       }
     },
     [clientId]
@@ -173,9 +174,14 @@ export default function OtaListingsTable({ clientId }: { clientId: string; clien
                           <span className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2">
                             {cell.status === "saving" && <Loader2 size={12} className="animate-spin text-gray-400" />}
                             {cell.status === "saved" && <Check size={12} className="text-green-500" />}
-                            {cell.status === "error" && <AlertCircle size={12} className="text-red-500" />}
+                            {cell.status === "error" && (
+                              <AlertCircle size={12} className="text-red-500" aria-label={cell.error} />
+                            )}
                           </span>
                         </div>
+                        {cell.status === "error" && cell.error && (
+                          <p className="mt-0.5 max-w-[180px] text-[10px] leading-tight text-red-500">{cell.error}</p>
+                        )}
                       </td>
                     );
                   })}

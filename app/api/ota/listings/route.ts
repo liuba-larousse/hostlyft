@@ -85,7 +85,16 @@ export async function PATCH(req: Request) {
     .insert({ client_id: clientId, ota_name: otaName, listing_url: url, listing_label: listingLabel })
     .select()
     .single();
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    // 23505 = unique_violation on (client_id, listing_url)
+    if (error.code === '23505') {
+      return NextResponse.json(
+        { error: 'That URL is already used for another listing for this client.' },
+        { status: 409 }
+      );
+    }
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
   return NextResponse.json(data);
 }
 
