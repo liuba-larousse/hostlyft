@@ -12,12 +12,12 @@ interface ClientScopePickerProps {
   preset: RangePreset;
 }
 
-const RANGE_OPTIONS: { value: RangePreset; label: string }[] = [
-  { value: '7d', label: '7d' },
-  { value: '30d', label: '30d' },
-  { value: 'mtd', label: 'MTD' },
-  { value: 'qtd', label: 'QTD' },
-  { value: 'ytd', label: 'YTD' },
+const RANGE_OPTIONS: { value: RangePreset; label: string; title: string }[] = [
+  { value: '7d', label: '7d', title: 'Last 7 days' },
+  { value: '30d', label: '30d', title: 'Last 30 days' },
+  { value: 'mtd', label: 'MTD', title: 'Month to date — 1st of this month through today' },
+  { value: 'qtd', label: 'QTD', title: 'Quarter to date — start of this quarter through today' },
+  { value: 'ytd', label: 'YTD', title: 'Year to date — Jan 1 through today' },
 ];
 
 export const ClientScopePicker: React.FC<ClientScopePickerProps> = ({
@@ -84,6 +84,7 @@ export const ClientScopePicker: React.FC<ClientScopePickerProps> = ({
           <button
             key={opt.value}
             type="button"
+            title={opt.title}
             onClick={() =>
               push(selected === 'all' ? 'all' : selected.join(','), opt.value)
             }

@@ -1,7 +1,6 @@
 import { createSupabaseAdmin } from '@/lib/supabase';
 import { getReportsByDate } from '@/lib/supabase/reports';
 import { FileText, TrendingUp, Calendar, RefreshCw } from 'lucide-react';
-import SyncButton from '@/components/dashboard/SyncButton';
 
 function formatCurrency(n: number, currency = 'USD'): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 }).format(n);
@@ -87,7 +86,6 @@ export default async function BookingsPage() {
             )}
           </div>
         </div>
-        <SyncButton />
       </div>
 
       {summaries.length === 0 && (
@@ -96,8 +94,7 @@ export default async function BookingsPage() {
             <FileText size={24} className="text-gray-400" strokeWidth={1.8} />
           </div>
           <p className="text-gray-900 font-semibold text-base mb-1">No clients synced yet</p>
-          <p className="text-gray-500 text-sm mb-6">Add clients in the Clients page, then click Sync Now.</p>
-          <SyncButton />
+          <p className="text-gray-500 text-sm">Add clients in the Clients page, then run a sync from the Pulse tab.</p>
         </div>
       )}
 

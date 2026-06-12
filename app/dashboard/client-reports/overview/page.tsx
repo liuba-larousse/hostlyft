@@ -5,6 +5,7 @@ import { ClientScopePicker } from '@/components/dashboard/metrics/ClientScopePic
 import { AttentionStrip } from '@/components/dashboard/metrics/AttentionStrip';
 import { ClientMatrix } from '@/components/dashboard/metrics/ClientMatrix';
 import { ClientView } from '@/components/dashboard/metrics/ClientView';
+import SyncButton from '@/components/dashboard/SyncButton';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,6 +26,9 @@ export default async function PulsePage({ searchParams }: PulsePageProps) {
     const detail = await getClientDetail(scope[0], range, clientList);
     return (
       <div className="space-y-5">
+        <div className="flex justify-end">
+          <SyncButton />
+        </div>
         <ClientScopePicker clients={clientList} selected={scope} preset={preset} />
         {detail ? (
           <ClientView detail={detail} range={range} />
@@ -44,6 +48,10 @@ export default async function PulsePage({ searchParams }: PulsePageProps) {
 
   return (
     <div className="space-y-5">
+      <div className="flex justify-end">
+        <SyncButton />
+      </div>
+
       <ClientScopePicker
         clients={clientList}
         selected={scope}
