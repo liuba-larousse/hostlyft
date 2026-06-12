@@ -21,7 +21,9 @@ export async function getClientDetail(
   const client = list.find((c) => c.id === clientId);
   if (!client) return null;
 
-  const currentYM = range.to.slice(0, 7);
+  // Portfolio headline is always the current calendar month. range.to can be a
+  // future period-end (e.g. Dec 31 for the Year preset), so derive it from today.
+  const currentYM = new Date().toISOString().slice(0, 7);
   const [bookingData, portfolio, ota] = await Promise.all([
     getBookingData([client], range),
     getPortfolioDetail(clientId, currentYM),

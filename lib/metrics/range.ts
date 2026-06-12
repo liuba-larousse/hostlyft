@@ -49,10 +49,19 @@ export function daysBetween(from: string, to: string): number {
   return Math.round((b - a) / 86_400_000) + 1;
 }
 
+/** Last calendar day of month `m` (1-based) in year `y`, as an ISO date. */
+function lastDayOfMonthISO(y: number, m: number): string {
+  const day = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
 export function resolveRange(preset: RangePreset, todayISO?: string): DateRange {
   const today = todayISO ?? toISO(new Date());
   const [y, m] = today.split('-').map(Number);
   let from: string;
+  // 7d/30d are trailing windows ending today. Month/quarter/year run to the end
+  // of the calendar period so already-booked future stays count toward the total.
+  let to = today;
 
   switch (preset) {
     case '7d':
@@ -63,20 +72,23 @@ export function resolveRange(preset: RangePreset, todayISO?: string): DateRange 
       break;
     case 'mtd':
       from = `${y}-${String(m).padStart(2, '0')}-01`;
+      to = lastDayOfMonthISO(y, m);
       break;
     case 'qtd': {
       const qStartMonth = Math.floor((m - 1) / 3) * 3 + 1;
       from = `${y}-${String(qStartMonth).padStart(2, '0')}-01`;
+      to = lastDayOfMonthISO(y, qStartMonth + 2);
       break;
     }
     case 'ytd':
       from = `${y}-01-01`;
+      to = `${y}-12-31`;
       break;
   }
 
   return {
     from,
-    to: today,
+    to,
     preset,
     label: PRESET_LABELS[preset],
     compareLabel: COMPARE_LABELS[preset],
