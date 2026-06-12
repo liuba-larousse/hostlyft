@@ -103,6 +103,14 @@ export const ClientMatrix: React.FC<ClientMatrixProps> = ({ clients }) => {
                     aria-hidden="true"
                   />
                   {client.clientName}
+                  {client.comparedToPreviousPeriod ? (
+                    <span
+                      className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-500"
+                      title="No data for the same period last year — comparison is against the previous period"
+                    >
+                      new · vs prev
+                    </span>
+                  ) : null}
                 </button>
               </td>
               {METRIC_LIST.map((def) => {

@@ -46,6 +46,7 @@ export function buildClientMetrics(data: ClientBookingData): ClientMetrics {
     clientName: data.clientName,
     currency: data.currency,
     metrics: metricsFromAggs(data.current, data.prior, data.days),
+    comparedToPreviousPeriod: data.comparedToPreviousPeriod,
   };
 }
 

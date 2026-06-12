@@ -28,6 +28,7 @@ export const ClientView: React.FC<ClientViewProps> = ({ detail, range }) => {
   const { client, bookings, portfolio, ota } = detail;
   const color = clientColor(client.id);
   const months = portfolio?.months ?? [];
+  const vsLabel = bookings.comparedToPreviousPeriod ? 'vs prev period' : `vs ${range.compareLabel}`;
 
   return (
     <div className="space-y-6">
@@ -46,7 +47,7 @@ export const ClientView: React.FC<ClientViewProps> = ({ detail, range }) => {
               def={def}
               metric={bookings.metrics[def.id]}
               currency={bookings.currency}
-              vsLabel={`vs ${range.compareLabel}`}
+              vsLabel={vsLabel}
             />
           ))}
         </div>

@@ -110,6 +110,32 @@ export function priorRange(range: DateRange): { from: string; to: string } {
   return { from, to };
 }
 
+/**
+ * The immediately-preceding calendar period (previous month/quarter/year) — used
+ * as a fallback comparison for clients too new to have year-over-year data. Only
+ * meaningful for month/quarter/year presets.
+ */
+export function previousPeriodRange(range: DateRange): { from: string; to: string } {
+  const to = addDays(range.from, -1); // day before the current period starts
+  const [y, m] = to.split('-').map(Number);
+  let from: string;
+  switch (range.preset) {
+    case 'qtd': {
+      const qStartMonth = Math.floor((m - 1) / 3) * 3 + 1;
+      from = `${y}-${String(qStartMonth).padStart(2, '0')}-01`;
+      break;
+    }
+    case 'ytd':
+      from = `${y}-01-01`;
+      break;
+    case 'mtd':
+    default:
+      from = `${y}-${String(m).padStart(2, '0')}-01`;
+      break;
+  }
+  return { from, to };
+}
+
 export function parseRange(raw: string | string[] | undefined): RangePreset {
   const value = Array.isArray(raw) ? raw[0] : raw;
   return value && (PRESETS as readonly string[]).includes(value)

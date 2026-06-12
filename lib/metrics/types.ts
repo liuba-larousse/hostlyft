@@ -50,6 +50,8 @@ export interface ClientMetrics {
   clientName: string;
   currency: string;
   metrics: Record<MetricId, MetricValue>;
+  /** True when the prior values compare to the previous period (no year-ago data). */
+  comparedToPreviousPeriod: boolean;
 }
 
 export interface AttentionFlag {

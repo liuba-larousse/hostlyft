@@ -1,6 +1,6 @@
 import { createSupabaseAdmin } from '@/lib/supabase';
 import type { ClientListItem, DateRange } from '../types';
-import { addDays, daysBetween, priorRange } from '../range';
+import { addDays, daysBetween, previousPeriodRange, priorRange } from '../range';
 
 // Raw building blocks aggregated from booking_reports. Derived metrics (ADR,
 // booking window) are computed from these sums so cross-client aggregation stays
@@ -22,6 +22,8 @@ export interface ClientBookingData {
   current: BookingAgg;
   prior: BookingAgg;
   days: { date: string; agg: BookingAgg }[]; // current range only, ascending
+  /** True when `prior` is the previous calendar period (YoY fallback for new clients). */
+  comparedToPreviousPeriod: boolean;
 }
 
 interface BookingReportRow {
@@ -143,14 +145,38 @@ async function fetchWindow(
   return rows;
 }
 
+/** Fold a prior-window row-set into per-client aggregates (no daily series). */
+function aggregatePrior(
+  rows: BookingReportRow[],
+  ids: string[],
+  basis: Basis,
+  from: string,
+  to: string
+): Map<string, BookingAgg> {
+  const map = new Map<string, BookingAgg>(ids.map((id) => [id, emptyAgg()]));
+  for (const row of rows) {
+    const agg = map.get(row.client_id);
+    if (!agg) continue;
+    if (basis === 'booked') {
+      if (row.booked_date) foldBooked(agg, row);
+    } else {
+      const ov = stayOverlap(row, from, to);
+      if (ov) foldStay(agg, row, ov);
+    }
+  }
+  return map;
+}
+
 /**
  * Fetch booking aggregates for the given clients across the current range and
  * the prior window (year-over-year for month/quarter/year, equal-length before
  * for 7d/30d — see priorRange). 7d/30d attribute revenue to booked_date; month/
  * quarter/year prorate each reservation's revenue across the nights it occupies
- * within the period (so already-booked future stays count). The two windows are
- * fetched separately because for YoY they sit a year apart. Clients with no
- * bookings are returned with zeroed aggregates so they still appear in the matrix.
+ * within the period (so already-booked future stays count). The windows are
+ * fetched separately because for YoY they sit a year apart. For month/quarter/
+ * year, clients with no year-ago history fall back to the previous calendar
+ * period so a comparison still shows. Clients with no bookings are returned with
+ * zeroed aggregates so they still appear in the matrix.
  */
 export async function getBookingData(
   clients: ClientListItem[],
@@ -161,11 +187,17 @@ export async function getBookingData(
   const supabase = createSupabaseAdmin();
   const prior = priorRange(range);
   const basis = basisFor(range.preset);
+  // For YoY presets, also pull the previous calendar period as a per-client
+  // fallback for clients too new to have year-ago data.
+  const prev = basis === 'stay' ? previousPeriodRange(range) : null;
   const ids = clients.map((c) => c.id);
 
-  const [currentRows, priorRows] = await Promise.all([
+  const [currentRows, priorRows, prevRows] = await Promise.all([
     fetchWindow(supabase, ids, range.from, range.to, basis),
     fetchWindow(supabase, ids, prior.from, prior.to, basis),
+    prev
+      ? fetchWindow(supabase, ids, prev.from, prev.to, basis)
+      : Promise.resolve<BookingReportRow[]>([]),
   ]);
 
   const result = new Map<string, ClientBookingData>(
@@ -178,6 +210,7 @@ export async function getBookingData(
         current: emptyAgg(),
         prior: emptyAgg(),
         days: [],
+        comparedToPreviousPeriod: false,
       },
     ])
   );
@@ -219,17 +252,26 @@ export async function getBookingData(
     }
   }
 
-  for (const row of priorRows) {
-    const entry = result.get(row.client_id);
-    if (!entry) continue;
-    if (row.currency) entry.currency = row.currency;
+  const priorAgg = aggregatePrior(priorRows, ids, basis, prior.from, prior.to);
+  const prevAgg = prev ? aggregatePrior(prevRows, ids, basis, prev.from, prev.to) : null;
 
-    if (basis === 'booked') {
-      if (!row.booked_date) continue;
-      foldBooked(entry.prior, row);
+  // Backfill currency for clients that only have prior/previous-period rows.
+  for (const row of [...priorRows, ...prevRows]) {
+    const entry = result.get(row.client_id);
+    if (entry && entry.currency === 'USD' && row.currency) entry.currency = row.currency;
+  }
+
+  for (const c of clients) {
+    const entry = result.get(c.id);
+    if (!entry) continue;
+    const yoy = priorAgg.get(c.id) ?? emptyAgg();
+    // Use YoY when the client has any year-ago history; otherwise fall back to
+    // the previous calendar period so a delta still shows.
+    if (prevAgg && yoy.bookings === 0) {
+      entry.prior = prevAgg.get(c.id) ?? yoy;
+      entry.comparedToPreviousPeriod = true;
     } else {
-      const ov = stayOverlap(row, prior.from, prior.to);
-      if (ov) foldStay(entry.prior, row, ov);
+      entry.prior = yoy;
     }
   }
 
