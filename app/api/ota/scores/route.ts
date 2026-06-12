@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { createSupabaseAdmin } from '@/lib/supabase';
+import { isHiddenClientName, joinedClientName } from '@/lib/clients/exclusions';
 
 export async function GET() {
   const session = await auth();
@@ -13,5 +14,11 @@ export async function GET() {
     .order('scraped_at', { ascending: false });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json(data);
+
+  // Drop scores belonging to hidden clients (managed in a separate app).
+  const visible = (data ?? []).filter((row) => {
+    const listing = Array.isArray(row.ota_listings) ? row.ota_listings[0] : row.ota_listings;
+    return !isHiddenClientName(joinedClientName(listing?.pricelabs_clients));
+  });
+  return NextResponse.json(visible);
 }

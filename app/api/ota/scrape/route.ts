@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { createSupabaseAdmin } from '@/lib/supabase';
+import { isHiddenClientName, joinedClientName } from '@/lib/clients/exclusions';
 import { launchBrowser } from '@/lib/pricelabs/browser';
 
 export const maxDuration = 300;
@@ -130,9 +131,13 @@ export async function POST(req: Request) {
   let query = supabase.from('ota_listings').select('*, pricelabs_clients(client_name)');
   if (clientId) query = query.eq('client_id', clientId);
 
-  const { data: listings, error: listErr } = await query;
+  const { data: rawListings, error: listErr } = await query;
   if (listErr) return NextResponse.json({ error: listErr.message }, { status: 500 });
-  if (!listings?.length) return NextResponse.json({ scraped: 0, message: 'No listings found' });
+  // Skip listings belonging to hidden clients (managed in a separate app).
+  const listings = (rawListings ?? []).filter(
+    (l) => !isHiddenClientName(joinedClientName(l.pricelabs_clients))
+  );
+  if (!listings.length) return NextResponse.json({ scraped: 0, message: 'No listings found' });
 
   let scraped = 0;
   let failed = 0;

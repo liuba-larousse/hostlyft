@@ -1,15 +1,14 @@
 import { createSupabaseAdmin } from '@/lib/supabase';
+import { excludeHiddenClients } from '@/lib/clients/exclusions';
 import type { ClientListItem, DateRange, MetricsOverview, Scope } from './types';
 import { getBookingData } from './providers/bookings';
 import { buildClientMetrics, computeAttention } from './compute';
 
 export async function getClientList(): Promise<ClientListItem[]> {
   const supabase = createSupabaseAdmin();
-  const { data, error } = await supabase
-    .from('pricelabs_clients')
-    .select('id, client_name')
-    .eq('active', true)
-    .order('client_name');
+  const { data, error } = await excludeHiddenClients(
+    supabase.from('pricelabs_clients').select('id, client_name').eq('active', true)
+  ).order('client_name');
 
   if (error) throw new Error(`Failed to fetch clients: ${error.message}`);
   return (data ?? []).map((c) => ({ id: c.id as string, name: c.client_name as string }));

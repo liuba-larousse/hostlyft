@@ -1,4 +1,5 @@
 import { createSupabaseAdmin } from '@/lib/supabase';
+import { excludeHiddenClients } from '@/lib/clients/exclusions';
 
 export interface BookingRow {
   id: string;
@@ -30,12 +31,10 @@ export interface ClientSummary {
 export async function getReportsByDate(reportDate: string): Promise<ClientSummary[]> {
   const supabase = createSupabaseAdmin();
 
-  // Fetch all active clients
-  const { data: clients } = await supabase
-    .from('pricelabs_clients')
-    .select('id, client_name')
-    .eq('active', true)
-    .order('client_name');
+  // Fetch all active clients (excluding ones hidden / managed elsewhere)
+  const { data: clients } = await excludeHiddenClients(
+    supabase.from('pricelabs_clients').select('id, client_name').eq('active', true)
+  ).order('client_name');
 
   if (!clients?.length) return [];
 

@@ -1,5 +1,6 @@
 import { createSupabaseAdmin } from '@/lib/supabase';
 import { decrypt } from '@/lib/crypto/encrypt';
+import { excludeHiddenClients } from '@/lib/clients/exclusions';
 
 export interface PriceLabsClient {
   id: string;
@@ -17,11 +18,12 @@ export interface RmPortalCredentials {
 
 export async function getActiveClients(): Promise<PriceLabsClient[]> {
   const supabase = createSupabaseAdmin();
-  const { data, error } = await supabase
-    .from('pricelabs_clients')
-    .select('id, client_name, email, password_encrypted, connection_type, api_key_encrypted')
-    .eq('active', true)
-    .order('client_name');
+  const { data, error } = await excludeHiddenClients(
+    supabase
+      .from('pricelabs_clients')
+      .select('id, client_name, email, password_encrypted, connection_type, api_key_encrypted')
+      .eq('active', true)
+  ).order('client_name');
 
   if (error) throw new Error(`Failed to fetch PriceLabs clients: ${error.message}`);
 

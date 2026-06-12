@@ -1,12 +1,14 @@
 import { createSupabaseAdmin } from '@/lib/supabase';
+import { excludeHiddenClients } from '@/lib/clients/exclusions';
 import PriceLabsClients from '@/components/dashboard/PriceLabsClients';
 
 async function getPriceLabsClients() {
   const supabase = createSupabaseAdmin();
-  const { data } = await supabase
-    .from('pricelabs_clients')
-    .select('id, client_name, email, active, hubspot_contact_id, created_at')
-    .order('client_name');
+  const { data } = await excludeHiddenClients(
+    supabase
+      .from('pricelabs_clients')
+      .select('id, client_name, email, active, hubspot_contact_id, created_at')
+  ).order('client_name');
   return data ?? [];
 }
 
