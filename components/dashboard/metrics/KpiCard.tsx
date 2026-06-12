@@ -8,9 +8,10 @@ interface KpiCardProps {
   def: MetricDef;
   metric: MetricValue;
   currency: string;
+  vsLabel?: string;
 }
 
-export const KpiCard: React.FC<KpiCardProps> = ({ def, metric, currency }) => {
+export const KpiCard: React.FC<KpiCardProps> = ({ def, metric, currency, vsLabel = 'vs prior' }) => {
   const pct = deltaPct(metric.value, metric.prior);
   const values = metric.series.map((p) => p.value);
 
@@ -26,7 +27,7 @@ export const KpiCard: React.FC<KpiCardProps> = ({ def, metric, currency }) => {
         <Sparkline values={values} />
       </div>
       <div className="mt-1">
-        <DeltaChip pct={pct} better={def.better} vsLabel="vs prior" />
+        <DeltaChip pct={pct} better={def.better} vsLabel={vsLabel} />
       </div>
     </div>
   );

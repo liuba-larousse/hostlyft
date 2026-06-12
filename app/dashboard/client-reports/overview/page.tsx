@@ -71,7 +71,7 @@ export default async function PulsePage({ searchParams }: PulsePageProps) {
         <div className="mb-2 flex items-baseline justify-between">
           <h2 className="text-xs font-bold uppercase tracking-widest text-gray-400">Clients</h2>
           <span className="text-xs text-gray-400">
-            each client in its own currency · ▲▼ vs previous {range.label.toLowerCase()}
+            each client in its own currency · ▲▼ vs {range.compareLabel}
           </span>
         </div>
         <ClientMatrix clients={overview.clients} />

@@ -13,11 +13,11 @@ interface ClientScopePickerProps {
 }
 
 const RANGE_OPTIONS: { value: RangePreset; label: string; title: string }[] = [
-  { value: '7d', label: '7d', title: 'Last 7 days' },
-  { value: '30d', label: '30d', title: 'Last 30 days' },
-  { value: 'mtd', label: 'MTD', title: 'Month to date — 1st of this month through today' },
-  { value: 'qtd', label: 'QTD', title: 'Quarter to date — start of this quarter through today' },
-  { value: 'ytd', label: 'YTD', title: 'Year to date — Jan 1 through today' },
+  { value: '7d', label: '7d', title: 'Last 7 days — vs the previous 7 days' },
+  { value: '30d', label: '30d', title: 'Last 30 days — vs the previous 30 days' },
+  { value: 'mtd', label: 'Month', title: 'This month so far — vs the same days last year' },
+  { value: 'qtd', label: 'Q', title: 'This quarter so far — vs the same period last year' },
+  { value: 'ytd', label: 'Year', title: 'This year so far — vs the same period last year' },
 ];
 
 export const ClientScopePicker: React.FC<ClientScopePickerProps> = ({

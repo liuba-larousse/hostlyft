@@ -46,6 +46,7 @@ export const ClientView: React.FC<ClientViewProps> = ({ detail, range }) => {
               def={def}
               metric={bookings.metrics[def.id]}
               currency={bookings.currency}
+              vsLabel={`vs ${range.compareLabel}`}
             />
           ))}
         </div>

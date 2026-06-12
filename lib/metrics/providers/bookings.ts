@@ -55,10 +55,39 @@ function fold(agg: BookingAgg, row: BookingReportRow): void {
   }
 }
 
+/** Fetch booking rows for one [from, to] window, paginating past PostgREST's 1000-row cap. */
+async function fetchWindow(
+  supabase: ReturnType<typeof createSupabaseAdmin>,
+  ids: string[],
+  from: string,
+  to: string
+): Promise<BookingReportRow[]> {
+  const PAGE = 1000;
+  const rows: BookingReportRow[] = [];
+  for (let offset = 0; ; offset += PAGE) {
+    const { data, error } = await supabase
+      .from('booking_reports')
+      .select('client_id, booked_date, rental_revenue, los, booking_window, currency')
+      .in('client_id', ids)
+      .gte('booked_date', from)
+      .lte('booked_date', to)
+      .order('id', { ascending: true })
+      .range(offset, offset + PAGE - 1);
+
+    if (error) throw new Error(`Failed to fetch booking metrics: ${error.message}`);
+    const batch = (data ?? []) as BookingReportRow[];
+    rows.push(...batch);
+    if (batch.length < PAGE) break;
+  }
+  return rows;
+}
+
 /**
  * Fetch booking aggregates for the given clients across the current range and
- * the equal-length prior window in a single query. Clients with no bookings are
- * returned with zeroed aggregates so they still appear in the matrix.
+ * the prior window (year-over-year for month/quarter/year, equal-length before
+ * for 7d/30d — see priorRange). The two windows are fetched separately because
+ * for YoY they sit a year apart. Clients with no bookings are returned with
+ * zeroed aggregates so they still appear in the matrix.
  */
 export async function getBookingData(
   clients: ClientListItem[],
@@ -70,25 +99,10 @@ export async function getBookingData(
   const prior = priorRange(range);
   const ids = clients.map((c) => c.id);
 
-  // Paginate explicitly — Supabase/PostgREST caps a select at 1000 rows by
-  // default, which would silently truncate wide ranges or all-client scope.
-  const PAGE = 1000;
-  const rows: BookingReportRow[] = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await supabase
-      .from('booking_reports')
-      .select('client_id, booked_date, rental_revenue, los, booking_window, currency')
-      .in('client_id', ids)
-      .gte('booked_date', prior.from)
-      .lte('booked_date', range.to)
-      .order('id', { ascending: true })
-      .range(from, from + PAGE - 1);
-
-    if (error) throw new Error(`Failed to fetch booking metrics: ${error.message}`);
-    const batch = (data ?? []) as BookingReportRow[];
-    rows.push(...batch);
-    if (batch.length < PAGE) break;
-  }
+  const [currentRows, priorRows] = await Promise.all([
+    fetchWindow(supabase, ids, range.from, range.to),
+    fetchWindow(supabase, ids, prior.from, prior.to),
+  ]);
 
   const result = new Map<string, ClientBookingData>(
     clients.map((c) => [
@@ -105,27 +119,30 @@ export async function getBookingData(
   );
   const dayMaps = new Map<string, Map<string, BookingAgg>>();
 
-  for (const row of rows) {
+  for (const row of currentRows) {
     const entry = result.get(row.client_id);
     if (!entry || !row.booked_date) continue;
     if (row.currency) entry.currency = row.currency;
 
-    if (row.booked_date >= range.from && row.booked_date <= range.to) {
-      fold(entry.current, row);
-      let dm = dayMaps.get(row.client_id);
-      if (!dm) {
-        dm = new Map();
-        dayMaps.set(row.client_id, dm);
-      }
-      let dayAgg = dm.get(row.booked_date);
-      if (!dayAgg) {
-        dayAgg = emptyAgg();
-        dm.set(row.booked_date, dayAgg);
-      }
-      fold(dayAgg, row);
-    } else if (row.booked_date >= prior.from && row.booked_date <= prior.to) {
-      fold(entry.prior, row);
+    fold(entry.current, row);
+    let dm = dayMaps.get(row.client_id);
+    if (!dm) {
+      dm = new Map();
+      dayMaps.set(row.client_id, dm);
     }
+    let dayAgg = dm.get(row.booked_date);
+    if (!dayAgg) {
+      dayAgg = emptyAgg();
+      dm.set(row.booked_date, dayAgg);
+    }
+    fold(dayAgg, row);
+  }
+
+  for (const row of priorRows) {
+    const entry = result.get(row.client_id);
+    if (!entry || !row.booked_date) continue;
+    if (row.currency) entry.currency = row.currency;
+    fold(entry.prior, row);
   }
 
   for (const [clientId, dm] of dayMaps) {

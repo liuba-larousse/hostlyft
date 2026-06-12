@@ -11,6 +11,8 @@ export interface DateRange {
   to: string; // YYYY-MM-DD, inclusive
   preset: RangePreset;
   label: string;
+  /** Human-readable baseline the prior window represents, e.g. "previous 30 days" or "same month last year". */
+  compareLabel: string;
 }
 
 export type MetricUnit = 'currency' | 'percent' | 'number' | 'score' | 'days';
@@ -39,7 +41,7 @@ export interface MetricPoint {
 export interface MetricValue {
   metricId: MetricId;
   value: number; // current-period value
-  prior: number | null; // equal-length window immediately before the current range
+  prior: number | null; // baseline window value — see priorRange (prior period, or same period last year for month/quarter/year)
   series: MetricPoint[]; // daily series across the current range
 }
 
